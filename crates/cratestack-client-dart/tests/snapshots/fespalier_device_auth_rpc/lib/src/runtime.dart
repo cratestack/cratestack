@@ -1,0 +1,1742 @@
+// Generated CrateStack Dart RPC runtime for `transport rpc` schemas.
+//
+// Speaks the `/rpc/{op_id}` and `/rpc/batch` URL space defined by
+// `cratestack-axum::rpc`. One adapter ships, written over the HTTP seam
+// (`CratestackHttpTransport`, below):
+//
+//   * `CratestackRpcHttpAdapter`  — CBOR or JSON on the wire
+//                                   (`CratestackWireFormat`), any transport
+//
+// plus `CratestackFespalierTransport` (a separate file,
+// `fespalier_transport.dart`) for fespalier's `HttpTransport`.
+
+import 'dart:async';
+import 'dart:convert';
+import 'dart:typed_data';
+
+import 'package:cratestack_cbor/cratestack_cbor.dart' as cratestack_cbor;
+
+import 'constants.dart';
+
+// -----------------------------------------------------------------------------
+// The HTTP seam (cratestack#1204)
+//
+// Everything the generated adapters need from an HTTP stack, and nothing
+// else: pure Dart, no dependency. An app that owns its HTTP stack (a signing
+// layer, a captive-portal check, spans, a different client) implements
+// `CratestackHttpTransport` once and hands it to `CratestackHttpAdapter` /
+// `CratestackRpcHttpAdapter`; the adapters do the codec work, the headers and
+// the error mapping over it. Retries, deadlines and interception stay the
+// transport's job.
+// -----------------------------------------------------------------------------
+
+/// Sends one HTTP request and returns the answer as soon as the status line
+/// and headers are in; the body is still a stream at that point.
+///
+/// Contract:
+///
+///  * Resolve with the response for EVERY HTTP status. A 4xx/5xx answer is
+///    not an error here: the adapter maps it (`CratestackRestException` over
+///    REST, `CratestackRpcException` over RPC).
+///  * Fail with a [CratestackTransportException] when there is no answer:
+///    [CratestackTransportUnsent] when the request provably never left,
+///    [CratestackTransportAborted] when [CratestackHttpRequest.abort]
+///    completed, [CratestackTransportTimedOut] for a deadline, and
+///    [CratestackTransportBroken] for anything else.
+///  * Send [CratestackHttpRequest.body] exactly as given (the bytes a signer
+///    layered above this one saw), and send no header the request does not
+///    carry beyond what the platform adds by itself.
+abstract interface class CratestackHttpTransport {
+  Future<CratestackHttpResponse> send(CratestackHttpRequest request);
+}
+
+/// One request, fully encoded: the codec work is already done.
+final class CratestackHttpRequest {
+  const CratestackHttpRequest({
+    required this.method,
+    required this.uri,
+    this.headers = const <String, String>{},
+    this.body,
+    this.abort,
+    this.extra = const <String, Object?>{},
+  });
+
+  /// Upper-case HTTP method (`GET`, `POST`, ...).
+  final String method;
+
+  /// Absolute URI, query string included.
+  final Uri uri;
+
+  /// Request headers, names as the adapter wrote them.
+  final Map<String, String> headers;
+
+  /// The exact body bytes, or `null` for a request without a body.
+  final Uint8List? body;
+
+  /// Completing this future cancels the send, whether the request is still
+  /// connecting, uploading, waiting for the answer or streaming the body.
+  /// The transport then fails with [CratestackTransportAborted].
+  final Future<void>? abort;
+
+  /// Transport-local attributes that are NOT sent on the wire (for example
+  /// [cratestackUseRustTransportExtraKey], or a call option's `extra`). A
+  /// transport forwards the ones it understands to its own machinery and
+  /// ignores the rest.
+  final Map<String, Object?> extra;
+}
+
+/// The answer to a [CratestackHttpRequest].
+final class CratestackHttpResponse {
+  /// [headers] names are lower-cased; a repeated header is joined with `, `.
+  CratestackHttpResponse({
+    required this.status,
+    required Map<String, String> headers,
+    required this.body,
+  }) : headers = Map<String, String>.unmodifiable(<String, String>{
+         for (final entry in headers.entries) entry.key.toLowerCase(): entry.value,
+       });
+
+  /// A fully buffered answer: handy for tests and for transports that have
+  /// already read the body.
+  factory CratestackHttpResponse.buffered({
+    required int status,
+    Map<String, String> headers = const <String, String>{},
+    List<int> body = const <int>[],
+  }) {
+    return CratestackHttpResponse(
+      status: status,
+      headers: headers,
+      body: Stream<Uint8List>.value(Uint8List.fromList(body)),
+    );
+  }
+
+  final int status;
+
+  /// Response headers, names lower-cased.
+  final Map<String, String> headers;
+
+  /// The body, as the transport received it. Single-subscription: read it
+  /// once, either through [bytes] or by listening to it directly.
+  final Stream<Uint8List> body;
+
+  /// Reads the whole [body]. Consumes it.
+  Future<Uint8List> bytes() async {
+    final builder = BytesBuilder(copy: false);
+    await for (final chunk in body) {
+      builder.add(chunk);
+    }
+    return builder.takeBytes();
+  }
+}
+
+/// A request that produced no HTTP answer. Never a `DioException` or any other
+/// stack-specific type: a caller that catches this works with every transport.
+sealed class CratestackTransportException implements Exception {
+  const CratestackTransportException({this.cause, this.message});
+
+  /// The stack-specific error that caused this, when there is one.
+  final Object? cause;
+
+  final String? message;
+
+  String get _kind;
+
+  @override
+  String toString() {
+    final detail = message ?? cause;
+    return detail == null ? _kind : '$_kind: $detail';
+  }
+}
+
+/// The caller cancelled the call through [CratestackHttpRequest.abort].
+final class CratestackTransportAborted extends CratestackTransportException {
+  const CratestackTransportAborted({super.cause, super.message});
+
+  @override
+  String get _kind => 'CratestackTransportAborted';
+}
+
+/// The request provably never left this device: the connection was refused,
+/// the host did not resolve, the connect timed out, or TLS failed before any
+/// request byte was written. Always safe to send again, even a non-idempotent
+/// call.
+final class CratestackTransportUnsent extends CratestackTransportException {
+  const CratestackTransportUnsent({super.cause, super.message});
+
+  @override
+  String get _kind => 'CratestackTransportUnsent';
+}
+
+/// A deadline expired after the request may have left. The server may have
+/// acted on it.
+final class CratestackTransportTimedOut extends CratestackTransportException {
+  const CratestackTransportTimedOut({super.cause, super.message});
+
+  @override
+  String get _kind => 'CratestackTransportTimedOut';
+}
+
+/// Anything else that went wrong without an answer (a dropped connection
+/// mid-request or mid-body, a malformed response). The server may have acted
+/// on the request.
+final class CratestackTransportBroken extends CratestackTransportException {
+  const CratestackTransportBroken({super.cause, super.message});
+
+  @override
+  String get _kind => 'CratestackTransportBroken';
+}
+
+// -----------------------------------------------------------------------------
+// Wire codecs and the plumbing both HTTP adapters share (cratestack#1204)
+//
+// One copy, included by the REST runtime and the RPC runtime alike, so the
+// two adapters cannot drift on the CBOR/JSON choice, on dispatching a
+// response by its `Content-Type`, or on how a URI and the headers are built.
+// -----------------------------------------------------------------------------
+
+// cratestack#563: `createCborCodec()` is async (it loads a
+// vendored native library / wasm module on first use), so the codec is
+// resolved once and cached here rather than per call — every
+// `_cratestackCborCodec()` caller after the first just awaits the same
+// already-in-flight (or already-resolved) `Future`.
+//
+// cratestack#798: only a SUCCESSFUL resolution stays cached. A plain
+// `??=` never re-evaluates once the field holds a settled *rejected*
+// future, so one transient failure — a wasm asset that 404s on web, a
+// vendored library that was not there yet — would brick every later
+// request in the isolate, replaying the same error forever instead of
+// giving the next caller a fresh attempt. `onError` clears the cache so
+// it can retry, and rethrows with the original stack trace so nothing is
+// swallowed. Same rule, for the same reason, as the generated TypeScript
+// RPC runtime's `resolveCodec()` and `cratestack_cbor`'s own
+// `createCborCodec()`.
+Future<cratestack_cbor.CratestackCborCodec>? _cratestackCborCodecFuture;
+
+Future<cratestack_cbor.CratestackCborCodec> _cratestackCborCodec() {
+  return _cratestackCborCodecFuture ??= cratestack_cbor
+      .createCborCodec()
+      .onError<Object>((error, stackTrace) {
+        // Hung off the future rather than written as a `try`/`catch`
+        // around the call so it cannot run before the `??=` has
+        // assigned: an `onError` callback is always asynchronous,
+        // whereas a `catch` body fires synchronously for anything thrown
+        // before the factory's first `await`, and the assignment would
+        // then immediately re-cache the very failure it just cleared.
+        _cratestackCborCodecFuture = null;
+        Error.throwWithStackTrace(error, stackTrace);
+      });
+}
+
+/// The wire format a request body is written in and an `Accept` header
+/// prefers. Responses are always decoded by their own `Content-Type`, so an
+/// adapter set to one format still reads the other.
+enum CratestackWireFormat {
+  /// `application/cbor`, the framework's default wire format.
+  cbor,
+
+  /// `application/json`.
+  json,
+}
+
+String _cratestackMimeOf(String? contentType) =>
+    (contentType ?? '').split(';').first.trim().toLowerCase();
+
+bool _isCborContentType(String? contentType) =>
+    _cratestackMimeOf(contentType) == 'application/cbor';
+
+bool _isJsonContentType(String? contentType) =>
+    _cratestackMimeOf(contentType) == 'application/json';
+
+/// Encodes a request body in [format]. `null` stays `null` (no body), and
+/// bytes are sent as they are.
+Future<Uint8List?> _encodeBody(CratestackWireFormat format, Object? body) async {
+  if (body == null) {
+    return null;
+  }
+  if (body is Uint8List) {
+    return body;
+  }
+  if (body is List<int>) {
+    return Uint8List.fromList(body);
+  }
+  switch (format) {
+    case CratestackWireFormat.json:
+      return Uint8List.fromList(utf8.encode(jsonEncode(body)));
+    case CratestackWireFormat.cbor:
+      final codec = await _cratestackCborCodec();
+      return codec.encodeJson(jsonEncode(body));
+  }
+}
+
+/// Decodes a CBOR body to the JSON-plain value graph the generated `fromWire`
+/// decoders expect.
+Future<Object?> _decodeCbor(Uint8List bytes) async {
+  // `cratestack_cbor`'s wire boundary is JSON text, and every generated
+  // `toWire()`/`fromWire` already produces/expects JSON-plain values
+  // (ISO-8601 strings for `DateTime`, `List<int>` for `Bytes`, decimal and
+  // `BigInt` text), so `jsonDecode` alone gives the `Map<String, Object?>`
+  // shape the decoders expect.
+  final codec = await _cratestackCborCodec();
+  return jsonDecode(codec.decodeJson(bytes));
+}
+
+/// Decodes a response body by its `Content-Type`: an empty body is `null`,
+/// CBOR and JSON are decoded, anything else is a [FormatException].
+Future<Object?> _decodeBody(Uint8List bytes, String? contentType, String owner) async {
+  if (bytes.isEmpty) {
+    return null;
+  }
+  if (_isCborContentType(contentType)) {
+    return _decodeCbor(bytes);
+  }
+  if (_isJsonContentType(contentType)) {
+    return jsonDecode(utf8.decode(bytes));
+  }
+  throw FormatException(
+    'Unsupported response Content-Type $contentType for $owner',
+  );
+}
+
+/// Best-effort decode of an HTTP error answer's body. Never throws: a body
+/// that is empty or does not decode is `null`, and a body of any other
+/// `Content-Type` (a proxy's plain-text 502, say) is its text.
+Future<Object?> _decodeErrorBody(Uint8List bytes, String? contentType) async {
+  if (bytes.isEmpty) {
+    return null;
+  }
+  try {
+    if (_isCborContentType(contentType) || _isJsonContentType(contentType)) {
+      return await _decodeBody(bytes, contentType, 'an error body');
+    }
+    final text = utf8.decode(bytes, allowMalformed: true).trim();
+    return text.isEmpty ? null : text;
+  } catch (_) {
+    return null;
+  }
+}
+
+/// Layers header maps, later layers winning. Header names are
+/// case-insensitive, so `accept` from a later layer replaces `Accept` from an
+/// earlier one instead of sitting beside it.
+Map<String, String> _mergeHeaders(List<Map<String, String>?> layers) {
+  final merged = <String, String>{};
+  final keyByLowerName = <String, String>{};
+  for (final layer in layers) {
+    if (layer == null) {
+      continue;
+    }
+    for (final entry in layer.entries) {
+      final lowerName = entry.key.toLowerCase();
+      final earlier = keyByLowerName[lowerName];
+      if (earlier != null) {
+        merged.remove(earlier);
+      }
+      keyByLowerName[lowerName] = entry.key;
+      merged[entry.key] = entry.value;
+    }
+  }
+  return merged;
+}
+
+/// `baseUri` + `path` + `query`, joined by concatenation rather than RFC 3986
+/// resolution: a base URI with a path prefix (`https://host/v1`) keeps it, and
+/// a `path` starting with `/` does not discard it. [query] is an already
+/// percent-encoded query string.
+Uri _resolveUri(Uri baseUri, String path, String? query) {
+  final basePath = baseUri.path.endsWith('/')
+      ? baseUri.path.substring(0, baseUri.path.length - 1)
+      : baseUri.path;
+  final tail = path.startsWith('/') ? path : '/$path';
+  final origin = '${baseUri.scheme}://${baseUri.authority}';
+  final suffix = (query == null || query.isEmpty) ? '' : '?$query';
+  return Uri.parse('$origin$basePath$tail$suffix').normalizePath();
+}
+
+// -----------------------------------------------------------------------------
+// Compact wire keys (opt-in)
+//
+// With `compact:` hooks handed to an adapter, a CBOR call advertises that it
+// can read integer-keyed bodies (`Accept: <compact type>, <plain types>` plus
+// `Cratestack-Contract`, the selector of this client's contract for the op),
+// turns a compact response back into the plain bytes the normal decoder
+// reads, and, only once that op has answered compact, sends its own request
+// body compact too, so an older server is never sent a body it cannot read.
+// Without hooks (`compact: null`, the default) none of this runs and the wire
+// is the one the adapter always spoke. JSON stays named; so do error bodies
+// and `/rpc/batch` frames.
+//
+// The hooks are plain functions of bytes and this runtime depends on no
+// CrateStack API for them. An app builds them from `cratestackKeyTables`:
+//
+//   final keys = await createCompactKeys(cratestackKeyTables);
+//   final hooks = CratestackCompactHooks(
+//     toCompact: keys.toCompact,
+//     fromCompact: keys.fromCompact,
+//     selector: keys.selector,
+//   );
+// -----------------------------------------------------------------------------
+
+/// Rewrites a CBOR body between its named and its compact (integer-keyed)
+/// form for one op. [direction] is `'request'` or `'response'`.
+typedef CratestackCompactBytes = Uint8List Function(
+  Uint8List bytes,
+  String op,
+  String direction,
+);
+
+/// The `Cratestack-Contract` header value for [op]'s current contract, or
+/// `null` when the key tables do not know the op (it then stays named).
+typedef CratestackCompactSelector = String? Function(String op);
+
+/// The three functions that put an adapter on compact wire keys.
+class CratestackCompactHooks {
+  const CratestackCompactHooks({
+    required this.toCompact,
+    required this.fromCompact,
+    required this.selector,
+  });
+
+  /// Named CBOR to compact CBOR (a request body).
+  final CratestackCompactBytes toCompact;
+
+  /// Compact CBOR to named CBOR (a response body or one `cbor-seq` item).
+  final CratestackCompactBytes fromCompact;
+
+  /// The `Cratestack-Contract` value for an op, or `null` to stay named.
+  final CratestackCompactSelector selector;
+}
+
+const String _cratestackCompactCbor = 'application/vnd.cratestack.compact+cbor';
+const String _cratestackCompactCborSeq =
+    'application/vnd.cratestack.compact+cbor-seq';
+const int _cratestackRememberedEncodings = 512;
+
+/// What one adapter has learned: which ops answered compact, and the encoding
+/// each `Idempotency-Key` was first sent in. Held per adapter (the adapters
+/// are `const`, so it lives in an [Expando], not a field).
+final class _CompactMemory {
+  final Set<String> compactOps = <String>{};
+  final Map<String, bool> encodingByIdempotencyKey = <String, bool>{};
+}
+
+final Expando<_CompactMemory> _cratestackCompactMemory =
+    Expando<_CompactMemory>('cratestackCompactMemory');
+
+/// The compact plan of one call.
+final class _CompactCall {
+  _CompactCall._(
+    this._hooks,
+    this._memory,
+    this.op,
+    this._selector,
+    this._sendCompact,
+    this.stream,
+  );
+
+  final CratestackCompactHooks _hooks;
+  final _CompactMemory _memory;
+  final String op;
+  final String _selector;
+  final bool _sendCompact;
+
+  /// A `cbor-seq` call: its response media type is the compact sequence.
+  final bool stream;
+
+  /// The compact media type a response must carry to be transcoded.
+  String get responseType =>
+      stream ? _cratestackCompactCborSeq : _cratestackCompactCbor;
+
+  /// `Accept` with the compact type ahead of [plain], the adapter's own list.
+  String accept(String plain) => '$responseType, $plain';
+
+  /// `Cratestack-Contract`, and the compact `Content-Type` once this op has
+  /// answered compact and the call has a body.
+  Map<String, String> headers({required bool hasBody}) => <String, String>{
+    'Cratestack-Contract': _selector,
+    if (_sendCompact && hasBody) 'Content-Type': _cratestackCompactCbor,
+  };
+
+  /// The request body, transcoded when this op already answered compact.
+  Uint8List? encode(Uint8List? body) {
+    if (!_sendCompact || body == null) {
+      return body;
+    }
+    return _hooks.toCompact(body, op, 'request');
+  }
+
+  /// Whether a response with [contentType] is compact.
+  bool matches(String? contentType) =>
+      _cratestackMimeOf(contentType) == responseType;
+
+  /// A compact response body (or one `cbor-seq` item) as plain CBOR; records
+  /// that this op answers compact.
+  Uint8List decode(Uint8List bytes) {
+    _memory.compactOps.add(op);
+    return _hooks.fromCompact(bytes, op, 'response');
+  }
+}
+
+/// The compact plan for one call of [owner], or `null` to stay named: no
+/// hooks, the JSON format, or an op the hooks' tables do not know.
+_CompactCall? _cratestackCompactBegin(
+  Object owner,
+  CratestackCompactHooks? hooks,
+  CratestackWireFormat format,
+  String op, {
+  bool stream = false,
+  String? idempotencyKey,
+}) {
+  if (hooks == null || format != CratestackWireFormat.cbor) {
+    return null;
+  }
+  final selector = hooks.selector(op);
+  if (selector == null) {
+    return null;
+  }
+  final memory = _cratestackCompactMemory[owner] ??= _CompactMemory();
+  // A retry under the same `Idempotency-Key` reuses the first attempt's encoding.
+  final remembered = idempotencyKey == null
+      ? null
+      : memory.encodingByIdempotencyKey[idempotencyKey];
+  final sendCompact = remembered ?? memory.compactOps.contains(op);
+  if (idempotencyKey != null && remembered == null) {
+    // A full table evicts the oldest first attempt (a Dart map keeps insertion
+    // order): a prompt retry stays pinned, and new keys keep negotiating.
+    if (memory.encodingByIdempotencyKey.length >= _cratestackRememberedEncodings) {
+      memory.encodingByIdempotencyKey.remove(memory.encodingByIdempotencyKey.keys.first);
+    }
+    memory.encodingByIdempotencyKey[idempotencyKey] = sendCompact;
+  }
+  return _CompactCall._(hooks, memory, op, selector, sendCompact, stream);
+}
+
+/// A versioned, caller-owned request snapshot. Persist [toJson] before send.
+/// It contains inner wire bytes, never a transport's sealed envelope.
+final class CratestackPreparedCall {
+  CratestackPreparedCall._(this._data);
+  final Map<String, Object?> _data;
+
+  /// Restore a snapshot previously produced by [toJson].
+  factory CratestackPreparedCall.fromJson(Map<String, Object?> json) {
+    final encoded = jsonEncode(json);
+    if (utf8.encode(encoded).length > 16 * 1024 * 1024 || json['version'] != 1) {
+      throw const FormatException('Unsupported or oversized prepared call');
+    }
+    // Copy through JSON so subsequent caller mutations cannot change the call.
+    return CratestackPreparedCall._(jsonDecode(encoded) as Map<String, dynamic>);
+  }
+
+  Map<String, Object?> toJson() =>
+      (jsonDecode(jsonEncode(_data)) as Map<String, dynamic>);
+}
+
+const _preparedHeaders = <String>{
+  'idempotency-key', 'if-match', 'accept', 'content-type', 'cratestack-contract',
+};
+
+String? _effectivePreparedKey(String? option, List<Map<String, String>?> layers) {
+  var key = option;
+  for (final layer in layers) {
+    if (layer == null) continue;
+    for (final entry in layer.entries) {
+      if (entry.key.toLowerCase() != 'idempotency-key') continue;
+      if (key != null && key != entry.value) throw const FormatException('Conflicting idempotency keys');
+      key = entry.value;
+    }
+  }
+  return key;
+}
+
+CratestackPreparedCall _prepareSnapshot(
+  CratestackHttpRequest request, String op, String? selector, CratestackWireFormat format,
+) {
+  if (request.uri.userInfo.isNotEmpty) {
+    throw const FormatException('Prepared URL must not contain userinfo');
+  }
+  if ((request.body?.length ?? 0) > 8 * 1024 * 1024) {
+    throw const FormatException('Prepared body exceeds 8 MiB');
+  }
+  final contract = cratestackOpContracts[op];
+  if (contract == null) throw const FormatException('Unknown prepared operation');
+  return CratestackPreparedCall.fromJson(<String, Object?>{
+    'version': 1, 'method': request.method, 'uri': request.uri.toString(),
+    'headers': <String, String>{for (final e in request.headers.entries)
+      if (_preparedHeaders.contains(e.key.toLowerCase())) e.key: e.value}, 'body': request.body == null ? null : base64Encode(request.body!),
+    'op': op, 'contract': contract, 'clientContract': cratestackClientContractSha256,
+    'keyTables': base64Encode(cratestackKeyTables),
+    'selector': selector,
+    'format': format == CratestackWireFormat.json ? 'json' : 'cbor',
+  });
+}
+
+(CratestackHttpRequest, _CompactCall?) _restoreSnapshot(
+  Object owner, CratestackPreparedCall call, Uri baseUri,
+  CratestackCompactHooks? hooks, CratestackWireFormat format,
+  String? Function(String, Uri) resolveOp, Future<void>? abort, String? authorization,
+  {bool useRustTransport = false, Map<String, String>? extraHeaders}
+) {
+  final data = call._data;
+  try {
+    const fields = <String>{'version', 'method', 'uri', 'headers', 'body',
+      'op', 'contract', 'clientContract', 'keyTables', 'selector', 'format'};
+    if (data.length != fields.length || !data.keys.every(fields.contains)) {
+      throw const FormatException('Invalid prepared fields');
+    }
+    final method = data['method'] as String;
+    final uri = Uri.parse(data['uri'] as String);
+    if (uri.userInfo.isNotEmpty || baseUri.userInfo.isNotEmpty) {
+      throw const FormatException('Prepared URL must not contain userinfo');
+    }
+    final op = data['op'] as String;
+    final selector = data['selector'] as String?;
+    final headers = Map<String, String>.from(data['headers'] as Map);
+    final names = <String>{};
+    for (final entry in headers.entries) {
+      final name = entry.key.toLowerCase();
+      if (!_preparedHeaders.contains(name) || !names.add(name) || utf8.encode(entry.value).length > 8192) {
+        throw const FormatException('Invalid prepared header');
+      }
+    }
+    String? header(String name) {
+      for (final entry in headers.entries) {
+        if (entry.key.toLowerCase() == name) return entry.value;
+      }
+      return null;
+    }
+    final contentType = header('content-type');
+    final accept = header('accept');
+    final plain = format == CratestackWireFormat.json ? 'application/json' : 'application/cbor';
+    final expectedAccept = format == CratestackWireFormat.json ? 'application/json' :
+        selector == null ? 'application/cbor, application/json;q=0.9' :
+        '$_cratestackCompactCbor, application/cbor, application/json;q=0.9';
+    if (header('cratestack-contract') != selector ||
+        (contentType != null && contentType != plain && !(selector != null && contentType == _cratestackCompactCbor)) ||
+        (accept != expectedAccept && !(format == CratestackWireFormat.json && accept == null))) {
+      throw const FormatException('Invalid prepared media or selector');
+    }
+    final bodyText = data['body'] as String?;
+    if (bodyText != null && bodyText.length > 11184812) throw const FormatException();
+    final body = bodyText == null ? null : base64Decode(bodyText);
+    if (bodyText != null && base64Encode(body!) != bodyText) throw const FormatException('Invalid prepared body');
+    if (body != null && contentType == null) throw const FormatException('Missing prepared content type');
+    if (body != null && format == CratestackWireFormat.json) jsonDecode(utf8.decode(body));
+    if (body != null && format == CratestackWireFormat.cbor && _cratestackSkipCborItem(body, 0, 0) != body.length) {
+      throw const FormatException('Invalid prepared CBOR');
+    }
+    if (!const ['POST', 'PUT', 'PATCH', 'DELETE'].contains(method) || data['version'] != 1 || (body?.length ?? 0) > 8 * 1024 * 1024 ||
+        uri.scheme != baseUri.scheme || uri.authority != baseUri.authority ||
+        (baseUri.path.isNotEmpty && !uri.path.startsWith('${baseUri.path.replaceAll(RegExp(r'/+$'), '')}/')) ||
+        data['format'] != (format == CratestackWireFormat.json ? 'json' : 'cbor') ||
+        !headers.entries.any((e) => e.key.toLowerCase() == 'idempotency-key' && e.value.isNotEmpty) ||
+        resolveOp(method, uri) != op || cratestackOpContracts[op] != data['contract'] ||
+        cratestackClientContractSha256 != data['clientContract'] ||
+        data['keyTables'] != base64Encode(cratestackKeyTables) ||
+        (selector != null && (format != CratestackWireFormat.cbor ||
+            hooks == null || hooks.selector(op) != selector))) {
+      throw const FormatException('Prepared call contract or route mismatch');
+    }
+    // Per-attempt headers an ordinary call carries: the schema digest, then
+    // the caller's (a tenant, a trace id). None may change the frozen identity
+    // or media headers above.
+    if (cratestackSchemaSha256 != null) {
+      headers['x-cratestack-schema-sha'] = cratestackSchemaSha256!;
+    }
+    for (final entry in (extraHeaders ?? const <String, String>{}).entries) {
+      final name = entry.key.toLowerCase();
+      if (_preparedHeaders.contains(name)) {
+        throw const FormatException('Per-attempt headers cannot replace a prepared header');
+      }
+      headers.removeWhere((key, _) => key.toLowerCase() == name);
+      headers[entry.key] = entry.value;
+    }
+    if (authorization != null) {
+      headers.removeWhere((key, _) => key.toLowerCase() == 'authorization');
+      headers['Authorization'] = authorization;
+    }
+    final plan = selector == null ? null : _CompactCall._(
+      hooks!, _cratestackCompactMemory[owner] ??= _CompactMemory(),
+      op, selector, false, false,
+    );
+    return (CratestackHttpRequest(method: method, uri: uri, headers: headers,
+      body: body, abort: abort, extra: <String, Object?>{
+        if (useRustTransport) 'cratestackUseRustTransport': true,
+      }), plan);
+  } on FormatException { rethrow; } catch (_) {
+    throw const FormatException('Invalid prepared call');
+  }
+}
+
+// -----------------------------------------------------------------------------
+// What an error answer says beyond its code (cratestack#1208, cratestack#1243)
+//
+// An `AuthProvider` refusal keeps the fixed code (`UNAUTHORIZED`, RPC
+// `unauthenticated`) and may add top-level members to the error body, a
+// `details` member and `WWW-Authenticate` challenges. These two helpers read
+// them for `CratestackRestException` and `CratestackRpcException`.
+// -----------------------------------------------------------------------------
+
+/// The members of an error body that are not `code`, `message` or `details`,
+/// unmodifiable and in wire order. Empty when [body] is not a map. Nothing is
+/// dropped: a member this client does not know is kept here, as decoded.
+Map<String, Object?> _cratestackExtraErrorMembers(Object? body) {
+  if (body is! Map) {
+    return const <String, Object?>{};
+  }
+  const reserved = <String>{'code', 'message', 'details'};
+  return Map<String, Object?>.unmodifiable(<String, Object?>{
+    for (final entry in body.entries)
+      if (!reserved.contains(entry.key.toString()))
+        entry.key.toString(): entry.value,
+  });
+}
+
+/// The `WWW-Authenticate` value of an answer's [headers], raw and unparsed,
+/// as a list: empty when there is none. [CratestackHttpResponse] joins a
+/// repeated header with `, `, so two challenges sent as two header lines
+/// arrive as one entry holding both.
+List<String> _cratestackChallenges(Map<String, String> headers) {
+  for (final entry in headers.entries) {
+    final value = entry.value;
+    if (entry.key.toLowerCase() == 'www-authenticate' && value.isNotEmpty) {
+      return List<String>.unmodifiable(<String>[value]);
+    }
+  }
+  return const <String>[];
+}
+
+// -----------------------------------------------------------------------------
+// A step-up refusal, typed (cratestack#1244)
+//
+// An operation that requires a fresher or stronger authentication than the
+// caller presented is refused with an `AuthRefusal` whose extra member
+// `error` is `insufficient_user_authentication` (RFC 9470): HTTP 401 on REST,
+// code `unauthenticated` on RPC, unary or in a batch frame. Its `details` say
+// what the operation requires and which requirement the caller failed.
+// -----------------------------------------------------------------------------
+
+/// The extra member `error` of a step-up refusal (RFC 9470).
+const String cratestackInsufficientUserAuthentication =
+    'insufficient_user_authentication';
+
+/// What a step-up refusal asks for: read from the exception's `stepUp`. Each
+/// requirement is present only when the refused operation declares it.
+class StepUpRequired {
+  const StepUpRequired({
+    this.maxAge,
+    this.acrValues = const <String>[],
+    this.amr = const <String>[],
+    this.unmet = const <String>[],
+  });
+
+  /// The longest time, in seconds, since the caller last authenticated.
+  final int? maxAge;
+
+  /// The authentication context classes the operation accepts.
+  final List<String> acrValues;
+
+  /// The authentication methods the operation requires.
+  final List<String> amr;
+
+  /// Which requirements the caller failed: a subset of `max_age`, `acr` and
+  /// `amr`.
+  final List<String> unmet;
+
+  @override
+  String toString() =>
+      'StepUpRequired(maxAge=$maxAge, acrValues=$acrValues, amr=$amr, unmet=$unmet)';
+}
+
+/// Reads a step-up refusal once the transport's own test ([refused]: a 401,
+/// or `unauthenticated`) passed. Never throws: a missing or mistyped field
+/// reads as absent or empty.
+StepUpRequired? _cratestackStepUp(
+  bool refused,
+  Object? details,
+  Map<String, Object?> extra,
+) {
+  if (!refused || extra['error'] != cratestackInsufficientUserAuthentication) {
+    return null;
+  }
+  final map = details is Map ? details : const <Object?, Object?>{};
+  List<String> strings(String name) {
+    final value = map[name];
+    return value is List
+        ? List<String>.unmodifiable(value.whereType<String>())
+        : const <String>[];
+  }
+
+  final maxAge = map['max_age'];
+  return StepUpRequired(
+    maxAge: maxAge is int && maxAge >= 0 ? maxAge : null,
+    acrValues: strings('acr_values'),
+    amr: strings('amr'),
+    unmet: strings('unmet'),
+  );
+}
+
+/// Runs [call]; when it fails with a step-up refusal, hands the refusal to
+/// [reprove] and, when that answers `true` (the user authenticated again),
+/// runs [call] **once** more and returns what it gives, even a second
+/// refusal. Never loops.
+///
+/// [reprove] answers `false` when the user declined or the re-proof failed;
+/// the first refusal is then rethrown. Any other error, and an error thrown
+/// by [reprove] itself, propagates as it is.
+///
+/// ```dart
+/// final receipt = await retryAfterStepUp(
+///   () => api.procedures.transfer(args),
+///   (stepUp) => session.reauthenticate(maxAge: stepUp.maxAge),
+/// );
+/// ```
+Future<T> retryAfterStepUp<T>(
+  Future<T> Function() call,
+  Future<bool> Function(StepUpRequired stepUp) reprove,
+) async {
+  try {
+    return await call();
+  } catch (error) {
+    final stepUp = _cratestackStepUpOf(error);
+    if (stepUp == null || !await reprove(stepUp)) {
+      rethrow;
+    }
+  }
+  return call();
+}
+
+typedef CratestackValueMap = Map<String, Object?>;
+
+CratestackValueMap cratestackAsValueMap(Object? value) {
+  if (value is CratestackValueMap) {
+    return value;
+  }
+  final map = value as Map;
+  return map.map((key, entry) => MapEntry(key.toString(), entry as Object?));
+}
+
+List<Object?> cratestackAsValueList(Object? value) {
+  if (value is List<Object?>) {
+    return value;
+  }
+  return List<Object?>.from(value as List);
+}
+
+Object cratestackRequireWireValue(String ownerName, String fieldName, Object? value) {
+  if (value == null) {
+    throw FormatException('Missing required field $ownerName.$fieldName');
+  }
+  return value;
+}
+
+/// Decodes a `BigInt` wire value (ADR 0019): a canonical decimal string such
+/// as `"9223372036854775807"`, never a number. `BigInt.parse` is exact on the
+/// VM, dart2js and dart2wasm; `int.parse` and `jsonDecode` round past 2^53 on
+/// dart2js, which is why the wire form is a string at all.
+///
+/// A number at a `BigInt` key throws rather than being coerced: it means a
+/// server from before the `BigInt` cutover, whose value may already have been
+/// rounded, so accepting it would hide the corruption. [site] names the
+/// `Model.field` the value was read for. A string that is not canonical
+/// (`+5`, `007`, `-0`, whitespace, `0x1F`) is refused too, because
+/// `BigInt.parse` would silently turn some of those into a different number.
+BigInt cratestackDecodeBigInt(Object? value, String site) {
+  if (value is! String) {
+    throw FormatException(
+      '$site: expected a BigInt as a canonical decimal string, '
+      'got ${value.runtimeType} ($value)',
+    );
+  }
+  if (!_cratestackCanonicalBigInt.hasMatch(value)) {
+    throw FormatException(
+      '$site: expected a BigInt as a canonical decimal string',
+      value,
+    );
+  }
+  return BigInt.parse(value);
+}
+
+final RegExp _cratestackCanonicalBigInt = RegExp(r'^(0|-?[1-9][0-9]*)$');
+
+/// Folds a typed computed-params class's already-`.toWire()`'d map
+/// (same call-site convention as `rest-runtime.dart.j2`'s
+/// `cratestackWithComputedParams`) into an RPC `model.<X>.get`/
+/// `model.<X>.list` input frame under the `computedParams` key, encoded
+/// as raw JSON text rather than left as a nested object
+/// (`docs/design/computed-fields.md`'s "Why `computedParams` is a
+/// `String`" section: `/rpc/batch` re-encodes each frame's opaque
+/// `input` through `serde_json::Value` before re-dispatching it, and a
+/// nested `Option`-bearing object doesn't survive that round trip —
+/// a `String` field does). Absent/empty `computedParams` leaves `input`
+/// untouched — never adds an empty `computedParams` key.
+Map<String, Object?> cratestackWithRpcComputedParams(
+  Map<String, Object?> input,
+  Map<String, Object?>? computedParams,
+) {
+  if (computedParams == null || computedParams.isEmpty) {
+    return input;
+  }
+  return <String, Object?>{
+    ...input,
+    'computedParams': jsonEncode(computedParams),
+  };
+}
+
+/// Stable gRPC-style error codes the server emits. Open string union
+/// at runtime — a future server-side code lands as a plain string
+/// rather than crashing the client.
+class CratestackRpcErrorCodes {
+  static const String invalidArgument = 'invalid_argument';
+  static const String unauthenticated = 'unauthenticated';
+  static const String permissionDenied = 'permission_denied';
+  static const String notFound = 'not_found';
+  static const String conflict = 'conflict';
+  /// An `@isolation` procedure's transaction was rolled back after
+  /// repeated concurrent-update conflicts. Nothing was committed; sending
+  /// the same call again (even under the same `Idempotency-Key`) is
+  /// expected to succeed. Unlike [conflict], which a retry repeats.
+  static const String aborted = 'aborted';
+  static const String failedPrecondition = 'failed_precondition';
+  static const String resourceExhausted = 'resource_exhausted';
+  static const String unavailable = 'unavailable';
+  static const String deadlineExceeded = 'deadline_exceeded';
+  static const String canceled = 'canceled';
+  static const String internal = 'internal';
+}
+
+/// Wire shape of a single batch request frame. Mirrors
+/// `cratestack_core::rpc::RpcRequest`.
+class RpcRequest {
+  const RpcRequest({
+    required this.id,
+    required this.op,
+    required this.input,
+    this.idem,
+  });
+
+  final int id;
+  final String op;
+  final Object? input;
+  final String? idem;
+
+  Map<String, Object?> toWire() => {
+        'id': id,
+        'op': op,
+        'input': input,
+        if (idem != null) 'idem': idem,
+      };
+}
+
+/// Wire shape of a single batch response frame. Mirrors
+/// `cratestack_core::rpc::RpcResponseFrame`.
+class RpcResponseFrame {
+  const RpcResponseFrame({
+    required this.id,
+    this.output,
+    this.error,
+  });
+
+  final int id;
+  final Object? output;
+  final RpcErrorBody? error;
+
+  factory RpcResponseFrame.fromWire(Object? value) {
+    final map = cratestackAsValueMap(value);
+    final error = map['error'];
+    return RpcResponseFrame(
+      id: (map['id'] as num).toInt(),
+      output: map['output'],
+      error: error == null ? null : RpcErrorBody.fromWire(error),
+    );
+  }
+}
+
+/// Wire shape of an RPC error body. Mirrors
+/// `cratestack_core::rpc::RpcErrorBody`.
+class RpcErrorBody {
+  const RpcErrorBody({
+    required this.code,
+    required this.message,
+    this.details,
+    this.extra = const <String, Object?>{},
+  });
+
+  final String code;
+  final String message;
+  final Object? details;
+
+  /// Every top-level member of the body other than `code`, `message` and
+  /// `details`, as decoded: what an `AuthProvider` refusal adds, such as
+  /// `{'error': 'attestation_expired'}` (cratestack#1208). Empty when the
+  /// server sent none; a member this client does not know is kept, never
+  /// dropped.
+  final Map<String, Object?> extra;
+
+  factory RpcErrorBody.fromWire(Object? value) {
+    if (value is! Map) {
+      return RpcErrorBody(
+        code: CratestackRpcErrorCodes.internal,
+        message: value?.toString() ?? 'unknown RPC error',
+      );
+    }
+    final map = value;
+    return RpcErrorBody(
+      code: (map['code'] as String?) ?? CratestackRpcErrorCodes.internal,
+      message: (map['message'] as String?) ?? '',
+      details: map['details'],
+      extra: _cratestackExtraErrorMembers(map),
+    );
+  }
+}
+
+/// Thrown by an RPC adapter when a remote call fails with an
+/// `RpcErrorBody` payload. Carries the gRPC-style `code` directly so
+/// callers can switch on it without parsing.
+///
+/// A refusal from the server's `AuthProvider` keeps its fixed code
+/// (`unauthenticated` or `permission_denied`); what it adds is in [details],
+/// [extra] and [challenges]:
+///
+/// ```dart
+/// on CratestackRpcException catch (e) {
+///   if (e.code == CratestackRpcErrorCodes.unauthenticated &&
+///       e.extra['error'] == 'attestation_expired') {
+///     // renew the credential and send again, once
+///   }
+/// }
+/// ```
+class CratestackRpcException implements Exception {
+  CratestackRpcException({
+    required this.status,
+    required this.body,
+    this.headers = const <String, String>{},
+  });
+
+  final int status;
+  final RpcErrorBody body;
+
+  /// The answer's headers, names lower-cased (a repeated header joined with
+  /// `, `). Empty for an error that arrived inside a batch frame or as a
+  /// stream's final item, which have no headers of their own.
+  final Map<String, String> headers;
+
+  String get code => body.code;
+  String get message => body.message;
+  Object? get details => body.details;
+
+  /// [RpcErrorBody.extra]: the body's members beyond `code`, `message` and
+  /// `details`.
+  Map<String, Object?> get extra => body.extra;
+
+  /// The answer's `WWW-Authenticate` value, raw and unparsed; empty when
+  /// there is none. A transport joins two challenge lines into one entry.
+  List<String> get challenges => _cratestackChallenges(headers);
+
+  /// The step-up refusal this answer is (cratestack#1244): code
+  /// `unauthenticated` and the [extra] member `error` set to
+  /// `insufficient_user_authentication`, read from [details]; a batch frame
+  /// reads the same. `null` for any other error; reading never throws.
+  StepUpRequired? get stepUp => _cratestackStepUp(
+        code == CratestackRpcErrorCodes.unauthenticated,
+        details,
+        extra,
+      );
+
+  @override
+  String toString() =>
+      'CratestackRpcException(status=$status, code=${body.code}, message=${body.message})';
+}
+
+/// What [retryAfterStepUp] reads: the step-up refusal of a
+/// [CratestackRpcException], `null` for anything else.
+StepUpRequired? _cratestackStepUpOf(Object error) =>
+    error is CratestackRpcException ? error.stepUp : null;
+
+/// Per-call settings for the RPC adapter.
+class CratestackRpcCallOptions {
+  const CratestackRpcCallOptions({
+    this.headers = const <String, String>{},
+    this.idempotencyKey,
+    this.abort,
+    this.extra = const <String, Object?>{},
+  });
+
+  /// Extra request headers; they win over the adapter's own.
+  final Map<String, String> headers;
+
+  /// Sent as `Idempotency-Key`, so a retried mutation is applied once.
+  final String? idempotencyKey;
+
+  /// Completing this future cancels the call; the adapter then throws a
+  /// [CratestackTransportAborted].
+  final Future<void>? abort;
+
+  /// Per-call transport attributes, merged into
+  /// [CratestackHttpRequest.extra] (never on the wire). They are not kept by
+  /// `prepareCall`: a prepared call persists no `extra`.
+  final Map<String, Object?> extra;
+}
+
+/// Adapter interface — implementations carry the actual transport
+/// (HTTP through a [CratestackHttpTransport], FFI to the Rust runtime,
+/// in-process stub, etc.) and the codec choice. The generated API classes
+/// only know about this interface; swapping JSON for CBOR is a constructor
+/// flip.
+abstract interface class CratestackRpcAdapter {
+  /// POST /rpc/{op_id} — unary call.
+  Future<Object?> call(
+    String opId,
+    Object? input, {
+    CratestackRpcCallOptions? options,
+  });
+
+  /// POST /rpc/batch — batched calls.
+  Future<List<RpcResponseFrame>> batch(
+    List<RpcRequest> requests, {
+    CratestackRpcCallOptions? options,
+  });
+
+  /// POST /rpc/{op_id} — sequence-returning call.
+  Stream<Object?> stream(
+    String opId,
+    Object? input, {
+    CratestackRpcCallOptions? options,
+  });
+}
+
+// Shared single-item CBOR structural walker.
+const int _cratestackCborMaxDepth = 256;
+
+/// The offset just past the item starting at [offset], or `null` when more
+/// bytes are needed. Throws a [FormatException] for bytes no further data can
+/// make valid.
+int? _cratestackSkipCborItem(Uint8List bytes, int offset, int depth) {
+  if (depth > _cratestackCborMaxDepth) {
+    throw const FormatException('cbor-seq item is nested too deeply');
+  }
+  if (offset >= bytes.length) {
+    return null;
+  }
+  final initial = bytes[offset];
+  final major = initial >> 5;
+  final info = initial & 0x1f;
+  final cursor = offset + 1;
+
+  if (major == 7) {
+    return _cratestackSkipSimple(bytes, cursor, info);
+  }
+  if (info == 31) {
+    if (major == 0 || major == 1 || major == 6) {
+      throw FormatException('major type $major cannot be indefinite-length');
+    }
+    return _cratestackSkipIndefinite(bytes, cursor, major, depth);
+  }
+  if (major == 0 || major == 1 || major == 6) {
+    final next = _cratestackSkipArgument(bytes, cursor, info);
+    if (next == null) return null;
+    return major == 6 ? _cratestackSkipCborItem(bytes, next, depth + 1) : next;
+  }
+  final argument = _cratestackReadArgument(bytes, cursor, info);
+  if (argument == null) {
+    return null;
+  }
+  final (value, next) = argument;
+  switch (major) {
+    case 2:
+    case 3:
+      final end = next + value;
+      if (end > bytes.length) return null;
+      if (major == 3) utf8.decode(bytes.sublist(next, end));
+      return end;
+    case 4:
+      return _cratestackSkipItems(bytes, next, value, depth);
+    case 5:
+      return _cratestackSkipItems(bytes, next, value * 2, depth);
+    default:
+      return _cratestackSkipCborItem(bytes, next, depth + 1);
+  }
+}
+
+int? _cratestackSkipItems(Uint8List bytes, int start, int count, int depth) {
+  var cursor = start;
+  for (var i = 0; i < count; i++) {
+    final end = _cratestackSkipCborItem(bytes, cursor, depth + 1);
+    if (end == null) {
+      return null;
+    }
+    cursor = end;
+  }
+  return cursor;
+}
+
+int? _cratestackSkipIndefinite(Uint8List bytes, int start, int major, int depth) {
+  var cursor = start;
+  while (true) {
+    if (cursor >= bytes.length) {
+      return null;
+    }
+    if (bytes[cursor] == 0xff) {
+      return cursor + 1;
+    }
+    if (major == 2 || major == 3) {
+      // RFC 8949 §3.2.3: chunks are definite-length strings of the same type.
+      if (bytes[cursor] >> 5 != major || (bytes[cursor] & 0x1f) == 31) {
+        throw const FormatException('malformed indefinite-length cbor string');
+      }
+    }
+    final end = _cratestackSkipCborItem(bytes, cursor, major == 2 || major == 3 ? depth : depth + 1);
+    if (end == null) {
+      return null;
+    }
+    cursor = end;
+    if (major == 5) {
+      final valueEnd = _cratestackSkipCborItem(bytes, cursor, depth + 1);
+      if (valueEnd == null) {
+        return null;
+      }
+      cursor = valueEnd;
+    }
+  }
+}
+
+int? _cratestackSkipSimple(Uint8List bytes, int cursor, int info) {
+  final int width;
+  if (info <= 23) {
+    return cursor;
+  } else if (info == 24) {
+    width = 1;
+  } else if (info == 25) {
+    width = 2;
+  } else if (info == 26) {
+    width = 4;
+  } else if (info == 27) {
+    width = 8;
+  } else if (info == 31) {
+    throw const FormatException('unexpected cbor break code');
+  } else {
+    throw FormatException('reserved cbor additional info $info');
+  }
+  if (cursor + width > bytes.length) return null;
+  if (info == 24 && bytes[cursor] < 32) throw const FormatException('invalid CBOR simple value');
+  return cursor + width;
+}
+
+int? _cratestackSkipArgument(Uint8List bytes, int cursor, int info) {
+  if (info <= 23) return cursor;
+  final width = switch (info) {
+    24 => 1, 25 => 2, 26 => 4, 27 => 8,
+    _ => throw FormatException('reserved cbor additional info $info'),
+  };
+  return cursor + width > bytes.length ? null : cursor + width;
+}
+
+/// `(value, offsetAfterArgument)`, or `null` when the argument's bytes have
+/// not all arrived.
+(int, int)? _cratestackReadArgument(Uint8List bytes, int cursor, int info) {
+  if (info <= 23) {
+    return (info, cursor);
+  }
+  final width = switch (info) {
+    24 => 1,
+    25 => 2,
+    26 => 4,
+    27 => 8,
+    _ => throw FormatException('reserved cbor additional info $info'),
+  };
+  if (cursor + width > bytes.length) {
+    return null;
+  }
+  // Past 2^53 a length is not exactly representable on every platform, and no
+  // real frame is that large.
+  if (width == 8 && (bytes[cursor] != 0 || bytes[cursor + 1] > 0x1f)) {
+    throw const FormatException('cbor-seq item length exceeds what is supported');
+  }
+  var value = 0;
+  for (var i = 0; i < width; i++) {
+    value = value * 256 + bytes[cursor + i];
+  }
+  return (value, cursor + width);
+}
+
+/// Decodes a `Uuid` wire value (cratestack#1359).
+///
+/// Over CBOR the server writes a `Uuid` as a 16-byte byte string. The
+/// `cratestack_cbor` bridge carries JSON text, which has no byte-string
+/// primitive, so it hands that over as a list of 16 integers (`[103, 229, ...]`)
+/// where a JSON server sends the canonical string. Both are accepted here: a
+/// [String] is returned unchanged, and a 16-integer list is formatted as the
+/// lowercase hyphenated `8-4-4-4-12` string.
+///
+/// Anything else throws a [FormatException] naming [site], the `Model.field`
+/// the value was read for. That includes a list of the wrong length and an
+/// index-keyed map (what an older `cratestack_cbor` web bridge produced for a
+/// byte string), because a silent wrong `Uuid` is worse than a loud failure.
+///
+/// Requests are not encoded to bytes: a `Uuid` is sent as text, and the server
+/// accepts text or bytes.
+String cratestackDecodeUuid(Object? value, String site) {
+  if (value is String) {
+    return value;
+  }
+  if (value is List && value.length == 16) {
+    final buffer = StringBuffer();
+    for (var index = 0; index < 16; index++) {
+      final byte = value[index];
+      if (byte is! int || byte < 0 || byte > 255) {
+        throw FormatException(
+          '$site: expected a Uuid as a string or 16 bytes, got a non-byte at index $index ($byte)',
+        );
+      }
+      if (index == 4 || index == 6 || index == 8 || index == 10) {
+        buffer.write('-');
+      }
+      buffer.write(byte.toRadixString(16).padLeft(2, '0'));
+    }
+    return buffer.toString();
+  }
+  final found = value is List ? 'a list of ${value.length} elements' : '${value.runtimeType}';
+  throw FormatException('$site: expected a Uuid as a string or 16 bytes, got $found');
+}
+
+bool _isCborSeqContentType(String? contentType) =>
+    _cratestackMimeOf(contentType) == 'application/cbor-seq';
+
+/// The RPC adapter, written once over a [CratestackHttpTransport].
+///
+/// It owns the headers, the CBOR/JSON choice and the dispatch on the answer's
+/// `Content-Type`, and the error mapping: an HTTP error answer becomes a
+/// [CratestackRpcException], a call that got no answer at all fails with a
+/// [CratestackTransportException]. The transport owns the connection. To use
+/// an HTTP client of your own, implement [CratestackHttpTransport]; to use
+/// fespalier's transport chain, wrap it:
+///
+/// ```dart
+/// final adapter = CratestackRpcHttpAdapter(
+///   CratestackFespalierTransport(transportChain),
+///   baseUri: Uri.parse('https://api.example.com'),
+/// );
+/// ```
+class CratestackRpcHttpAdapter implements CratestackRpcAdapter {
+  const CratestackRpcHttpAdapter(
+    this.transport, {
+    required this.baseUri,
+    this.format = CratestackWireFormat.cbor,
+    this.cborSeqDecoder,
+    this.compact,
+  });
+
+  final CratestackHttpTransport transport;
+
+  /// Scheme, authority and optional path prefix `/rpc/...` is joined onto:
+  /// `https://api.example.com` or `https://example.com/v1`.
+  final Uri baseUri;
+
+  /// The wire format of request bodies and the `Accept` preference.
+  final CratestackWireFormat format;
+
+  /// Makes the scanner that splits an `application/cbor-seq` answer into
+  /// items, one per `stream()` call. Defaults to [CratestackCborSeqScanner],
+  /// which is pure Dart.
+  final CborSeqDecoderHandle Function()? cborSeqDecoder;
+
+  /// Opts the adapter into compact wire keys (CBOR only; see
+  /// [CratestackCompactHooks]). `null`, the default, keeps the wire exactly
+  /// as it always was. `/rpc/batch` and error bodies stay named either way.
+  final CratestackCompactHooks? compact;
+
+  @override
+  Future<Object?> call(
+    String opId,
+    Object? input, {
+    CratestackRpcCallOptions? options,
+  }) async {
+    final plan = _cratestackCompactBegin(
+      this,
+      compact,
+      format,
+      opId,
+      idempotencyKey: _effectivePreparedKey(options?.idempotencyKey, [options?.headers]),
+    );
+    final response = await _post(
+      '/rpc/${Uri.encodeComponent(opId)}',
+      input,
+      accept: _acceptForUnary,
+      options: options,
+      idempotent: true,
+      compact: plan,
+    );
+    return _decodeSuccess(response, plan);
+  }
+
+  /// Encode a unary call before its first network write.
+  Future<CratestackPreparedCall> prepareCall(String opId, Object? input,
+      {CratestackRpcCallOptions? options}) async {
+    if (_effectivePreparedKey(options?.idempotencyKey, [options?.headers])?.isNotEmpty != true || opId == 'batch' || !cratestackOpContracts.containsKey(opId)) {
+      throw const FormatException('A known operation and idempotency key are required');
+    }
+    final plan = _cratestackCompactBegin(this, compact, format, opId,
+      idempotencyKey: _effectivePreparedKey(options?.idempotencyKey, [options?.headers]));
+    final wire = await _buildPost('/rpc/${Uri.encodeComponent(opId)}', input,
+      accept: _acceptForUnary, options: options, idempotent: true, compact: plan);
+    return _prepareSnapshot(wire, opId, plan?._selector, format);
+  }
+
+  /// Send persisted inner bytes without re-encoding or renegotiating them.
+  /// [headers] are per-attempt headers (never the frozen identity or media
+  /// ones); [authorization] replaces any `Authorization` among them.
+  Future<Object?> executePrepared(CratestackPreparedCall call,
+      {Future<void>? abort, String? authorization, Map<String, String>? headers}) async {
+    final (wire, plan) = _restoreSnapshot(this, call, baseUri, compact, format,
+      (method, uri) {
+        if (method != 'POST' || uri.hasQuery) return null;
+        final parts = uri.pathSegments;
+        if (parts.length < 2 || parts[parts.length - 2] != 'rpc') return null;
+        final op = parts.last;
+        if (op == 'batch') return null;
+        if (uri.path != _resolveUri(baseUri, '/rpc/${Uri.encodeComponent(op)}', null).path) return null;
+        return op;
+      }, abort, authorization, extraHeaders: headers);
+    return _decodeSuccess(await transport.send(wire), plan);
+  }
+
+  @override
+  Future<List<RpcResponseFrame>> batch(
+    List<RpcRequest> requests, {
+    CratestackRpcCallOptions? options,
+  }) async {
+    final response = await _post(
+      '/rpc/batch',
+      requests.map((r) => r.toWire()).toList(growable: false),
+      accept: _acceptForUnary,
+      options: options,
+    );
+    final frames = await _decodeSuccess(response, null) as List<dynamic>;
+    return frames
+        .map((frame) => RpcResponseFrame.fromWire(frame))
+        .toList(growable: false);
+  }
+
+  @override
+  Stream<Object?> stream(
+    String opId,
+    Object? input, {
+    CratestackRpcCallOptions? options,
+  }) async* {
+    final plan = _cratestackCompactBegin(this, compact, format, opId, stream: true);
+    final response = await _post(
+      '/rpc/${Uri.encodeComponent(opId)}',
+      input,
+      accept: format == CratestackWireFormat.json
+          ? 'application/json, application/cbor-seq;q=0.9'
+          : 'application/cbor-seq, application/cbor, application/json;q=0.9',
+      options: options,
+      compact: plan,
+    );
+    final responseType = response.headers['content-type'];
+    final compactItems = plan != null && plan.matches(responseType);
+    if (response.status >= 200 && response.status < 300 &&
+        (_isCborSeqContentType(responseType) || compactItems)) {
+      // Frame by frame: items are yielded as their bytes arrive, the body is
+      // never buffered.
+      final decoder = (cborSeqDecoder ?? CratestackCborSeqScanner.new)();
+      await for (final item in response.body.transform(
+        CborSeqStreamTransformer(decoder),
+      )) {
+        final tag = _cratestackReadLeadingTag(item);
+        if (tag != null && tag.$1 == cratestackRpcStreamErrorTag) {
+          // The stream-error sentinel is always the last item.
+          final error = await _decodeBody(
+            Uint8List.sublistView(item, tag.$2),
+            'application/cbor',
+            'CratestackRpcHttpAdapter',
+          );
+          throw CratestackRpcException(
+            status: response.status,
+            body: RpcErrorBody.fromWire(error),
+          );
+        }
+        // The in-band error item above is never compact; an output item is.
+        yield await _decodeBody(
+          compactItems ? plan.decode(item) : item,
+          'application/cbor',
+          'CratestackRpcHttpAdapter',
+        );
+      }
+      return;
+    }
+    // The server answered with one array (`application/cbor` or JSON).
+    final decoded = await _decodeSuccess(response, null);
+    if (decoded == null) {
+      return;
+    }
+    for (final item in decoded as List<dynamic>) {
+      yield item;
+    }
+  }
+
+  // Mirrors the retired JSON adapter, which sent no `Accept` on a unary call
+  // or a batch; the CBOR format states its preference.
+  String? get _acceptForUnary => format == CratestackWireFormat.json
+      ? null
+      : 'application/cbor, application/json;q=0.9';
+
+  Future<CratestackHttpResponse> _post(
+    String path,
+    Object? body, {
+    required String? accept,
+    required CratestackRpcCallOptions? options,
+    bool idempotent = false,
+    _CompactCall? compact,
+  }) async => transport.send(await _buildPost(path, body, accept: accept,
+    options: options, idempotent: idempotent, compact: compact));
+
+  Future<CratestackHttpRequest> _buildPost(
+    String path, Object? body, {required String? accept,
+    required CratestackRpcCallOptions? options, bool idempotent = false,
+    _CompactCall? compact,
+  }) async {
+    final plainBody = await _encodeBody(format, body);
+    final encoded = compact?.encode(plainBody) ?? plainBody;
+    return CratestackHttpRequest(
+        method: 'POST',
+        uri: _resolveUri(baseUri, path, null),
+        headers: _mergeHeaders([
+          <String, String>{
+            if (accept != null) 'Accept': compact?.accept(accept) ?? accept,
+            'Content-Type': format == CratestackWireFormat.json
+                ? 'application/json'
+                : 'application/cbor',
+            if (cratestackSchemaSha256 != null)
+              'x-cratestack-schema-sha': cratestackSchemaSha256!,
+            if (idempotent && options?.idempotencyKey != null)
+              'Idempotency-Key': options!.idempotencyKey!,
+          },
+          compact?.headers(hasBody: encoded != null),
+          options?.headers,
+        ]),
+        body: encoded,
+        abort: options?.abort,
+        extra: <String, Object?>{...?options?.extra},
+      );
+  }
+
+  /// Reads a unary answer: the decoded body on 2xx, a
+  /// [CratestackRpcException] otherwise.
+  Future<Object?> _decodeSuccess(
+    CratestackHttpResponse response,
+    _CompactCall? compact,
+  ) async {
+    var bytes = await response.bytes();
+    var contentType = response.headers['content-type'];
+    if (response.status < 200 || response.status >= 300) {
+      final data = await _decodeErrorBody(bytes, contentType);
+      throw CratestackRpcException(
+        status: response.status,
+        body: RpcErrorBody.fromWire(
+          data ?? <String, Object?>{
+            'code': CratestackRpcErrorCodes.internal,
+            'message': 'HTTP ${response.status}',
+          },
+        ),
+        headers: response.headers,
+      );
+    }
+    if (compact != null && bytes.isNotEmpty && compact.matches(contentType)) {
+      bytes = compact.decode(bytes);
+      contentType = 'application/cbor';
+    }
+    return _decodeBody(bytes, contentType, 'CratestackRpcHttpAdapter');
+  }
+}
+
+// -----------------------------------------------------------------------------
+// `application/cbor-seq` streaming primitives
+//
+// HTTP-client-agnostic primitives for consuming a cbor-seq response as
+// a true Dart `Stream<T>` — items arrive as bytes parse off the wire,
+// no full-body buffering. Two pieces:
+//
+//   * `CborSeqDecoderHandle` — contract a boundary scanner must satisfy.
+//     Plug in `FlutterCborSeqDecoder` from `cratestack-client-flutter`
+//     (frb-generated, FFI-backed by Rust's `CborSeqChunkDecoder`) for
+//     native Flutter apps, or any other impl for non-Flutter contexts.
+//
+//   * `CborSeqStreamTransformer` — a plain `dart:async`
+//     `StreamTransformer<Uint8List, Uint8List>` that wraps a decoder
+//     handle. Composes with dio's `ResponseBody.stream`, with
+//     `package:http`'s `StreamedResponse.stream`, with `dart:io`
+//     `HttpClient`, with a test mock — anything that produces
+//     `Stream<Uint8List>`. No opinion on the HTTP client.
+//
+// Recipe (dio + interceptors + transformer):
+//
+//   final dio = Dio(BaseOptions(baseUrl: 'https://...'))
+//     // Auth header on every request.
+//     ..interceptors.add(InterceptorsWrapper(onRequest: (opts, h) {
+//       opts.headers['Authorization'] = 'Bearer ${currentToken()}';
+//       h.next(opts);
+//     }))
+//     // Per-request idempotency key for safe retries.
+//     ..interceptors.add(InterceptorsWrapper(onRequest: (opts, h) {
+//       opts.headers.putIfAbsent('Idempotency-Key', () => Uuid().v4());
+//       h.next(opts);
+//     }))
+//     // Retry transient failures (use `dio_smart_retry` in production).
+//     ..interceptors.add(RetryOnTransientInterceptor(maxAttempts: 3));
+//
+//   final decoder = myFlutterCborSeqDecoder();   // or any impl
+//   final response = await dio.post<ResponseBody>(
+//     '/rpc/$opId',
+//     data: input,
+//     options: Options(
+//       responseType: ResponseType.stream,
+//       contentType: 'application/cbor',
+//       headers: {'Accept': 'application/cbor-seq'},
+//     ),
+//   );
+//
+//   final codec = await cratestack_cbor.createCborCodec();
+//   final items = response.data!.stream
+//     .transform(CborSeqStreamTransformer(decoder))
+//     .map((bytes) => MyType.fromWire(jsonDecode(codec.decodeJson(bytes))));
+//
+//   await for (final item in items) renderRow(item);
+//
+// The transformer throws `FormatException` if the upstream stream
+// closes with a non-empty decoder buffer (truncated final frame),
+// which surfaces naturally through `Stream.listen(..., onError: ...)`
+// or an `await for` try/catch — no separate error channel.
+// -----------------------------------------------------------------------------
+
+/// Contract for a stateful `application/cbor-seq` boundary scanner.
+///
+/// One method, one accessor, no I/O. Implementations buffer partial
+/// frames across chunks and emit the bytes of each complete top-level
+/// CBOR item as it becomes available.
+///
+/// Ship-with-Flutter impl: `FlutterCborSeqDecoder` from
+/// `cratestack-client-flutter` (FFI-backed). Pure-Dart impls can be
+/// added by hosts that need them (web, server-side Dart, tests).
+abstract interface class CborSeqDecoderHandle {
+  /// Feed one chunk of bytes from the HTTP response body. Returns the
+  /// bytes of every complete top-level CBOR item now available. Any
+  /// trailing bytes that don't yet form a complete item stay buffered
+  /// for the next call.
+  ///
+  /// Returns a `Future` because FFI-backed impls hop across an isolate
+  /// boundary; in-process impls can return a `SynchronousFuture`.
+  Future<List<Uint8List>> feed(Uint8List chunk);
+
+  /// Bytes currently buffered, waiting for frame completion. After the
+  /// upstream stream closes, a non-zero value here indicates the
+  /// server hung up mid-item — consumers should surface that as a
+  /// terminal error.
+  int pendingLen();
+}
+
+/// `StreamTransformer<Uint8List, Uint8List>` that turns a chunked byte
+/// stream into one element per complete cbor-seq item.
+///
+/// Wraps any [CborSeqDecoderHandle]. Compose with any HTTP client's
+/// response stream — dio, `package:http`, `dart:io`, a test mock.
+/// Per-item CBOR decoding is the consumer's responsibility (typically
+/// `jsonDecode(codec.decodeJson(bytes))` with a `cratestack_cbor` codec),
+/// so the transformer stays codec-agnostic
+/// at the boundary level and keeps decode cost out of the
+/// transformer's hot loop.
+///
+/// Errors flow through the standard Dart stream error channel:
+///
+///   * decoder errors (malformed CBOR) propagate as the original
+///     exception type the decoder throws,
+///   * stream-closed-mid-frame raises a [FormatException].
+///
+/// Cancellation works as expected — `subscription.cancel()` propagates
+/// upstream through dio's stream and tears down the HTTP request via
+/// the underlying client's cancellation contract.
+class CborSeqStreamTransformer
+    extends StreamTransformerBase<Uint8List, Uint8List> {
+  const CborSeqStreamTransformer(this.decoder);
+
+  final CborSeqDecoderHandle decoder;
+
+  @override
+  Stream<Uint8List> bind(Stream<Uint8List> stream) async* {
+    await for (final chunk in stream) {
+      final items = await decoder.feed(chunk);
+      for (final item in items) {
+        yield item;
+      }
+    }
+    final pending = decoder.pendingLen();
+    if (pending > 0) {
+      throw FormatException(
+        'cbor-seq stream ended with $pending bytes buffered '
+        '(truncated final frame)',
+      );
+    }
+  }
+}
+
+// -----------------------------------------------------------------------------
+// Pure-Dart `application/cbor-seq` boundary scanner
+//
+// The default `CborSeqDecoderHandle` for `CratestackRpcHttpAdapter.stream()`:
+// no FFI, so it works wherever the generated package does. A host with a
+// faster scanner (an FFI-backed one from `cratestack-client-flutter`) passes
+// its own `CborSeqDecoderHandle` as `cborSeqDecoder:` instead.
+//
+// A structural walk only: it finds where each top-level item ends, handling
+// every major type including indefinite-length strings, arrays and maps
+// (RFC 8949 §3.2). A port of the TypeScript client's `CborSeqBoundaryScanner`.
+// -----------------------------------------------------------------------------
+
+/// `Tag(48900, RpcErrorBody)` as a cbor-seq stream's final item marks a
+/// failure mid-stream (`cratestack_core::rpc::RPC_STREAM_ERROR_TAG`,
+/// `docs/design/rpc-transport.md` §3.3).
+const int cratestackRpcStreamErrorTag = 48900;
+
+class CratestackCborSeqScanner implements CborSeqDecoderHandle {
+  Uint8List _buffer = Uint8List(0);
+
+  @override
+  Future<List<Uint8List>> feed(Uint8List chunk) {
+    if (_buffer.isEmpty) {
+      _buffer = chunk;
+    } else {
+      final joined = Uint8List(_buffer.length + chunk.length)
+        ..setRange(0, _buffer.length, _buffer)
+        ..setRange(_buffer.length, _buffer.length + chunk.length, chunk);
+      _buffer = joined;
+    }
+    final items = <Uint8List>[];
+    var consumed = 0;
+    while (consumed < _buffer.length) {
+      final end = _cratestackSkipCborItem(_buffer, consumed, 0);
+      if (end == null) {
+        break;
+      }
+      items.add(Uint8List.fromList(_buffer.sublist(consumed, end)));
+      consumed = end;
+    }
+    if (consumed > 0) {
+      _buffer = Uint8List.fromList(_buffer.sublist(consumed));
+    }
+    return Future<List<Uint8List>>.value(items);
+  }
+
+  @override
+  int pendingLen() => _buffer.length;
+}
+
+/// `(tagNumber, headerLength)` when [item] starts with a CBOR tag, else
+/// `null`. Reads only the tag header, never the tagged content.
+(int, int)? _cratestackReadLeadingTag(Uint8List item) {
+  if (item.isEmpty || item[0] >> 5 != 6) {
+    return null;
+  }
+  try {
+    return _cratestackReadArgument(item, 1, item[0] & 0x1f);
+  } on FormatException {
+    return null;
+  }
+}

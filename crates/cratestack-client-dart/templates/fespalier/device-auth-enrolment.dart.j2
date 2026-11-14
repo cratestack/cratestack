@@ -1,0 +1,77 @@
+{% from "fespalier/device-auth-calls.dart.j2" import call %}
+{% if send_code %}
+  /// Asks the server to send the one-time code, before leg one: for a server
+  /// that checks the code before it issues a challenge (Authkestra does), so
+  /// the code then goes with the keys, as a field of `EnrolmentStart.fields`
+  /// in [beginEnrolment]. Answers what `{{ send_code.method }}` answers.
+  Future<{{ send_code.return_type }}> sendEnrolmentCode({{ send_code.wrapper }} args) =>
+      _leg(() => _procedures.{{ send_code.method }}(args));
+
+{% endif %}
+  /// Leg one: the public keys of [EnrolmentStart.keys] and the app's own
+  /// [EnrolmentStart.fields] (read by name, as text), answered with one
+  /// challenge per key and the rest of the answer in
+  /// [EnrolmentChallenge.data].
+  @override
+  Future<fsign.EnrolmentChallenge> beginEnrolment(fsign.EnrolmentStart start) async {
+    final answer = await _leg(
+{{ call(begin_enrolment.leg) }}
+    );
+    return fsign.EnrolmentChallenge(
+      challenges: {
+{% for element in begin_enrolment.challenges %}
+        {{ element }},
+{% endfor %}
+      },
+      data: {
+{% for element in begin_enrolment.data %}
+        {{ element }},
+{% endfor %}
+      },
+    );
+  }
+
+  /// Leg two: the signatures of the challenges, with what leg one answered
+  /// (read back from [EnrolmentChallenge.data]).
+{% if confirm_enrolment.proof %}
+  /// [proof], the one-time code, goes in `{{ confirm_enrolment.proof }}`.
+{% else %}
+  /// [proof] is not read: the one-time code went with leg one.
+{% endif %}
+  /// A 403 is an `AuthRejected`.
+  @override
+  Future<fsign.DeviceEnrolment> confirmEnrolment(
+    fsign.EnrolmentChallenge challenge,
+    Map<fkey.KeyRole, String> challengeSignatures,
+    Object? proof,
+  ) async {
+    final answer = await _leg(
+{{ call(confirm_enrolment.leg) }}
+      rejectedOn403: true,
+    );
+    return fsign.DeviceEnrolment(
+      deviceId: answer.deviceId,
+      attestations: {
+{% for element in confirm_enrolment.attestations %}
+        {{ element }},
+{% endfor %}
+      },
+      user: userOf?.call(answer) ??
+          fauth.AuthUser(
+            id: answer.userId,
+{% if confirm_enrolment.name_expr %}
+            name: {{ confirm_enrolment.name_expr }},
+{% endif %}
+{% if confirm_enrolment.email_expr %}
+            email: {{ confirm_enrolment.email_expr }},
+{% endif %}
+{% if confirm_enrolment.claims %}
+            claims: {
+{% for element in confirm_enrolment.claims %}
+              {{ element }},
+{% endfor %}
+            },
+{% endif %}
+          ),
+    );
+  }

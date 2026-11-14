@@ -1,0 +1,91 @@
+// The same ceremonies on `transport rest`, the other way round where the interface allows it:
+// no `sendEnrolmentCode`, so the one-time code goes with leg two (`proof: "otp"`, as fespalier's
+// own `DeviceAuthServer` sends it), and the answer to `confirmEnrolment` names the user (`name`,
+// `email`). Generated and tested by `just verify-dart-fespalier` (cratestack#1303).
+
+datasource db {
+  provider = "none"
+}
+
+type Jwk {
+  kty String
+  crv String
+  x String
+  y String
+}
+
+type BeginEnrolmentArgs {
+  phone String
+  ambient Jwk
+  userPresent Jwk?
+}
+
+type EnrolmentChallenges {
+  enrolmentId String
+  ambient String
+  userPresent String?
+}
+
+type ConfirmEnrolmentArgs {
+  enrolmentId String
+  otp String
+  ambient String
+  userPresent String?
+}
+
+type EnrolledDevice {
+  deviceId String
+  userId String
+  name String
+  email String?
+  phone String
+  ambient String
+  userPresent String?
+}
+
+type BeginRenewalArgs {
+  deviceId String
+  role String
+}
+
+type RenewalChallenge {
+  challengeId String
+  challenge String
+}
+
+type ConfirmRenewalArgs {
+  challengeId String
+  signature String
+}
+
+type Renewed {
+  attestation String
+}
+
+type RevokeArgs {
+  deviceId String
+}
+
+type Revoked {
+  deviceId String
+}
+
+mutation procedure beginEnrolment(args: BeginEnrolmentArgs): EnrolmentChallenges
+  @device_auth(role: "beginEnrolment")
+  @allow(true)
+
+mutation procedure confirmEnrolment(args: ConfirmEnrolmentArgs): EnrolledDevice
+  @device_auth(role: "confirmEnrolment", proof: "otp")
+  @allow(true)
+
+mutation procedure beginRenewal(args: BeginRenewalArgs): RenewalChallenge
+  @device_auth(role: "beginRenewal")
+  @allow(true)
+
+mutation procedure confirmRenewal(args: ConfirmRenewalArgs): Renewed
+  @device_auth(role: "confirmRenewal")
+  @allow(true)
+
+mutation procedure revokeDevice(args: RevokeArgs): Revoked
+  @device_auth(role: "revoke")
+  @allow(auth() != null)

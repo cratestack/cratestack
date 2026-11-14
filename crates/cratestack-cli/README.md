@@ -77,10 +77,15 @@ Flags:
   providers in `lib/src/client.dart`. `fespalier` is `riverpod` sending through
   fespalier's `HttpTransport` instead of Dio (cratestack#1204): no `dio` in the
   pubspec, a generated `CratestackFespalierTransport`, and a
-  `<prefix>TransportProvider` the app overrides with its transport chain.
+  `<prefix>TransportProvider` the app overrides with its transport chain. When the
+  schema's procedures carry `@device_auth(role: "...")` (cratestack#1303), it also
+  emits `lib/src/device_auth_server.dart`, a `DeviceAuthServer` over the generated
+  client for `DeviceAuthBackend` (see below); the other presets ignore the marker.
 - `--fespalier-ref <REF>` (optional, `--preset fespalier` only; default `v0.21.0`) — the
   git tag, branch or commit of `github.com/fespalier/fespalier` that the generated
-  pubspec pins `fespalier_transport` at. An error with any other preset.
+  pubspec pins `fespalier_transport` at, and, with `@device_auth`, `fespalier_auth`,
+  `fespalier_keypair` and `fespalier_sign_keypair` too (all at the one ref). An error
+  with any other preset.
 - `--run-build-runner` — after generation, shell out to `dart run
   build_runner build --delete-conflicting-outputs` in `--out`. Every preset needs this
   now (issue #668 phase 2/3): every generated data class carries a

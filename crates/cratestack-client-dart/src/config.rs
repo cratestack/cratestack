@@ -39,6 +39,17 @@ impl DartPreset {
 /// `CratestackFespalierTransport` was written against; bump it together with
 /// that file when fespalier changes the interface. fespalier packages are git
 /// dependencies by design, so this is a git tag, not a pub.dev version.
+///
+/// Two fespalier interfaces are pinned by this one ref, not one: the
+/// `fespalier_transport` interface `CratestackFespalierTransport` implements,
+/// and, for a schema whose procedures carry the device-auth marker
+/// (cratestack#1303), `DeviceAuthServer` in `fespalier_sign_keypair`'s
+/// `server.dart` (with `EnrolmentStart`, `EnrolmentChallenge`, `RoleChallenge`,
+/// `DeviceEnrolment`, `DeviceSigner.signFor` and `AuthUser`), which the
+/// generated `device_auth_server.dart` implements. A fespalier change to
+/// either must bump this ref and the `fespalier_*` snapshots together. Both
+/// were byte-identical from v0.21.0 to v0.26.0 (checked by diff), so the ref
+/// stays at the oldest release that has them.
 pub const DEFAULT_FESPALIER_REF: &str = "v0.21.0";
 
 /// Options for [`crate::generate_package`].
@@ -124,4 +135,19 @@ pub enum DartGeneratorError {
     /// none of which a git ref can contain.
     #[error("invalid fespalier ref {0:?}: expected a git tag, branch or commit, e.g. v0.21.0")]
     InvalidFespalierRef(String),
+    /// The schema marks device-auth procedures, so the generated package
+    /// depends on `fespalier_sign_keypair`, whose own pubspec pins its sibling
+    /// fespalier packages at a release tag: a branch or commit cannot resolve.
+    #[error(
+        "fespalier ref {0:?} is not a release tag: a schema with `@device_auth` procedures \
+         pulls in `fespalier_sign_keypair`, which pins its sibling packages at a tag in its \
+         own pubspec, so `--fespalier-ref` must be a release tag of the form vMAJOR.MINOR.PATCH \
+         (e.g. v0.21.0), not a branch or a commit"
+    )]
+    FespalierRefNotATag(String),
+    /// A procedure carries the device-auth marker, but the schema does not
+    /// have the shapes the parser requires of it (`cratestack check` says
+    /// which), so no `DeviceAuthServer` can be generated over it.
+    #[error("cannot generate the DeviceAuthServer: {0}")]
+    DeviceAuthSchema(String),
 }

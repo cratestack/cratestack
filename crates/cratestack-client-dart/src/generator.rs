@@ -35,6 +35,13 @@ pub fn generate_package(
         DartPreset::Riverpod => crate::riverpod::generate_package(schema, config),
         DartPreset::Fespalier => {
             validate_fespalier_ref(&config.fespalier_ref)?;
+            if crate::fespalier_device_auth::applies(schema, config)
+                && !is_release_tag(&config.fespalier_ref)
+            {
+                return Err(DartGeneratorError::FespalierRefNotATag(
+                    config.fespalier_ref.clone(),
+                ));
+            }
             crate::riverpod::generate_package(schema, config)
         }
     }
@@ -48,6 +55,19 @@ fn validate_fespalier_ref(git_ref: &str) -> Result<(), DartGeneratorError> {
         return Err(DartGeneratorError::InvalidFespalierRef(git_ref.to_owned()));
     }
     Ok(())
+}
+
+/// `vMAJOR.MINOR.PATCH`, the only refs `fespalier_sign_keypair`'s own
+/// sibling pins resolve against.
+fn is_release_tag(git_ref: &str) -> bool {
+    let Some(version) = git_ref.strip_prefix('v') else {
+        return false;
+    };
+    let parts: Vec<&str> = version.split('.').collect();
+    parts.len() == 3
+        && parts
+            .iter()
+            .all(|part| !part.is_empty() && part.bytes().all(|b| b.is_ascii_digit()))
 }
 
 pub(crate) fn generate_default_package(

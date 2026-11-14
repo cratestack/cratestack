@@ -1438,45 +1438,38 @@ verify-dart:
 	done
 
 	# cratestack#1204: the `--preset fespalier` leg. A separate recipe so it can
-	# be run on its own; it SKIPS (exit 0, with a message) unless
-	# FESPALIER_TRANSPORT_PATH is set, because `fespalier_transport` is not
-	# reachable from CI until fespalier releases it.
+	# be run on its own; it resolves fespalier's packages from GitHub, at the
+	# generator's pinned release, so it needs the network.
 	"{{just_executable()}}" verify-dart-fespalier
 
 
-# cratestack#1204: generates the fespalier preset's `ci_rest` and `ci_rpc`
-# packages, then runs the real `flutter analyze` and `flutter test` on them
-# against fespalier's `fespalier_transport`, with `FakeTransport` from its
-# `testing.dart`.
+# cratestack#1204, #1303: generates the fespalier preset's packages, then runs
+# the real `flutter analyze` and `flutter test` on them against fespalier's own
+# packages (`fespalier_transport` with its `FakeTransport`, and, for the device
+# ceremonies, `fespalier_sign_keypair`, `fespalier_auth` and
+# `fespalier_keypair`):
 #
-# The generated pubspec depends on `fespalier_transport` by git at a pinned
-# fespalier release (`--fespalier-ref`, default `DEFAULT_FESPALIER_REF`), and
-# that package is unreleased: the ref is not reachable from GitHub yet. Until
-# fespalier releases it, this recipe resolves it from a local checkout instead:
-# point FESPALIER_TRANSPORT_PATH at fespalier's `packages/fespalier_transport`
-# and a `pubspec_overrides.yaml` (never part of the generated package) swaps
-# the git dependency for that path. With the variable unset the recipe SKIPS
-# with a message and exits 0, so CI stays green until fespalier releases; the
-# generated FILES are checked in CI regardless, by `cargo test -p
-# cratestack-client-dart` (`tests/fespalier_preset.rs`) and by the
-# `fespalier-*` snapshots. TODO(cratestack maintainer): once the ref is
-# reachable, drop the skip and the path override and resolve it from git.
+#  * `ci_rest` and `ci_rpc`: the transport (golden wire, abort, failures, the
+#    providers);
+#  * `device_auth_rest` and `device_auth_rpc`: a schema whose procedures carry
+#    the device-auth marker (fespalier's `examples/cratestack` ceremonies), so
+#    the generated `DeviceAuthServer` is analyzed against the real interface it
+#    `implements`, and its behaviour is tested (request bodies, the mapping into
+#    `EnrolmentChallenge`/`DeviceEnrolment`/`RoleChallenge`/`Attestation`,
+#    403 as `AuthRejected`, `fieldErrors`, the signed `revoke`, abort isolation).
+#
+# The generated pubspec depends on every fespalier package by git at one pinned
+# release (`--fespalier-ref`, default `DEFAULT_FESPALIER_REF`). The tags are
+# public, so they are resolved from GitHub as an app would; nothing here is
+# swapped for a local checkout. A tag newer than the pin is a change to the
+# interfaces the generated classes implement: bump the default and the
+# `fespalier-*` snapshots together.
 #
 # The in-tree `cratestack_builder`/`cratestack_annotations` overrides are the
 # same bootstrap `verify-dart` uses, for the same reason.
 verify-dart-fespalier:
 	#!/usr/bin/env bash
 	set -euo pipefail
-	if [ -z "${FESPALIER_TRANSPORT_PATH:-}" ]; then
-	  echo "SKIP verify-dart-fespalier: FESPALIER_TRANSPORT_PATH is not set." >&2
-	  echo "  fespalier_transport is unreleased (not reachable from GitHub yet), so the fespalier preset's" >&2
-	  echo "  Dart leg needs a local checkout: FESPALIER_TRANSPORT_PATH=<fespalier>/packages/fespalier_transport just verify-dart-fespalier" >&2
-	  exit 0
-	fi
-	if [ ! -f "$FESPALIER_TRANSPORT_PATH/pubspec.yaml" ]; then
-	  echo "FESPALIER_TRANSPORT_PATH=$FESPALIER_TRANSPORT_PATH has no pubspec.yaml — expected fespalier's packages/fespalier_transport" >&2
-	  exit 1
-	fi
 	if ! command -v flutter >/dev/null; then
 	  echo "flutter not found on PATH — install the Flutter SDK: https://docs.flutter.dev/get-started/install" >&2
 	  exit 1
@@ -1485,7 +1478,6 @@ verify-dart-fespalier:
 	rm -rf "$out"
 	repo_root="$(pwd)"
 	fixtures_dir="$repo_root/crates/cratestack-client-dart/tests/fixtures"
-	transport_path="$(cd "$FESPALIER_TRANSPORT_PATH" && pwd)"
 
 	# The vendored `cratestack_cbor` library `flutter test` loads; the same
 	# lookup as `verify-dart`'s `native_cbor_vendored_lib_for`, whose comment
@@ -1508,15 +1500,14 @@ verify-dart-fespalier:
 	# Survives the `--run-build-runner` regeneration below, which rewrites
 	# `pubspec.yaml` but never `pubspec_overrides.yaml`.
 	write_overrides() {
-	  printf 'dependency_overrides:\n  cratestack_builder:\n    path: %s/dart-packages/cratestack_builder\n  cratestack_annotations:\n    path: %s/dart-packages/cratestack_annotations\n  fespalier_transport:\n    path: %s\n  cratestack_cbor: any\n' \
-	    "$repo_root" "$repo_root" "$transport_path" > "$1/pubspec_overrides.yaml"
+	  printf 'dependency_overrides:\n  cratestack_builder:\n    path: %s/dart-packages/cratestack_builder\n  cratestack_annotations:\n    path: %s/dart-packages/cratestack_annotations\n  cratestack_cbor: any\n' \
+	    "$repo_root" "$repo_root" > "$1/pubspec_overrides.yaml"
 	}
 
-	for fixture in ci_rest ci_rpc; do
-	  transport="${fixture#ci_}"
-	  pkg="$out/$fixture"
-	  schema="crates/cratestack-client-dart/tests/fixtures/$fixture.cstack"
-	  library_name="dart_verify_${fixture}"
+	# generate -> pub get -> generate --run-build-runner -> analyze.
+	generate_and_analyze() {
+	  local fixture="$1" pkg="$2" library_name="$3"
+	  local schema="crates/cratestack-client-dart/tests/fixtures/$fixture.cstack"
 	  echo "=== generate-dart --preset fespalier: $fixture -> $pkg ==="
 	  cargo run --quiet -p cratestack-cli -- generate-dart \
 	    --schema "$schema" --out "$pkg" --library-name "$library_name" \
@@ -1530,12 +1521,32 @@ verify-dart-fespalier:
 	    --preset fespalier --run-build-runner
 	  echo "=== flutter analyze (post build_runner): $pkg ==="
 	  (cd "$pkg" && flutter analyze --fatal-warnings --no-fatal-infos)
+	}
+
+	for fixture in ci_rest ci_rpc; do
+	  transport="${fixture#ci_}"
+	  pkg="$out/$fixture"
+	  generate_and_analyze "$fixture" "$pkg" "dart_verify_${fixture}"
 	  mkdir -p "$pkg/test/wire-golden"
 	  cp "$fixtures_dir/fespalier_transport_${transport}_test.dart" "$pkg/test/"
 	  cp "$fixtures_dir/wire_parity_${transport}_ops.dart" "$pkg/test/"
 	  cp "$fixtures_dir"/wire-golden/${transport}-*.json "$pkg/test/wire-golden/"
 	  add_cbor_test_dependency "$pkg"
 	  echo "=== flutter test (FakeTransport: golden wire, abort, failures, providers): $pkg ==="
+	  (lib="$(native_cbor_vendored_lib_for "$pkg")" && cd "$pkg" && CRATESTACK_CBOR_NATIVE_LIB="$lib" flutter test)
+	done
+
+	# cratestack#1303: the generated `DeviceAuthServer`, over the schemas whose
+	# procedures carry the device-auth marker. The analyze above is the proof it
+	# compiles against the pinned `DeviceAuthServer`; the test is the proof of
+	# what it does.
+	for fixture in device_auth_rest device_auth_rpc; do
+	  transport="${fixture#device_auth_}"
+	  pkg="$out/$fixture"
+	  generate_and_analyze "$fixture" "$pkg" "dart_verify_${fixture}"
+	  cp "$fixtures_dir/fespalier_device_auth_${transport}_test.dart" "$pkg/test/"
+	  add_cbor_test_dependency "$pkg"
+	  echo "=== flutter test (FakeTransport: the legs, the mapping, 403, fieldErrors, signed revoke, abort): $pkg ==="
 	  (lib="$(native_cbor_vendored_lib_for "$pkg")" && cd "$pkg" && CRATESTACK_CBOR_NATIVE_LIB="$lib" flutter test)
 	done
 

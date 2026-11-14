@@ -1364,7 +1364,7 @@ jobs:
         with:
           channel: stable
           cache: true
-      - name: Generate + flutter analyze/test (default + riverpod presets, REST + RPC, native cbor)
+      - name: Generate + flutter analyze/test (default + riverpod + fespalier presets, REST + RPC, native cbor, device auth)
         run: just verify-dart
 
   # ---- dart-packages/{cratestack_annotations,cratestack_builder} --------

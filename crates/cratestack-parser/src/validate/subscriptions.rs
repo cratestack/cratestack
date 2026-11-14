@@ -36,6 +36,10 @@ const REFUSED: &[(&str, &str)] = &[
         "a subscription opens once, and is not rate limited per item",
     ),
     ("@mcp", "MCP exposes only unary tools"),
+    (
+        "@device_auth",
+        "the device ceremonies are unary calls, not streams",
+    ),
 ];
 
 const ATTRIBUTES: &[Known] = &[

@@ -13,6 +13,7 @@ pub(crate) fn build_library_file(
     schema: &Schema,
     is_rest: bool,
     preset: DartPreset,
+    has_device_auth: bool,
 ) -> LibraryFileContext {
     // cratestack#1204: the fespalier preset exports its own transport, not Dio's.
     let transport_file = if preset == DartPreset::Fespalier {
@@ -37,6 +38,9 @@ pub(crate) fn build_library_file(
     }
     exports.push("export 'src/procedures.dart';".to_owned());
     exports.push("export 'src/client.dart';".to_owned());
+    if has_device_auth {
+        exports.push(crate::fespalier_device_auth::EXPORT.to_owned());
+    }
 
     LibraryFileContext { exports }
 }

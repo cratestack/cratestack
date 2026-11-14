@@ -207,7 +207,7 @@ jobs:
           set -euo pipefail
           CRATESTACK_UPDATE_SNAPSHOTS=1 cargo test -p cratestack-client-dart \
             --test snapshot --test riverpod_snapshot --test riverpod_providers \
-            --test fespalier_snapshot
+            --test fespalier_snapshot --test fespalier_device_auth_snapshot
           CRATESTACK_UPDATE_SNAPSHOTS=1 cargo test -p cratestack-client-typescript --test snapshot
           just regen-examples
           # `examples/react-vite-swr` is its own pnpm workspace with its own

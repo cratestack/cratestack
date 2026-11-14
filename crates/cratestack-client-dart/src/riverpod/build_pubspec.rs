@@ -38,6 +38,11 @@ pub(crate) struct PubspecFileContext {
     pub(crate) fespalier_ref: String,
     /// A subscription op (slice S6): `web_socket_channel` and `web`.
     pub(crate) has_subscriptions: bool,
+    /// `--preset fespalier` with a device-auth marker (cratestack#1303): the
+    /// generated `DeviceAuthServer` imports `fespalier_sign_keypair`,
+    /// `fespalier_auth` and `fespalier_keypair`, pinned at the same ref as
+    /// `fespalier_transport`, and needs the SDK floor they impose.
+    pub(crate) has_device_auth: bool,
 }
 
 pub(crate) fn build_pubspec_file(
@@ -59,6 +64,7 @@ pub(crate) fn build_pubspec_file(
         cratestack_builder_version_requirement: requirement(CRATESTACK_BUILDER_FLOOR),
         has_subscriptions: crate::subscription_specs::has_subscriptions(schema),
         is_fespalier,
+        has_device_auth: crate::fespalier_device_auth::applies(schema, config),
         fespalier_ref: if is_fespalier {
             config.fespalier_ref.replace('\'', "''")
         } else {

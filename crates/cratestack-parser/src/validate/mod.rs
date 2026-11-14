@@ -14,6 +14,7 @@ mod computed_resolver_names;
 mod db_enforce;
 mod default_functions;
 mod default_markers;
+mod device_auth;
 mod enum_ordinals;
 mod field_attribute_tables;
 mod field_attributes;
@@ -230,6 +231,9 @@ pub(crate) fn validate_schema_collecting(
     // Needs every procedure argument and `@computed` params type to be known
     // good, as it walks them.
     self::type_validator_reach::validate_type_validator_reach(schema, &mut errors);
+    // The device ceremonies read procedure argument and return types, so
+    // they have to be known good.
+    self::device_auth::validate_device_auth_collecting(schema, &mut errors);
 
     let _ = (path, source);
     errors
@@ -343,6 +347,7 @@ fn validate_procedures(
         validate_procedure_no_rate_limit_attribute(procedure, schema)?;
         validate_procedure_no_idempotency_attribute(procedure)?;
         self::authn_attribute::validate_procedure_authn_attribute(procedure)?;
+        self::device_auth::validate_procedure_device_auth_attribute(procedure)?;
         validate_procedure_status_attribute(procedure, schema)?;
         self::procedure_attributes::validate_procedure_attributes(procedure)?;
     }

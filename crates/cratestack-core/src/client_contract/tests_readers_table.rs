@@ -6,7 +6,7 @@
 //! (cratestack#1307). Those stubs are test doubles: they shape no wire
 //! type, route or client, so the validators stay on `DROPPED_ATTRIBUTES`.
 
-/// The first part of the drop list's readers; the rest, from `@pii` on, is
+/// The first part of the drop list's readers; the rest, from `@length` on, is
 /// `tests_readers_table_tail::TAIL_READERS` (file-length ceiling).
 pub(super) const READERS: &[(&str, &[&str])] = &[
     (
@@ -143,53 +143,16 @@ pub(super) const READERS: &[(&str, &[&str])] = &[
     // Read through `cratestack_core::schema::authn_attribute`; the LSP
     // only shows the attribute in its completion popup.
     ("@authn", &["cratestack-lsp/src/authn_completion.rs"]),
+    // Read through `schema::device_auth_attribute`; the LSP shows it in completion.
+    // `cratestack-client-dart/src/config.rs` names it only in the
+    // `FespalierRefNotATag` error: the Dart generator gates an extra client-side
+    // helper class and the pubspec on it, and no wire type, route, op id or
+    // decode moves.
     (
-        "@length",
+        "@device_auth",
         &[
-            "cratestack-macros/src/validators/parse.rs",
-            "cratestack-migrate/src/convert/checks.rs",
-            "cratestack-mock-wiremock/src/field_value.rs",
-            "cratestack-studio/src/validators/predicates.rs",
-        ],
-    ),
-    (
-        "@range",
-        &[
-            "cratestack-macros/src/validators/emit.rs",
-            "cratestack-macros/src/validators/parse.rs",
-            "cratestack-migrate/src/convert/checks.rs",
-            "cratestack-studio/src/validators/predicates.rs",
-        ],
-    ),
-    (
-        "@regex",
-        &[
-            "cratestack-macros/src/validators/emit.rs",
-            "cratestack-macros/src/validators/parse.rs",
-            "cratestack-mock-wiremock/src/field_value.rs",
-            "cratestack-studio/src/validators/predicates.rs",
-        ],
-    ),
-    (
-        "@email",
-        &[
-            "cratestack-mock-wiremock/src/field_value.rs",
-            "cratestack-studio/src/validators/predicates.rs",
-        ],
-    ),
-    (
-        "@uri",
-        &[
-            "cratestack-mock-wiremock/src/field_value.rs",
-            "cratestack-studio/src/validators/predicates.rs",
-        ],
-    ),
-    (
-        "@iso4217",
-        &[
-            "cratestack-migrate/src/convert/checks.rs",
-            "cratestack-mock-wiremock/src/field_value.rs",
-            "cratestack-studio/src/validators/predicates.rs",
+            "cratestack-client-dart/src/config.rs",
+            "cratestack-lsp/src/device_auth_completion.rs",
         ],
     ),
 ];

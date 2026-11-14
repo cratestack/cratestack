@@ -5,6 +5,8 @@ mod capabilities;
 mod completion;
 mod definition;
 mod definition_graph;
+mod device_auth_completion;
+mod device_auth_hover;
 mod document_symbols;
 mod field_host;
 mod graph;
@@ -46,6 +48,8 @@ mod tests_attribute_run_diagnostics;
 mod tests_block_diagnostics;
 #[cfg(test)]
 mod tests_completion;
+#[cfg(test)]
+mod tests_device_auth;
 #[cfg(test)]
 mod tests_enum_hover;
 #[cfg(test)]
