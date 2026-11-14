@@ -65,13 +65,39 @@ fn context(claims: Claims) -> CratestackContext {
     let attributes = claims.identity.map(|identity| identity.attributes);
     let attribute = |name: &str| attributes.as_ref().and_then(|map| map.get(name)).cloned();
     let words = |name: &str| attribute(name).unwrap_or_default();
+
+    // Prefer top-level RFC 9068 / RFC 9470 access-token claims (`amr`, `acr`,
+    // `auth_time`) stamped by `authkestra-op` (#439), falling back to
+    // `identity.attributes` for backward compatibility.
+    let top_amr: Vec<String> = claims
+        .extra
+        .get("amr")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|item| item.as_str().map(str::to_owned))
+                .collect()
+        })
+        .unwrap_or_else(|| words("amr").split_whitespace().map(str::to_owned).collect());
+
     let mut builder = CratestackContext::builder(claims.sub)
         .roles(words("roles").split_whitespace())
-        .amr(words("amr").split_whitespace());
-    if let Some(acr) = attribute("acr") {
+        .amr(top_amr.iter().map(String::as_str));
+
+    if let Some(acr) = claims
+        .extra
+        .get("acr")
+        .and_then(|v| v.as_str().map(str::to_owned))
+        .or_else(|| attribute("acr"))
+    {
         builder = builder.acr(acr);
     }
-    if let Some(auth_time) = attribute("auth_time").and_then(|value| value.parse().ok()) {
+    if let Some(auth_time) = claims
+        .extra
+        .get("auth_time")
+        .and_then(|v| v.as_i64())
+        .or_else(|| attribute("auth_time").and_then(|value| value.parse().ok()))
+    {
         builder = builder.auth_time(auth_time);
     }
     if let Some(jkt) = claims.extra.get("cnf").and_then(|cnf| cnf["jkt"].as_str()) {

@@ -38,7 +38,8 @@ principal contract alone (`ctx.subject()`, `ctx.roles()`), which every provider 
 | `sub` | `svc:<keyId>`, or `cose:<thumbprint>` | the attestation's `sub` | the token's `sub` |
 | `roles` | `admin` for configured keys, else `caller` | `att.roles` | the identity's `roles` attribute |
 | `cnf.jkt` | — (service keys carry no key binding) | the device key's thumbprint | the DPoP key's thumbprint |
-| `amr`, `acr`, `auth_time` | — | — | the identity's attributes |
+| `auth_time` | — | the verified `X-Signature` `iat` (`signed_at`) | the token's top-level `auth_time` claim (fallback: identity attribute) |
+| `amr`, `acr` | — | — | the token's top-level `amr` / `acr` claims (fallback: identity attributes) |
 | a refusal | `401`, `signature verification failed` | `401`, `{"error": "<devsig code>"}` | `401`, `{"error": "invalid_token"}` and `WWW-Authenticate: DPoP error="invalid_token"` |
 
 ## Run it
@@ -57,33 +58,38 @@ Authkestra never enters the root `Cargo.lock`, which `.ci/auth-independence-chec
 refuses to see it in. Inside this example, `.ci/auth-pluggable-check.sh` runs `cargo tree` on every
 CrateStack crate in the graph and fails if one of them reaches an `authkestra*` package; it also
 checks that the example itself does, so the check can fail. Authkestra is pinned to one commit
-(`9d40169`) in `Cargo.toml` and `Cargo.lock`: a bump is a deliberate change.
+(`57285d6`, `v0.15.1`) in `Cargo.toml` and `Cargo.lock`: a bump is a deliberate change.
 
 ## Line counts, and why two providers are longer than ~50
 
 The epic set "under ~50 lines each" as a signal, not a gate. `inhouse.rs` is 45 lines. The two
 Authkestra providers are longer because each does work its library leaves to the integrator:
 
-- **`devsig.rs` (71 lines)** builds `authkestra_devsig::SignedRequest` from the `RequestContext` and
-  maps `VerifyError::code()` onto an `AuthRefusal` member. Authkestra's own axum adapter answers a
+- **`devsig.rs` (74 lines)** builds `authkestra_devsig::SignedRequest` from the `RequestContext`,
+  maps `DeviceIdentity` (including `signed_at` → `auth_time`) onto `CratestackContext`, and maps
+  `VerifyError::code()` onto an `AuthRefusal` member. Authkestra's own axum adapter answers a
   refusal with a plain-text body; a device-signature client sorts refusals by a JSON `error` code
   (renew on `attestation_expired`, sign out on `key_not_bound`), which the provider sets.
-- **`oidc.rs` (81 lines)** rebuilds `http::request::Parts` from the `RequestContext` (what
-  `JwtStrategy::authenticate` takes) and maps the token onto the principal contract.
+- **`oidc.rs` (107 lines)** rebuilds `http::request::Parts` from the `RequestContext` (what
+  `JwtStrategy::authenticate` takes) and maps the token's top-level `amr`, `acr`, and `auth_time`
+  claims (with `identity.attributes` fallback) onto the principal contract.
 
 ## Findings for Authkestra (cratestack#1245)
 
-None of these needed anything private in CrateStack; they are what the providers work around.
+None of these needed anything private in CrateStack; they are what the providers work around or
+what `Authkestra` `v0.15.1` (`authkestra#448`) addressed.
 
-- **`JwtStrategy` refuses with no reason.** An invalid token or proof is `Ok(None)`; the reason goes
-  to `tracing` only. The provider therefore answers every refusal with one code, `invalid_token`,
-  and cannot tell a client "your proof is stale" from "your token is expired".
-- **No `use_dpop_nonce`.** Neither `authkestra-op` nor `authkestra-resource` issues a DPoP nonce.
-- **The JWKS can only be fetched over HTTP.** `JwksCache` has no in-memory source, so the OIDC tests
-  serve the OP's JWKS on `127.0.0.1`.
-- **`roles`, `amr`, `acr` and `auth_time` are not access-token claims.** `authkestra-op` puts `amr`,
-  `acr` and `auth_time` in the ID token only; the access token embeds the identity, whose string
-  attributes the provider reads instead.
+- **`JwtStrategy` refuses with no reason on `authenticate`.** `JwtStrategy::authenticate` returns
+  `Ok(None)` on an invalid token or proof (`JwtStrategy::authenticate_with_refusal` returns a
+  structured `ResourceRefusal` with RFC 6750 / RFC 9449 / RFC 9470 challenges).
+- **Resource-side `use_dpop_nonce` is opt-in.** `authkestra-resource` supports opt-in
+  `JwtStrategy::with_dpop_nonces`; `authkestra-op` token-endpoint DPoP nonces remain a follow-up.
+- **The JWKS can be static or fetched over HTTP.** `ValidationConfigBuilder::static_jwks` supports
+  in-memory JWKS; the OIDC tests here still exercise the OP's live HTTP `/jwks.json` endpoint.
+- **`amr`, `acr` and `auth_time` are top-level access-token claims (`authkestra#439`).**
+  `authkestra-op` stamps `amr`, `acr`, and `auth_time` at the top level of issued user access
+  tokens; `roles` still rides on the embedded identity's string attributes, and `oidc.rs` reads
+  top-level `amr` / `acr` / `auth_time` first with `identity.attributes` as a fallback.
 - **No device-signature profile or conformance vectors yet.** Authkestra's device-signature scheme
   and fespalier's client (`fespalier_sign_keypair`) differ in their refusal bodies, codes and
   attestation shape; the planned "profile v1" with shared vectors does not exist. The device fixture

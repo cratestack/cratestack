@@ -96,12 +96,9 @@ impl Devsig {
         let mut headers = HeaderMap::new();
         headers.insert(
             "x-attestation",
-            HeaderValue::from_str(&attestation).expect("ASCII"),
+            HeaderValue::from_str(&attestation).unwrap(),
         );
-        headers.insert(
-            "x-signature",
-            HeaderValue::from_str(&signature).expect("ASCII"),
-        );
+        headers.insert("x-signature", HeaderValue::from_str(&signature).unwrap());
         headers.into()
     }
 }
@@ -157,15 +154,33 @@ impl Fixture for Devsig {
 
 #[tokio::test]
 async fn the_device_signature_provider_passes_the_suite() {
+    use cratestack::{AuthProvider, RequestContext};
+
     let issuer = Key::generate(Some("issuer-1"));
     let jwks = IssuerJwks::new();
     jwks.insert(ISSUER, "issuer-1", issuer.jwk.clone()).await;
-    suite(Devsig {
+    let fixture = Devsig {
         issuer,
         jwks: Arc::new(jwks),
         user: Key::generate(None),
         admin: Key::generate(None),
         attacker: Key::generate(None),
-    })
-    .await;
+    };
+    let canonical = support::procedure_call("/$procs/whoAmI");
+    let credentials = fixture.sign(Who::User, &canonical);
+    let request = RequestContext {
+        method: canonical.method,
+        path: canonical.path,
+        query: None,
+        headers: &credentials.headers,
+        body: &canonical.body,
+        extensions: &credentials.extensions,
+    };
+    let ctx = fixture
+        .provider()
+        .authenticate(&request)
+        .await
+        .expect("accepted");
+    assert!(ctx.auth_time().is_some_and(|ts| ts > 0));
+    suite(fixture).await;
 }
