@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.19.6 (2026-11-14)
+
 ### Fix: generated TypeScript and Dart clients read and send `Uuid` over CBOR (`cratestack#1359`)
 
 Over CBOR the server writes a `Uuid` as a 16-byte byte string and `uuid::Uuid` refused any other form there. A TypeScript or Dart client holds a `Uuid` as a plain string, so its requests (CBOR text) were refused with `unexpected type string ... expected bytes`, and its responses mis-decoded: a `Uint8Array` under a `string` type in TypeScript, a refused body (native) or an index-keyed map (web) in Dart. Fixed by being lenient on the way in and reviving on the way out, the same shape as `Bytes` (`cratestack#783`); a client does not encode a `Uuid` to bytes, because JSON text has no byte-string primitive and a TypeScript `Uuid` is indistinguishable from any other string at encode time.

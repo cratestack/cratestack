@@ -1,5 +1,7 @@
 ## Unreleased
 
+## 0.19.6 (2026-11-14)
+
 - Fix: `decodeJson` now writes a CBOR byte string (major type 2) as a JSON
   array of integers on both backends (cratestack#1359). The native backend
   used to throw a `CratestackCborCodecError` for the whole body
