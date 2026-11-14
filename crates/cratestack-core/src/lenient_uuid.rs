@@ -14,6 +14,12 @@
 //! format (JSON) it delegates to `uuid::Uuid` unchanged, so the JSON wire,
 //! its accepted shapes and its error text are byte-for-byte what they were.
 //!
+//! **Non-self-describing formats.** Under a non-human-readable format the
+//! decode goes through `deserialize_any`, so formats that are not
+//! self-describing (bincode, postcard) cannot decode generated types with a
+//! `Uuid` field; the same already holds for `Bytes` since cratestack#783.
+//! CBOR and JSON are unaffected.
+//!
 //! **Inbound only.** A `Uuid` still goes out as 16 bytes under CBOR; the
 //! generated TypeScript and Dart clients revive that into the canonical
 //! string on decode. The `deserialize_*` wrappers exist one per generated

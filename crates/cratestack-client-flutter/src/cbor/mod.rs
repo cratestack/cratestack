@@ -161,3 +161,5 @@ pub fn decode_json(bytes: Vec<u8>) -> Result<String, FlutterRuntimeError> {
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tests_byte_strings;
