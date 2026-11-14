@@ -1,0 +1,104 @@
+// The device ceremonies of fespalier's `examples/cratestack` (`server/schema.cstack` @ aa47d0c,
+// github.com/fespalier/fespalier) on `transport rpc`, each procedure carrying the device-auth
+// marker (cratestack#1303). `just verify-dart-fespalier` generates `--preset fespalier` from it
+// and runs `flutter analyze` and `flutter test` against the pinned fespalier, so CI proves the
+// generated `DeviceAuthServer` compiles and behaves.
+
+transport rpc
+
+datasource db {
+  provider = "none"
+}
+
+type Jwk {
+  kty String
+  crv String
+  x String
+  y String
+}
+
+type SendCodeArgs {
+  phone String
+}
+
+type CodeSent {
+  phone String
+}
+
+type BeginEnrolmentArgs {
+  phone String
+  otp String
+  ambient Jwk
+  userPresent Jwk?
+}
+
+type EnrolmentChallenges {
+  enrolmentId String
+  ambient String
+  userPresent String?
+}
+
+type ConfirmEnrolmentArgs {
+  enrolmentId String
+  ambient String
+  userPresent String?
+}
+
+type EnrolledDevice {
+  deviceId String
+  userId String
+  phone String
+  ambient String
+  userPresent String?
+}
+
+type BeginRenewalArgs {
+  deviceId String
+  role String
+}
+
+type RenewalChallenge {
+  challengeId String
+  challenge String
+}
+
+type ConfirmRenewalArgs {
+  challengeId String
+  signature String
+}
+
+type Renewed {
+  attestation String
+}
+
+type RevokeArgs {
+  deviceId String
+}
+
+type Revoked {
+  deviceId String
+}
+
+mutation procedure sendEnrolmentCode(args: SendCodeArgs): CodeSent
+  @device_auth(role: "sendEnrolmentCode")
+  @allow(true)
+
+mutation procedure beginEnrolment(args: BeginEnrolmentArgs): EnrolmentChallenges
+  @device_auth(role: "beginEnrolment")
+  @allow(true)
+
+mutation procedure confirmEnrolment(args: ConfirmEnrolmentArgs): EnrolledDevice
+  @device_auth(role: "confirmEnrolment")
+  @allow(true)
+
+mutation procedure beginRenewal(args: BeginRenewalArgs): RenewalChallenge
+  @device_auth(role: "beginRenewal")
+  @allow(true)
+
+mutation procedure confirmRenewal(args: ConfirmRenewalArgs): Renewed
+  @device_auth(role: "confirmRenewal")
+  @allow(true)
+
+mutation procedure revokeDevice(args: RevokeArgs): Revoked
+  @device_auth(role: "revoke")
+  @allow(auth() != null)
