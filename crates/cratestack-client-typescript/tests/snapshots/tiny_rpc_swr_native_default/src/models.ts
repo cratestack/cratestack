@@ -30,7 +30,7 @@ export const Decimal = DecimalJs.clone({ toExpNeg: -1e9, toExpPos: 1e9 });
 export type Decimal = DecimalJs;
 
 /** One model/`type`'s own decode-time shape: `decimalKeys` /
- *  `bigintKeys` / `bytesKeys` / `bytesListKeys` are its *direct* field wire
+ *  `bigintKeys` / `uuidKeys` / `bytesKeys` / `bytesListKeys` are its *direct* field wire
  *  names whose
  *  decoded values need converting out of their wire form, and `nested`
  *  maps a field name to the shape name (a {@link wireShapes} key) that
@@ -49,12 +49,17 @@ export type Decimal = DecimalJs;
  *  and a `BigInt[]` is an array of strings, which {@link toBigInt} tells
  *  apart structurally. An empty `[]` needs no conversion either way.
  *
+ *  `uuidKeys` is one list for every arity too (cratestack#1359): a `Uuid`
+ *  leaf is a 16-byte `Uint8Array` (or a string on JSON) and a `Uuid[]` is an
+ *  array of them, which {@link toUuid} tells apart structurally.
+ *
  *  `decimalKeys` likewise covers every arity, scalar and list: a `Decimal`
  *  leaf is a string and a `Decimal[]` is an array of strings, which
  *  {@link toDecimal} maps element by element. */
 export interface WireShape {
   readonly decimalKeys: readonly string[];
   readonly bigintKeys: readonly string[];
+  readonly uuidKeys: readonly string[];
   readonly bytesKeys: readonly string[];
   readonly bytesListKeys: readonly string[];
   readonly nested: Readonly<Record<string, string>>;
@@ -85,14 +90,16 @@ export interface WireShape {
  *  `Account.total` is only ever checked against *Account's* shape (which,
  *  correctly, has no `total` key) — not `Order`'s. */
 export const wireShapes: Readonly<Record<string, WireShape>> = {
-  Widget: { decimalKeys: [], bigintKeys: [], bytesKeys: [], bytesListKeys: [], nested: {  } },
+  Widget: { decimalKeys: [], bigintKeys: [], uuidKeys: [], bytesKeys: [], bytesListKeys: [], nested: {  } },
 };
 
 /** Decodes `value` against the named entry in {@link wireShapes},
  *  replacing every string (or, for a `Decimal[]` field, every element of
  *  an array of strings) at a key that shape's own `decimalKeys` names
  *  with a real {@link Decimal}, every canonical decimal string (or array
- *  of them) at a `bigintKeys` name with a `bigint`, and every wire integer
+ *  of them) at a `bigintKeys` name with a `bigint`, every 16-byte
+ *  `Uint8Array` (or array of them) at a `uuidKeys` name with the canonical
+ *  UUID string, and every wire integer
  *  array at a `bytesKeys`/`bytesListKeys` name with a `Uint8Array`, and
  *  recursing into any key `nested` names using *that* field's own shape.
  *
@@ -141,6 +148,8 @@ function reviveShaped(value: unknown, shape: WireShape, shapeName: string): unkn
         result[key] = toDecimal(entry);
       } else if (shape.bigintKeys.includes(key)) {
         result[key] = toBigInt(entry, `${shapeName}.${key}`);
+      } else if (shape.uuidKeys.includes(key)) {
+        result[key] = toUuid(entry, `${shapeName}.${key}`);
       } else if (shape.bytesKeys.includes(key)) {
         result[key] = toBytes(entry);
       } else if (shape.bytesListKeys.includes(key)) {
@@ -212,6 +221,46 @@ function toBigInt(value: unknown, where: string): unknown {
   );
 }
 
+/** One `Uuid` leaf (or an array of them), wire form -> canonical string
+ *  (cratestack#1359).
+ *
+ *  Over CBOR the server writes a `Uuid` as a 16-byte byte string, which
+ *  `@cratestack/cbor` decodes to a `Uint8Array` — a lie under the generated
+ *  `string` type. This formats those 16 bytes as lowercase hyphenated
+ *  `8-4-4-4-12` hex. A string (the JSON wire, and any server that predates
+ *  the byte-string form) and `null` pass through untouched; an array is
+ *  revived item by item, which is how a `Uuid[]` decodes.
+ *
+ *  **Anything else throws**, like {@link toBigInt}: a `Uint8Array` of the
+ *  wrong length, or a number or object, under a `string` type is a silent
+ *  wrong answer if passed through.
+ *
+ *  Requests are not revived or re-encoded: a `Uuid` is sent as text, and the
+ *  server accepts text or bytes (`cratestack_core::lenient_uuid`).
+ *
+ *  `where` is the `Type.field` the value was found at, for the message. */
+function toUuid(value: unknown, where: string): unknown {
+  if (value === null || value === undefined || typeof value === "string") {
+    return value;
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) => toUuid(item, where));
+  }
+  if (value instanceof Uint8Array && value.length === 16) {
+    const hex = Array.from(value, (byte) => byte.toString(16).padStart(2, "0")).join("");
+    return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+  }
+  const found =
+    value instanceof Uint8Array
+      ? `${value.length} bytes`
+      : typeof value === "object"
+        ? "an object"
+        : `${typeof value} ${String(value)}`;
+  throw new TypeError(
+    `Uuid field ${where}: expected a UUID string or 16 bytes, got ${found}`,
+  );
+}
+
 /** One `Bytes` leaf, wire form -> `Uint8Array`.
  *
  *  `null` passes through untouched: a nullable `Bytes` column is `null`
@@ -229,7 +278,7 @@ function toBytes(value: unknown): unknown {
 }
 
 /** Counterpart to {@link reviveWireFields} for a procedure whose return
- *  type is a bare revivable scalar — `Decimal`, `BigInt` or `Bytes`, at any
+ *  type is a bare revivable scalar — `Decimal`, `BigInt`, `Uuid` or `Bytes`, at any
  *  arity —
  *  rather than an object with such fields. {@link reviveWireFields} only
  *  walks object/array *containers* looking for shaped properties, so a
@@ -262,6 +311,11 @@ export function reviveWireScalar(value: unknown, kind: string): unknown {
     // A bare `BigInt`, `BigInt?` or `BigInt[]` return. Strict, like the
     // field-level key: see {@link toBigInt}.
     return toBigInt(value, "procedure return");
+  }
+  if (kind === "uuid") {
+    // A bare `Uuid`, `Uuid?` or `Uuid[]` return: 16 bytes -> string
+    // (cratestack#1359). Strict, see {@link toUuid}.
+    return toUuid(value, "procedure return");
   }
   if (kind !== "decimal") {
     return value;
@@ -512,6 +566,8 @@ export type NumberFilter = ComparableFilter<number>;
 // into the canonical decimal string the server reads.
 export type BigIntFilter = ComparableFilter<bigint>;
 export type BooleanFilter = EqualityFilter<boolean>;
+// cratestack#1359: operands are sent as text, which the server accepts
+// under CBOR as well as the 16-byte form it writes.
 export type UuidFilter = ComparableFilter<string>;
 export type DateTimeFilter = ComparableFilter<string>;
 // cratestack#498: `Decimal`, not `string` — see this file's own
