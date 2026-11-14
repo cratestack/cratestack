@@ -8,7 +8,7 @@
 //! `cratestack_cose::ExternalSigner`, with a JS function as the callback.
 
 use cratestack_core::CratestackError;
-use cratestack_cose::{CoseAlg, ExternalSigner, P256Signer};
+use cratestack_cose::{CoseAlg, CoseVerifyKey, ExternalSigner, P256Signer};
 use js_sys::{Function, Promise, Uint8Array};
 use std::sync::Arc;
 use wasm_bindgen::prelude::*;
@@ -18,6 +18,7 @@ use zeroize::Zeroizing;
 use super::convert;
 use super::envelope::ClientEnvelope;
 use super::error::{from_error, misuse};
+use super::outcome;
 
 #[wasm_bindgen]
 impl ClientEnvelope {
@@ -43,13 +44,20 @@ impl ClientEnvelope {
 
     /// A COSE_Sign1 envelope whose signature comes from `sign`.
     ///
-    /// `alg` is `"esp256"` (`publicKey` is the SEC1 point, compressed or
-    /// uncompressed; `sign` returns ECDSA over SHA-256 of the bytes it is
+    /// `alg` is `"esp256"` (`publicKey` is a SEC1 point, compressed or
+    /// uncompressed, or a P-256 `SubjectPublicKeyInfo` as Android's
+    /// `getEncoded()` gives; `sign` returns ECDSA over SHA-256 of the bytes it is
     /// given, DER or raw `r ‖ s`, which is what WebCrypto's
     /// `subtle.sign({ name: "ECDSA", hash: "SHA-256" }, ...)` returns) or
     /// `"ed25519"` (`publicKey` is 32 bytes; `sign` returns the 64-byte
     /// signature over the bytes as given). A signature that does not verify
     /// under `publicKey` is refused here and never sent.
+    ///
+    /// `sign` may also resolve to `{ outcome: "cancelled" | "timedOut" |
+    /// "failed", message?: string }` instead of a signature (the Dart
+    /// package's keystore signer does). The seal then rejects with code
+    /// `signer_cancelled`, `signer_timed_out` or `signer_failed` (with the
+    /// message); a callback that only ever returns bytes never sees these.
     #[wasm_bindgen(js_name = external)]
     pub fn external(
         alg: &str,
@@ -61,10 +69,18 @@ impl ClientEnvelope {
     ) -> Result<ClientEnvelope, JsValue> {
         let callback = move |to_be_signed: Vec<u8>| {
             let sign = sign.clone();
-            async move { call_sign(&sign, &to_be_signed).await }
+            // Taken now, while the seal is being polled.
+            let slot = outcome::current();
+            async move { call_sign(&sign, &to_be_signed, slot).await }
         };
         let signer = match convert::alg(alg)? {
-            CoseAlg::Esp256 => ExternalSigner::esp256(public_key, callback),
+            CoseAlg::Esp256 => CoseVerifyKey::p256_public(public_key)
+                .and_then(|key| {
+                    key.p256_sec1_uncompressed().ok_or_else(|| {
+                        CratestackError::Validation("invalid P-256 public key".to_owned())
+                    })
+                })
+                .and_then(|point| ExternalSigner::esp256(&point, callback)),
             CoseAlg::Ed25519 => {
                 let public: [u8; 32] = public_key
                     .try_into()
@@ -82,10 +98,15 @@ impl ClientEnvelope {
     }
 }
 
-/// Calls the JS signer. A throw, a rejection or a result that is not a
-/// `Uint8Array` is the signer's failure (`misuse`), without the page's
-/// own error text, which could carry anything.
-async fn call_sign(sign: &Function, to_be_signed: &[u8]) -> Result<Vec<u8>, CratestackError> {
+/// Calls the JS signer. A throw, a rejection or a result that is neither a
+/// `Uint8Array` nor a tagged outcome is the signer's failure (`misuse`),
+/// without the page's own error text, which could carry anything. A tagged
+/// outcome is recorded in `slot` and fails the seal as that kind.
+async fn call_sign(
+    sign: &Function,
+    to_be_signed: &[u8],
+    slot: Option<outcome::Slot>,
+) -> Result<Vec<u8>, CratestackError> {
     let failed = |what: &str| CratestackError::Internal(format!("the signing callback {what}"));
     let returned = sign
         .call1(&JsValue::NULL, &Uint8Array::from(to_be_signed))
@@ -93,8 +114,14 @@ async fn call_sign(sign: &Function, to_be_signed: &[u8]) -> Result<Vec<u8>, Crat
     let settled = JsFuture::from(Promise::resolve(&returned))
         .await
         .map_err(|_| failed("rejected"))?;
-    settled
-        .dyn_into::<Uint8Array>()
-        .map(|signature| signature.to_vec())
-        .map_err(|_| failed("did not return a Uint8Array"))
+    match settled.dyn_into::<Uint8Array>() {
+        Ok(signature) => Ok(signature.to_vec()),
+        Err(settled) => match (outcome::parse(&settled), slot) {
+            (Some((code, message)), Some(slot)) => {
+                slot.record(code, message);
+                Err(failed("did not sign"))
+            }
+            _ => Err(failed("did not return a Uint8Array")),
+        },
+    }
 }

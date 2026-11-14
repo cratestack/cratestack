@@ -14,6 +14,7 @@ use zeroize::Zeroizing;
 use super::convert;
 use super::error::{from_error, misuse};
 use super::opened::opened_object;
+use super::outcome;
 
 /// Seals requests and opens responses for one service (ADR 0006).
 ///
@@ -105,11 +106,8 @@ impl ClientEnvelope {
         let binding = convert::binding(binding, &self.audience);
         future_to_promise(async move {
             let call = binding?;
-            let sealed = this
-                .inner
-                .seal_request(&payload, &call.request())
-                .await
-                .map_err(from_error)?;
+            let sealed =
+                outcome::scoped(this.inner.seal_request(&payload, &call.request())).await?;
             Ok(Uint8Array::from(sealed.as_ref()).into())
         })
     }
