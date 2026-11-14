@@ -17,8 +17,14 @@ async fn each_request_is_charged_and_a_throttled_one_is_refused_before_ready() {
 
     request(&mut socket, 1, "count", 2).await;
     assert!(recv(&mut socket).await.ready.is_some());
-    assert_eq!(recv(&mut socket).await.next, Some(serde_json::json!(1)));
-    assert_eq!(recv(&mut socket).await.next, Some(serde_json::json!(2)));
+    assert_eq!(
+        recv(&mut socket).await.next,
+        Some(serde_json::json!(1).into())
+    );
+    assert_eq!(
+        recv(&mut socket).await.next,
+        Some(serde_json::json!(2).into())
+    );
     assert!(recv(&mut socket).await.end.is_some());
 
     request(&mut socket, 2, "count", 2).await;

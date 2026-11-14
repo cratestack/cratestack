@@ -17,10 +17,10 @@ fn expired() -> CratestackError {
 
 /// `items`, ended with `unauthenticated` at `expires_at` (seconds since the
 /// epoch, the `exp` claim). Already expired: the first item is that error.
-pub fn until_credential_expires(
-    items: SubscriptionStream<serde_json::Value>,
+pub fn until_credential_expires<T: Send + 'static>(
+    items: SubscriptionStream<T>,
     expires_at: Option<i64>,
-) -> SubscriptionStream<serde_json::Value> {
+) -> SubscriptionStream<T> {
     let Some(expires_at) = expires_at else {
         return items;
     };

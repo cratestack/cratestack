@@ -42,7 +42,7 @@ pub(super) fn build_subscribe_handler(model: &Model) -> proc_macro2::TokenStream
             };
             // The model's own feed, not the dispatcher: this router holds no
             // `ProcedureRegistry` for a schema's subscription procedures.
-            match super::subscriptions::#open(&state.db, raw_query, ctx).await {
+            match super::subscriptions::#open(&state.db, raw_query, ctx, ::cratestack::__private::SseCodec).await {
                 Ok(stream) => ::cratestack::__private::encode_subscription_sse_response(stream),
                 Err(error) => ::cratestack::__private::encode_subscribe_error(&error),
             }

@@ -5,9 +5,10 @@
 use std::collections::BTreeMap;
 use std::time::Duration;
 
+use cratestack_core::rpc::RpcFrameValue;
 use cratestack_core::{
-    AuthProvider, CratestackContext, CratestackError, RequestContext, SubscriptionDispatcher,
-    SubscriptionOpen, SubscriptionStream, Value,
+    AuthProvider, CratestackCodec, CratestackContext, CratestackError, RequestContext,
+    SubscriptionDispatcher, SubscriptionOpen, SubscriptionStream, Value,
 };
 use cratestack_websocket::{
     CBOR_PROTOCOL, ClientFrame, JSON_PROTOCOL, ServerFrame, WebSocketConfig, close_code,
@@ -49,21 +50,21 @@ impl AuthProvider for Auth {
 struct Dispatch;
 
 impl SubscriptionDispatcher for Dispatch {
-    fn open(
+    fn open<C: CratestackCodec>(
         &self,
         request: SubscriptionOpen,
+        _codec: C,
     ) -> impl core::future::Future<
-        Output = Result<SubscriptionStream<serde_json::Value>, CratestackError>,
+        Output = Result<SubscriptionStream<RpcFrameValue>, CratestackError>,
     > + Send {
         core::future::ready(match request.op_id.as_str() {
             "count" => {
                 let to = request.input["to"].as_u64().unwrap_or(0);
-                Ok(
-                    Box::pin(stream::iter((1..=to).map(|n| Ok(serde_json::json!(n)))))
-                        as SubscriptionStream<serde_json::Value>,
-                )
+                Ok(Box::pin(stream::iter(
+                    (1..=to).map(|n| Ok(serde_json::json!(n).into())),
+                )) as SubscriptionStream<RpcFrameValue>)
             }
-            "forever" => Ok(Box::pin(stream::pending()) as SubscriptionStream<serde_json::Value>),
+            "forever" => Ok(Box::pin(stream::pending()) as SubscriptionStream<RpcFrameValue>),
             other => Err(CratestackError::NotFound(format!(
                 "unknown subscription op `{other}`"
             ))),
@@ -188,8 +189,8 @@ async fn a_socket_multiplexes_subscriptions() {
     };
     let two = of(2);
     assert!(two[0].ready.is_some());
-    assert_eq!(two[1].next, Some(serde_json::json!(1)));
-    assert_eq!(two[2].next, Some(serde_json::json!(2)));
+    assert_eq!(two[1].next, Some(serde_json::json!(1).into()));
+    assert_eq!(two[2].next, Some(serde_json::json!(2).into()));
     assert!(two[3].end.is_some(), "a stream that ends sends `end`");
     assert_eq!(of(1)[0].err.as_ref().unwrap().code, "invalid_argument");
     assert_eq!(of(3)[0].err.as_ref().unwrap().code, "not_found");
@@ -238,5 +239,8 @@ async fn json_rides_text_messages_and_origin_is_checked() {
     .unwrap();
     socket.send(Message::Text(request.into())).await.unwrap();
     assert!(recv(&mut socket).await.ready.is_some());
-    assert_eq!(recv(&mut socket).await.next, Some(serde_json::json!(1)));
+    assert_eq!(
+        recv(&mut socket).await.next,
+        Some(serde_json::json!(1).into())
+    );
 }

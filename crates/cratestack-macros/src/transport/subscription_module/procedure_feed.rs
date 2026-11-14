@@ -26,13 +26,17 @@ pub(super) fn generate(procedure: &Procedure) -> ProcedureFeed {
     let method = ident(&snake);
     let open_ident = ident(&format!("open_procedure_{snake}"));
     let function = quote! {
-        pub(super) async fn #open_ident<R: super::procedures::ProcedureRegistry>(
+        pub(super) async fn #open_ident<
+            R: super::procedures::ProcedureRegistry,
+            C: ::cratestack::CratestackCodec,
+        >(
             db: &super::Cratestack,
             registry: &R,
             query: Option<String>,
             ctx: ::cratestack::CratestackContext,
+            codec: C,
         ) -> Result<
-            ::cratestack::SubscriptionStream<::cratestack::serde_json::Value>,
+            ::cratestack::SubscriptionStream<::cratestack::rpc::RpcFrameValue>,
             ::cratestack::CratestackError,
         > {
             let args: super::procedures::#module::Args =
@@ -44,7 +48,7 @@ pub(super) fn generate(procedure: &Procedure) -> ProcedureFeed {
             )
             .await?;
             Ok(::cratestack::__private::until_credential_expires(
-                ::cratestack::__private::procedure_feed(items),
+                ::cratestack::__private::procedure_feed(items, codec),
                 expires_at,
             ))
         }

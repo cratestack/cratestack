@@ -3,6 +3,7 @@
 //! Frames go to the socket's outbound queue; a queue too full to take one
 //! closes the socket (1013) rather than drop it silently.
 
+use crate::codec::WireCodec;
 use cratestack_core::subscription_wire::{ServerFrame, SessionCharger};
 use cratestack_core::{SubscriptionDispatcher, SubscriptionOpen};
 use futures_util::StreamExt;
@@ -27,6 +28,7 @@ pub(crate) async fn run<D: SubscriptionDispatcher>(
     out: mpsc::Sender<Outbound>,
     overflow: std::sync::Arc<tokio::sync::Notify>,
     charger: SessionCharger,
+    codec: WireCodec,
 ) {
     let send = |frame| {
         let queued = queue(&out, Outbound::Frame(frame));
@@ -42,7 +44,7 @@ pub(crate) async fn run<D: SubscriptionDispatcher>(
         let _ = out.try_send(Outbound::Done(id));
         return;
     }
-    match dispatcher.open(open).await {
+    match codec.open(&dispatcher, open).await {
         Err(error) => {
             send(ServerFrame::err(id, &error));
         }

@@ -58,7 +58,9 @@ pub(super) fn build_subscribe_block(
             let body: &[u8] = &[];
             let method = "GET";
             #authenticate
-            match #dispatcher.open_query(&op_id, raw_query, ctx).await {
+            match #dispatcher.open_query(
+                &op_id, raw_query, ctx, ::cratestack::__private::SseCodec,
+            ).await {
                 Ok(stream) => ::cratestack::__private::encode_subscription_sse_response(stream),
                 Err(error) => ::cratestack::__private::encode_subscribe_error(&error),
             }
@@ -103,7 +105,9 @@ pub(super) fn build_subscribe_block(
             let method = "POST";
             #authenticate
             let open = ::cratestack::SubscriptionOpen { op_id, input, ctx };
-            match ::cratestack::SubscriptionDispatcher::open(&#dispatcher, open).await {
+            match ::cratestack::SubscriptionDispatcher::open(
+                &#dispatcher, open, ::cratestack::__private::SseCodec,
+            ).await {
                 Ok(stream) => ::cratestack::__private::encode_subscription_sse_response(stream),
                 Err(error) => ::cratestack::__private::encode_subscribe_error(&error),
             }

@@ -21,7 +21,7 @@ async fn ready_then_items_then_end_then_fin() {
         let frame = stream.next().await.unwrap();
         assert_eq!(
             (frame.id, frame.next),
-            (1, Some(serde_json::json!({ "i": i })))
+            (1, Some(serde_json::json!({ "i": i }).into()))
         );
     }
     assert!(stream.next().await.unwrap().end.is_some());
@@ -56,7 +56,7 @@ async fn a_mid_stream_error_is_terminal() {
     assert!(stream.next().await.unwrap().ready.is_some());
     assert_eq!(
         stream.next().await.unwrap().next,
-        Some(serde_json::json!("first"))
+        Some(serde_json::json!("first").into())
     );
     let frame = stream.next().await.unwrap();
     assert_eq!(

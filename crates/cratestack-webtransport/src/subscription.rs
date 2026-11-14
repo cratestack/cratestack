@@ -60,7 +60,7 @@ pub(crate) async fn run<D: SubscriptionDispatcher>(
     let permit = stream.permit;
     let open = SubscriptionOpen {
         op_id: op,
-        input,
+        input: input.into(),
         ctx: stream.ctx,
     };
     drive(
@@ -114,7 +114,7 @@ async fn drive<D: SubscriptionDispatcher>(
     }
 
     let opened = tokio::select! {
-        opened = dispatcher.open(open) => opened,
+        opened = codec.open(&dispatcher, open) => opened,
         () = send.stopped() => return span_end(&span, "cancel", 0),
     };
     let mut items = match opened {

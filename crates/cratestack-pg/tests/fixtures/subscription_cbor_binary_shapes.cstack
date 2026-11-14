@@ -1,0 +1,42 @@
+// Subscription items carrying `Uuid` and `Bytes` over the CBOR sockets
+// (`tests/subscription_cbor_binary_shapes.rs`, cratestack#1360).
+
+transport rpc
+
+extension websocket {
+}
+
+extension webtransport {
+}
+
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+auth Caller {
+  id Int
+}
+
+type Ask {
+  n Int
+}
+
+type Blob {
+  id Uuid
+  data Bytes
+  extra Json
+}
+
+subscription procedure blobs(args: Ask): Blob
+  @allow(auth() != null)
+
+model BinNote {
+  id Uuid @id
+  data Bytes
+
+  @@allow("read", auth() != null)
+  @@allow("create", auth() != null)
+  @@emit(created)
+  @@subscribe
+}

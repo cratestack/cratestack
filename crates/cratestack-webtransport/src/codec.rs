@@ -10,7 +10,10 @@
 
 use cratestack_codec_cbor::{CborCodec, CborSeqChunkDecoder};
 use cratestack_codec_json::JsonCodec;
-use cratestack_core::{CratestackCodec, CratestackError};
+use cratestack_core::rpc::RpcFrameValue;
+use cratestack_core::{
+    CratestackCodec, CratestackError, SubscriptionDispatcher, SubscriptionOpen, SubscriptionStream,
+};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 
@@ -60,6 +63,19 @@ impl WireCodec {
             Some(other) => Err(CratestackError::NotAcceptable(format!(
                 "unsupported WebTransport codec `{other}`; expected `cbor` or `json`",
             ))),
+        }
+    }
+
+    /// Opens `open` with this session's codec, so a dispatcher encodes each
+    /// item the way this session's frames are (cratestack#1360).
+    pub(crate) async fn open<D: SubscriptionDispatcher>(
+        self,
+        dispatcher: &D,
+        open: SubscriptionOpen,
+    ) -> Result<SubscriptionStream<RpcFrameValue>, CratestackError> {
+        match self {
+            Self::Cbor => dispatcher.open(open, CborCodec).await,
+            Self::Json => dispatcher.open(open, JsonCodec).await,
         }
     }
 

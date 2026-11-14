@@ -190,9 +190,15 @@ async fn a_socket_carries_a_feed_and_a_procedure() {
     frames.sort_by_key(|frame| frame.id);
     // Caller 1 reads note 2 only (its own); the room line arrives on id 2.
     assert_eq!(frames[0].id, 1);
-    assert_eq!(frames[0].next.as_ref().unwrap()["data"]["id"], 2);
+    assert_eq!(
+        serde_json::Value::from(frames[0].next.clone().unwrap())["data"]["id"],
+        2
+    );
     assert_eq!(frames[1].id, 2);
-    assert_eq!(frames[1].next.as_ref().unwrap()["body"], "hello");
+    assert_eq!(
+        serde_json::Value::from(frames[1].next.clone().unwrap())["body"],
+        "hello"
+    );
 }
 
 /// Caller 1, on every request the generated client sends (the socket's

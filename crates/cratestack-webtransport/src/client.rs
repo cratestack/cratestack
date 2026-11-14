@@ -11,7 +11,7 @@
 //! let client = WebTransportClient::connect(&url, &ServerTrust::NativeRoots, headers).await?;
 //! let mut notes = client.subscribe("model.Note.subscribe", serde_json::Value::Null).await?;
 //! while let Some(item) = notes.next().await {
-//!     let event = item?;
+//!     let event = item?; // an `RpcFrameValue`: byte strings stay byte strings
 //! }
 //! # Ok(()) }
 //! ```
@@ -20,7 +20,7 @@ use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
-use cratestack_core::rpc::RpcErrorBody;
+use cratestack_core::rpc::{RpcErrorBody, RpcFrameValue};
 use tokio::sync::Mutex;
 
 use crate::codec::WireCodec;
@@ -118,7 +118,7 @@ impl WebTransportClient {
     pub async fn subscribe(
         &self,
         op_id: &str,
-        input: serde_json::Value,
+        input: impl Into<RpcFrameValue>,
     ) -> Result<Subscription, ClientFailure> {
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
         let (mut send, recv) = self
@@ -143,7 +143,7 @@ pub struct Subscription {
 impl Subscription {
     /// The next item; `None` once the subscription has ended (cleanly, or
     /// after the `Err` this returned).
-    pub async fn next(&mut self) -> Option<Result<serde_json::Value, ClientFailure>> {
+    pub async fn next(&mut self) -> Option<Result<RpcFrameValue, ClientFailure>> {
         loop {
             return match self.reader.next::<ServerFrame>().await {
                 Ok(frame) if frame.id != self.id => continue,

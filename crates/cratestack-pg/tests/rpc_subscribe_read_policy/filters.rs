@@ -72,11 +72,14 @@ async fn a_feed_filters_projects_and_picks_operations() {
     // The same input through the dispatcher, as WebTransport sends it.
     let mut feed = db
         .subscriptions()
-        .open(SubscriptionOpen {
-            op_id: "model.SubNote.subscribe".to_owned(),
-            input: json!({"filters": [{"key": "id", "value": "2"}]}),
-            ctx: caller(1),
-        })
+        .open(
+            SubscriptionOpen {
+                op_id: "model.SubNote.subscribe".to_owned(),
+                input: json!({"filters": [{"key": "id", "value": "2"}]}),
+                ctx: caller(1),
+            },
+            cratestack::JsonCodec,
+        )
         .await
         .expect("a filtered feed opens");
 
@@ -101,6 +104,7 @@ async fn a_feed_filters_projects_and_picks_operations() {
     .expect("an event within 5s")
     .expect("the feed does not end")
     .expect("an item");
+    let event = cratestack::serde_json::Value::from(event);
     assert_eq!(event["data"]["id"], 2);
 }
 
@@ -119,7 +123,12 @@ async fn a_filter_a_feed_cannot_decide_is_refused_at_open() {
         ("nope=1", "an unknown filter"),
     ] {
         let refused = dispatch
-            .open_query("model.SubNote.subscribe", Some(query.to_owned()), caller(1))
+            .open_query(
+                "model.SubNote.subscribe",
+                Some(query.to_owned()),
+                caller(1),
+                cratestack::JsonCodec,
+            )
             .await;
         assert!(
             matches!(refused, Err(CratestackError::BadRequest(_))),

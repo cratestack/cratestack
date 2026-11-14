@@ -1,3 +1,4 @@
+use cratestack_core::rpc::RpcFrameValue;
 use cratestack_core::{CratestackError, ModelEventKind, SubscriptionStream};
 use futures_util::StreamExt;
 use futures_util::stream;
@@ -53,14 +54,14 @@ fn a_frame_input_becomes_the_query() {
 
 #[tokio::test]
 async fn fields_project_each_record() {
-    let items: SubscriptionStream<serde_json::Value> = Box::pin(stream::iter([Ok(
-        serde_json::json!({"model": "Note", "data": {"id": 1, "body": "x", "secret": 2}}),
+    let items: SubscriptionStream<RpcFrameValue> = Box::pin(stream::iter([Ok(
+        serde_json::json!({"model": "Note", "data": {"id": 1, "body": "x", "secret": 2}}).into(),
     )]));
     let out: Vec<_> = project_event_fields(items, Some(vec!["id".to_owned(), "body".to_owned()]))
         .collect()
         .await;
     assert_eq!(
         out[0].as_ref().unwrap(),
-        &serde_json::json!({"model": "Note", "data": {"id": 1, "body": "x"}})
+        &RpcFrameValue::from(serde_json::json!({"model": "Note", "data": {"id": 1, "body": "x"}}))
     );
 }

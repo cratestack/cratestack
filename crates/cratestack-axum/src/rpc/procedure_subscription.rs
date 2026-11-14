@@ -13,7 +13,8 @@
 //! feed, it is not a backplane that can drop events, so a natural end is
 //! not an error. An `Err` item is the stream's terminal error.
 
-use cratestack_core::{CratestackError, SubscriptionStream};
+use cratestack_core::rpc::RpcFrameValue;
+use cratestack_core::{CratestackCodec, CratestackError, SubscriptionStream};
 use futures_util::stream::{self, StreamExt};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
@@ -63,20 +64,22 @@ pub fn procedure_query_args<A: DeserializeOwned>(
     })
 }
 
-/// A handler's items encoded to JSON values, ending after the first error.
-pub fn procedure_feed<T>(items: SubscriptionStream<T>) -> SubscriptionStream<serde_json::Value>
+/// A handler's items encoded with `codec`, ending after the first error.
+pub fn procedure_feed<C, T>(
+    items: SubscriptionStream<T>,
+    codec: C,
+) -> SubscriptionStream<RpcFrameValue>
 where
+    C: CratestackCodec,
     T: Serialize + Send + 'static,
 {
-    Box::pin(stream::unfold(Some(items), |items| async move {
-        let mut items = items?;
+    Box::pin(stream::unfold(Some((items, codec)), |state| async move {
+        let (mut items, codec) = state?;
         let item = match items.next().await? {
-            Ok(item) => serde_json::to_value(&item).map_err(|error| {
-                CratestackError::Codec(format!("failed to encode a subscription item: {error}"))
-            }),
+            Ok(item) => RpcFrameValue::encode_with(&codec, &item),
             Err(error) => Err(error),
         };
-        let rest = item.is_ok().then_some(items);
+        let rest = item.is_ok().then_some((items, codec));
         Some((item, rest))
     }))
 }
