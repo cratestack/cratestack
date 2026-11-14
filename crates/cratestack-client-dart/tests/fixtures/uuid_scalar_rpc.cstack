@@ -1,0 +1,22 @@
+// RPC twin of uuid_scalar.cstack (cratestack#1359).
+
+transport rpc
+
+model Doc {
+  id Uuid @id
+  ownerId Uuid
+  parentId Uuid?
+  tagIds Uuid[]
+  title String
+
+  @@allow("all", true)
+}
+
+type Pair {
+  first Uuid
+  others Uuid[]
+}
+
+procedure echoId(id: Uuid): Uuid
+
+procedure echoPair(input: Pair): Pair

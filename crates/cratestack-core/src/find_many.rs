@@ -48,3 +48,22 @@ pub struct FieldFilterInput<V> {
     /// not.
     pub is_null: Option<bool>,
 }
+
+impl<V> FieldFilterInput<V> {
+    /// Converts every comparison operand (`eq`, `ne`, `in`, `lt`, `lte`,
+    /// `gt`, `gte`); the non-operand fields pass through unchanged.
+    pub fn map_values<W>(self, mut f: impl FnMut(V) -> W) -> FieldFilterInput<W> {
+        FieldFilterInput {
+            eq: self.eq.map(&mut f),
+            ne: self.ne.map(&mut f),
+            in_: self.in_.map(|v| v.into_iter().map(&mut f).collect()),
+            lt: self.lt.map(&mut f),
+            lte: self.lte.map(&mut f),
+            gt: self.gt.map(&mut f),
+            gte: self.gte.map(&mut f),
+            contains: self.contains,
+            starts_with: self.starts_with,
+            is_null: self.is_null,
+        }
+    }
+}

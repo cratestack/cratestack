@@ -1,5 +1,21 @@
 ## Unreleased
 
+- Fix: `decodeJson` now writes a CBOR byte string (major type 2) as a JSON
+  array of integers on both backends (cratestack#1359). The native backend
+  used to throw a `CratestackCborCodecError` for the whole body
+  (`invalid type: byte array`), because the JSON value it decodes into has no
+  byte-string arm, and the web backend wrote a `Uint8Array` as an index-keyed
+  object (`{"0":1,"1":35,...}`). This is how a server's 16-byte `Uuid` reaches
+  generated Dart clients, whose `cratestackDecodeUuid` turns the 16 integers
+  back into the canonical string. Behaviour change for direct callers of
+  `decodeJson`: a body that used to throw, or to produce an index-keyed
+  object, now decodes. Everything else decodes exactly as before, including
+  tags, bignums and 64-bit integers (pinned against the previous decode).
+  `encodeJson` is unchanged: it still writes a JSON string as a CBOR text
+  string, which servers from this release accept for a `Uuid`. The
+  `encode_json`/`decode_json` signatures are unchanged, so the bridge glue
+  does not need regenerating.
+
 ## 0.19.5 (2026-11-12)
 
 - No functional changes. Version kept in lockstep with the CrateStack

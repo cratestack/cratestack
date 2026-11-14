@@ -1,0 +1,25 @@
+// Dedicated Uuid-scalar fixture (cratestack#1359). Over CBOR the server writes
+// a `Uuid` as a 16-byte string, which the `cratestack_cbor` bridge hands the
+// generated client as a list of 16 integers rather than the canonical string.
+// `Doc` covers a `Uuid @id`, a required, an optional and a list field; `Pair`
+// is a `type` a procedure returns; `echoId` is a bare `Uuid` argument and
+// return.
+
+model Doc {
+  id Uuid @id
+  ownerId Uuid
+  parentId Uuid?
+  tagIds Uuid[]
+  title String
+
+  @@allow("all", true)
+}
+
+type Pair {
+  first Uuid
+  others Uuid[]
+}
+
+procedure echoId(id: Uuid): Uuid
+
+procedure echoPair(input: Pair): Pair

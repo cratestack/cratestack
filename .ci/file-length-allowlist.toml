@@ -434,13 +434,6 @@ added = "2026-08-29"
 reason = "test module; split by concern when the module it covers is next touched"
 
 [[file]]
-path = "crates/cratestack-client-flutter/src/cbor/mod.rs"
-lines = 233
-issue = "#TBD"
-added = "2026-08-29"
-reason = "pre-existing; split by concern (extract inline tests first)"
-
-[[file]]
 path = "crates/cratestack-core/src/schema.rs"
 lines = 232
 issue = "#TBD"

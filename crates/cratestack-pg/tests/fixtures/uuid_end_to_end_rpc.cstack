@@ -1,0 +1,27 @@
+// cratestack#1359: a model with `Uuid` primary key, a `Uuid` foreign key and
+// a nullable `Uuid`, served over RPC. A TypeScript/Dart client sends those as
+// CBOR text; the server must accept them in create/update bodies, in the
+// `{ id }` frames of get/update/delete, in `/rpc/batch`, and in `FindMany`
+// filters. Dedicated to `tests/uuid_end_to_end_rpc.rs`.
+transport rpc
+
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+auth Operator {
+  id Int
+}
+
+model UuidRpcDoc {
+  id Uuid @id
+  ownerId Uuid
+  parentId Uuid?
+  title String
+
+  @@allow("all", auth() != null)
+}
+
+procedure findUuidDocs(query: FindMany<UuidRpcDoc>): UuidRpcDoc[]
+  @allow(auth() != null)

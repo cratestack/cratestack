@@ -309,6 +309,7 @@ fn scalar_revival_strings_match_the_runtime_contract() {
     // compile error, so pin them.
     assert_eq!(ScalarRevival::Decimal.as_str(), "decimal");
     assert_eq!(ScalarRevival::BigInt.as_str(), "bigint");
+    assert_eq!(ScalarRevival::Uuid.as_str(), "uuid");
     assert_eq!(ScalarRevival::Bytes.as_str(), "bytes");
     assert_eq!(ScalarRevival::BytesList.as_str(), "bytesList");
 }
@@ -318,3 +319,7 @@ fn scalar_revival_strings_match_the_runtime_contract() {
 // reuses this file's `schema`/`model`/`field`/`span` builders.
 #[path = "wire_shapes_bigint_tests.rs"]
 mod bigint;
+
+// `Uuid` (cratestack#1359) shape tests, in their own file for the same reason.
+#[path = "wire_shapes_uuid_tests.rs"]
+mod uuid;

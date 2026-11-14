@@ -40,9 +40,6 @@ import '../cbor_codec.dart';
 @JS('JSON.parse')
 external JSAny? _jsonParse(String text);
 
-@JS('JSON.stringify')
-external JSString _jsonStringify(JSAny? value);
-
 /// Private key the inline module-bridge script stashes the imported
 /// module's exports under. Not exposed outside this file.
 const _bridgeGlobal = '__cratestackCborWasmBridge';
@@ -56,8 +53,15 @@ external JSString _contentType();
 @JS('window.__cratestackCborWasmBridge.encode')
 external JSUint8Array _encode(JSAny? value);
 
-@JS('window.__cratestackCborWasmBridge.decode')
-external JSAny? _decode(JSUint8Array bytes);
+// CBOR bytes -> JSON text, in one JS call: `decode`, then `JSON.stringify`
+// with a replacer that writes a `Uint8Array` (how the wasm codec hands back a
+// CBOR byte string, e.g. a `Uuid` the server wrote as 16 bytes) as a plain
+// array of integers. Plain `JSON.stringify` would write it as an index-keyed
+// object, `{"0":103,"1":229,...}`, which no generated client can read
+// (cratestack#1359). The replacer sees every value, so nested byte strings
+// are covered. Installed by `_installModuleBridge`.
+@JS('window.__cratestackCborWasmBridge.decodeText')
+external JSString _decodeText(JSUint8Array bytes);
 
 @JS('window.__cratestackCborWasmBridge.error')
 external JSString? _bridgeError;
@@ -85,14 +89,11 @@ class _WebCratestackCborCodec implements CratestackCborCodec {
 
   @override
   String decodeJson(List<int> bytes) {
-    final decoded = () {
-      try {
-        return _decode(Uint8List.fromList(bytes).toJS);
-      } catch (error) {
-        throw CratestackCborCodecError(_jsErrorMessage(error));
-      }
-    }();
-    return _jsonStringify(decoded).toDart;
+    try {
+      return _decodeText(Uint8List.fromList(bytes).toJS).toDart;
+    } catch (error) {
+      throw CratestackCborCodecError(_jsErrorMessage(error));
+    }
   }
 }
 
@@ -213,7 +214,13 @@ Future<void> _installModuleBridge(String moduleUrl) {
   script.text = '''
     try {
       const mod = await import("$moduleUrl");
-      window.$_bridgeGlobal = { init: mod.default, ...mod };
+      const bytesAsArrays = (_key, value) =>
+        value instanceof Uint8Array ? Array.from(value) : value;
+      window.$_bridgeGlobal = {
+        init: mod.default,
+        ...mod,
+        decodeText: (bytes) => JSON.stringify(mod.decode(bytes), bytesAsArrays),
+      };
     } catch (e) {
       window.$_bridgeGlobal = { error: String(e) };
     }

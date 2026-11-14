@@ -1161,7 +1161,7 @@ verify-dart:
 	# own text-level tests and to `tsc`-style structure checks; only a real
 	# `flutter analyze --fatal-warnings` (what `verify_pkg` runs) fails on
 	# one.
-	fixtures=(ci_rest ci_rpc builder_edge_cases procedures_only_rest bigint_scalar bigint_scalar_rpc ordinal_enums subscriptions_rpc)
+	fixtures=(ci_rest ci_rpc builder_edge_cases procedures_only_rest bigint_scalar bigint_scalar_rpc uuid_scalar uuid_scalar_rpc ordinal_enums subscriptions_rpc)
 	for fixture in "${fixtures[@]}"; do
 	  pkg="$out/default/$fixture"
 	  echo "=== generate-dart --preset default: $fixture -> $pkg ==="

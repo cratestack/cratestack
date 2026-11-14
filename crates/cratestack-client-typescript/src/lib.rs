@@ -8,6 +8,7 @@ mod naming;
 mod ordinal_enums;
 mod package_deps;
 mod package_floors;
+mod procedure_revival;
 mod procedure_views;
 mod refine;
 mod release_line;

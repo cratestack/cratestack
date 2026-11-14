@@ -1257,6 +1257,46 @@ int? _cratestackSkipArgument(Uint8List bytes, int cursor, int info) {
   return (value, cursor + width);
 }
 
+/// Decodes a `Uuid` wire value (cratestack#1359).
+///
+/// Over CBOR the server writes a `Uuid` as a 16-byte byte string. The
+/// `cratestack_cbor` bridge carries JSON text, which has no byte-string
+/// primitive, so it hands that over as a list of 16 integers (`[103, 229, ...]`)
+/// where a JSON server sends the canonical string. Both are accepted here: a
+/// [String] is returned unchanged, and a 16-integer list is formatted as the
+/// lowercase hyphenated `8-4-4-4-12` string.
+///
+/// Anything else throws a [FormatException] naming [site], the `Model.field`
+/// the value was read for. That includes a list of the wrong length and an
+/// index-keyed map (what an older `cratestack_cbor` web bridge produced for a
+/// byte string), because a silent wrong `Uuid` is worse than a loud failure.
+///
+/// Requests are not encoded to bytes: a `Uuid` is sent as text, and the server
+/// accepts text or bytes.
+String cratestackDecodeUuid(Object? value, String site) {
+  if (value is String) {
+    return value;
+  }
+  if (value is List && value.length == 16) {
+    final buffer = StringBuffer();
+    for (var index = 0; index < 16; index++) {
+      final byte = value[index];
+      if (byte is! int || byte < 0 || byte > 255) {
+        throw FormatException(
+          '$site: expected a Uuid as a string or 16 bytes, got a non-byte at index $index ($byte)',
+        );
+      }
+      if (index == 4 || index == 6 || index == 8 || index == 10) {
+        buffer.write('-');
+      }
+      buffer.write(byte.toRadixString(16).padLeft(2, '0'));
+    }
+    return buffer.toString();
+  }
+  final found = value is List ? 'a list of ${value.length} elements' : '${value.runtimeType}';
+  throw FormatException('$site: expected a Uuid as a string or 16 bytes, got $found');
+}
+
 bool _isCborSeqContentType(String? contentType) =>
     _cratestackMimeOf(contentType) == 'application/cbor-seq';
 

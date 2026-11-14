@@ -32,6 +32,7 @@ pub mod find_many;
 pub mod idempotency_record;
 pub mod json;
 pub mod lenient_bytes;
+pub mod lenient_uuid;
 pub mod limits;
 pub mod log_throttle;
 pub mod op_list;
@@ -133,6 +134,11 @@ pub use json::Json;
 pub use lenient_bytes::{
     LenientBytes, deserialize_bytes, deserialize_bytes_list, deserialize_double_option_bytes,
     deserialize_optional_bytes, deserialize_optional_bytes_list,
+};
+pub use lenient_uuid::{
+    LenientUuid, deserialize_double_option_uuid, deserialize_optional_uuid,
+    deserialize_optional_uuid_filter, deserialize_optional_uuid_list, deserialize_uuid,
+    deserialize_uuid_list,
 };
 pub use limits::{DEFAULT_BODY_LIMIT_BYTES, MAX_RESPONSE_REBUFFER_BYTES};
 pub use op_list::{

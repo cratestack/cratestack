@@ -71,6 +71,18 @@
 //! the guess rather than letting the runtime infer it wrong at the one
 //! input that matters least and surprises most.
 //!
+//! ## Why this carries `Uuid` too (cratestack#1359)
+//!
+//! A schema `Uuid` is a plain `string` in a generated client, but the
+//! server writes it as a 16-byte CBOR byte string, which `@cratestack/cbor`
+//! decodes to a `Uint8Array` — a lie under a `string` type. The wire form is
+//! not self-identifying (a 16-byte `Bytes` value looks the same), so only
+//! the schema can say which keys to revive, per type, as for `Bytes`. The
+//! list is not split by arity (see `BigInt` below), and the runtime is
+//! strict: a `Uuid` key holding anything but a string or 16 bytes throws.
+//! Requests are not the client's job: it sends text and the server accepts
+//! it (`cratestack_core::lenient_uuid`).
+//!
 //! ## Why this carries `BigInt` too (ADR 0019)
 //!
 //! A `BigInt` field is a `bigint` in a generated client and a canonical
@@ -93,8 +105,12 @@
 //! reading it as the integer it appears to be would be a silent wrong answer.
 use std::collections::BTreeSet;
 
-use cratestack_core::{Field, Schema, TypeArity, TypeRef};
+use cratestack_core::{Field, Schema, TypeArity};
 use serde::Serialize;
+
+#[cfg(test)]
+pub(crate) use crate::procedure_revival::ScalarRevival;
+pub(crate) use crate::procedure_revival::{ProcedureRevival, procedure_revival};
 
 /// One row of the generated `wireShapes` registry (`models.ts.j2`) —
 /// see this module's doc comment for the scheme.
@@ -110,6 +126,14 @@ pub(crate) struct WireShapeView {
     /// decimal string (or an array of them) into a `bigint`; see this
     /// module's doc for why one list serves all arities.
     pub(crate) bigint_keys_js: String,
+    /// This type's own direct `Uuid` field wire names, at every arity, as a
+    /// JS array-literal source fragment. Each decodes from a 16-byte
+    /// `Uint8Array` (a CBOR byte string) into the canonical hyphenated
+    /// string; a string (JSON, or an older server) passes through. One list
+    /// serves all arities, as for `BigInt`: a `Uuid[]` is an array of
+    /// `Uint8Array`, told apart from a leaf structurally. See the module
+    /// doc, cratestack#1359.
+    pub(crate) uuid_keys_js: String,
     /// This type's own direct `Bytes` field wire names at `Required`/
     /// `Optional` arity — each decodes from a wire integer array into one
     /// `Uint8Array`.
@@ -159,6 +183,7 @@ fn build_shape(
 ) -> WireShapeView {
     let mut decimal_keys = Vec::new();
     let mut bigint_keys = Vec::new();
+    let mut uuid_keys = Vec::new();
     let mut bytes_keys = Vec::new();
     let mut bytes_list_keys = Vec::new();
     let mut nested = Vec::new();
@@ -173,6 +198,8 @@ fn build_shape(
             decimal_keys.push(field.name.clone());
         } else if field.ty.name == "BigInt" {
             bigint_keys.push(field.name.clone());
+        } else if field.ty.name == "Uuid" {
+            uuid_keys.push(field.name.clone());
         } else if field.ty.name == "Bytes" {
             // Split by arity — see the module doc for why `[]` cannot be
             // classified structurally at runtime.
@@ -189,6 +216,7 @@ fn build_shape(
         name: name.to_owned(),
         decimal_keys_js: crate::views::js_string_array(&decimal_keys),
         bigint_keys_js: crate::views::js_string_array(&bigint_keys),
+        uuid_keys_js: crate::views::js_string_array(&uuid_keys),
         bytes_keys_js: crate::views::js_string_array(&bytes_keys),
         bytes_list_keys_js: crate::views::js_string_array(&bytes_list_keys),
         nested_js: js_string_map(&nested),
@@ -227,80 +255,6 @@ fn js_string_map(entries: &[(String, String)]) -> String {
         .collect::<Vec<_>>()
         .join(", ");
     format!("{{ {body} }}")
-}
-
-/// How a procedure's return type should be revived on decode
-/// (cratestack#498 F2) — see `ProcedureView::revival_kind`'s doc
-/// comment (`crate::procedure_views`) for the generated-code side of this.
-pub(crate) enum ProcedureRevival {
-    /// The return type is a bare scalar needing revival — `Decimal`,
-    /// `BigInt` or `Bytes`, at any arity. `Page<T>` is not a validated shape for
-    /// either (`Page<T>`'s item must be a declared model or `type`,
-    /// `cratestack-parser::validate::type_names`), so this can only ever
-    /// be the bare name, `?`, or `[]`.
-    Scalar(ScalarRevival),
-    /// The (`Page<T>`-unwrapped) base type names a declared model or
-    /// `type` — decode via that type's own shape (`String` is the shape
-    /// name; a name with no registry entry, e.g. a plain scalar or enum
-    /// return, is `reviveWireFields`'s documented no-op fast path).
-    /// `paged` is `true` when the original return type was `Page<T>` —
-    /// the generated call site uses `revivePagedWireFields` instead of
-    /// `reviveWireFields` for that case (the decoded envelope's own
-    /// keys, `items`/`totalCount`/`pageInfo`, are never themselves `T`'s
-    /// fields, so `T`'s shape must be applied to `.items`, not the
-    /// envelope).
-    Shape { shape_name: String, paged: bool },
-}
-
-/// Which bare-scalar revival a [`ProcedureRevival::Scalar`] return needs.
-/// Rendered straight into the generated `reviveWireScalar(value, "...")`
-/// call as its second argument, so these strings are a wire contract with
-/// `models.ts.j2`'s runtime — keep the two in lockstep.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum ScalarRevival {
-    /// `Decimal` / `Decimal?` / `Decimal[]` — a wire string (or array of
-    /// them) becomes a `Decimal` instance.
-    Decimal,
-    /// `BigInt` / `BigInt?` / `BigInt[]` — a canonical decimal wire string
-    /// (or array of them) becomes a `bigint`; anything else throws.
-    BigInt,
-    /// `Bytes` / `Bytes?` — one wire integer array becomes one
-    /// `Uint8Array`.
-    Bytes,
-    /// `Bytes[]` — a wire array *of* integer arrays becomes
-    /// `Uint8Array[]`. Distinct from [`Self::Bytes`] for the same
-    /// arity-ambiguity reason the field-level keys are split; see the
-    /// module doc.
-    BytesList,
-}
-
-impl ScalarRevival {
-    pub(crate) fn as_str(self) -> &'static str {
-        match self {
-            ScalarRevival::Decimal => "decimal",
-            ScalarRevival::BigInt => "bigint",
-            ScalarRevival::Bytes => "bytes",
-            ScalarRevival::BytesList => "bytesList",
-        }
-    }
-}
-
-/// Classifies `return_type` per [`ProcedureRevival`].
-pub(crate) fn procedure_revival(return_type: &TypeRef) -> ProcedureRevival {
-    let paged = return_type.is_page();
-    let base = return_type.page_item().unwrap_or(return_type);
-    match base.name.as_str() {
-        "Decimal" => ProcedureRevival::Scalar(ScalarRevival::Decimal),
-        "BigInt" => ProcedureRevival::Scalar(ScalarRevival::BigInt),
-        "Bytes" if matches!(base.arity, TypeArity::List) => {
-            ProcedureRevival::Scalar(ScalarRevival::BytesList)
-        }
-        "Bytes" => ProcedureRevival::Scalar(ScalarRevival::Bytes),
-        _ => ProcedureRevival::Shape {
-            shape_name: base.name.clone(),
-            paged,
-        },
-    }
 }
 
 #[cfg(test)]

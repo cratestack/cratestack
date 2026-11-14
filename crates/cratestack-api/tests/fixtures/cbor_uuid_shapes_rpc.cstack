@@ -1,0 +1,26 @@
+// cratestack#1359 fixture: every request position a `Uuid` can occupy in a
+// procedure body — a bare argument, a nullable one, a list, a nested `type`
+// — and a bare `Uuid` return. Dedicated to `tests/cbor_uuid_text_rpc.rs`.
+
+transport rpc
+
+datasource db {
+  provider = "none"
+}
+
+type Inner {
+  ids Uuid[]
+}
+
+type Item {
+  id Uuid
+  maybe Uuid?
+  ids Uuid[]
+  inner Inner
+}
+
+procedure echo(input: Item): Item
+  @allow(auth() != null)
+
+procedure echoId(id: Uuid): Uuid
+  @allow(auth() != null)

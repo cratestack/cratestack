@@ -49,7 +49,8 @@ pub(crate) fn struct_field_definition(
     let field_ident = ident(&field.name);
     let docs = doc_attrs(&field.docs);
     let field_type = struct_field_type(field, wrap_for_patch, enum_names);
-    // A `Bytes` field needs `deserialize_with` pointing at a deserializer
+    // A `Bytes` field (and, cratestack#1359, a `Uuid` field — text or 16
+    // bytes under CBOR) needs `deserialize_with` pointing at a deserializer
     // that accepts a CBOR byte string as well as the integer array every
     // deployed client sends (cratestack#783). Only the *argument* is taken
     // here, never `BytesSerde::args()`: every branch below that can host it
