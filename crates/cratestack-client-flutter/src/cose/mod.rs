@@ -12,6 +12,7 @@
 //!
 //! - [`envelope`]: the opaque [`FlutterClientEnvelope`].
 //! - [`types`]: the plain values that cross the bridge.
+//! - [`sign_outcome`]: what a keystore signing callback returns.
 //! - [`error`]: [`FlutterCoseError`], where every failed verification is
 //!   the same `Rejected`.
 //!
@@ -21,10 +22,14 @@
 mod convert;
 pub mod envelope;
 pub mod error;
+mod external;
+mod outcome;
+pub mod sign_outcome;
 pub mod types;
 
 pub use envelope::FlutterClientEnvelope;
 pub use error::{FlutterCoseError, FlutterCoseErrorKind};
+pub use sign_outcome::{FlutterSignOutcome, FlutterSignOutcomeKind};
 pub use types::{
     FlutterCallBinding, FlutterCoseAlg, FlutterCoseMode, FlutterOpened, FlutterSealOptions,
     FlutterSelectorHeader, FlutterServerKey,

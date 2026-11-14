@@ -4,6 +4,8 @@ use std::fmt;
 
 use cratestack_core::CratestackError;
 
+use super::sign_outcome::FlutterSignOutcomeKind;
+
 /// Why sealing or opening failed.
 ///
 /// [`Rejected`](Self::Rejected) is every failed verification check. The
@@ -13,9 +15,9 @@ use cratestack_core::CratestackError;
 /// shape, a signer that failed), never on the received bytes, so they may
 /// say what went wrong.
 ///
-/// The three `Signer*` kinds are produced by a keystore-backed signer,
-/// which a later release adds; the in-memory signers of this release cannot
-/// fail that way.
+/// The three `Signer*` kinds are produced by a keystore-backed signer (the
+/// callback of `FlutterClientEnvelope::esp256_external`); the in-memory
+/// signers cannot fail that way.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FlutterCoseErrorKind {
     /// The message did not verify (the coarse `401`).
@@ -57,6 +59,23 @@ impl FlutterCoseError {
     #[cfg_attr(feature = "frb-glue", flutter_rust_bridge::frb(ignore))]
     pub fn misuse(message: impl Into<String>) -> Self {
         Self::of(FlutterCoseErrorKind::Misuse, message.into())
+    }
+
+    /// What a signer callback's outcome means for the seal: `None` for a
+    /// signature (nothing failed), else the matching `Signer*` kind. Only
+    /// `Failed` keeps its message: a cancellation and a timeout have none.
+    #[cfg_attr(feature = "frb-glue", flutter_rust_bridge::frb(ignore))]
+    pub fn signer(kind: FlutterSignOutcomeKind, message: String) -> Option<Self> {
+        Some(match kind {
+            FlutterSignOutcomeKind::Signed => return None,
+            FlutterSignOutcomeKind::Cancelled => {
+                Self::of(FlutterCoseErrorKind::SignerCancelled, String::new())
+            }
+            FlutterSignOutcomeKind::TimedOut => {
+                Self::of(FlutterCoseErrorKind::SignerTimedOut, String::new())
+            }
+            FlutterSignOutcomeKind::Failed => Self::of(FlutterCoseErrorKind::SignerFailed, message),
+        })
     }
 
     fn of(kind: FlutterCoseErrorKind, message: String) -> Self {

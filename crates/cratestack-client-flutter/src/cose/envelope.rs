@@ -11,6 +11,7 @@ use cratestack_cose::{
 use zeroize::{Zeroize, Zeroizing};
 
 use super::error::FlutterCoseError;
+use super::outcome;
 use super::types::{
     FlutterCallBinding, FlutterCoseAlg, FlutterCoseMode, FlutterOpened, FlutterSealOptions,
     FlutterSelectorHeader, FlutterServerKey,
@@ -18,10 +19,10 @@ use super::types::{
 
 /// Seals requests and opens responses for one service.
 ///
-/// Opaque across the bridge: the key never leaves Rust. The signers of
-/// this release hold their key in memory (an HMAC secret, an Ed25519
-/// seed); a key in the Android Keystore or the Secure Enclave comes with
-/// the callback signer of a later release. All crypto, the canonical query
+/// Opaque across the bridge. The in-memory signers (an HMAC secret, an
+/// Ed25519 seed) keep their key in Rust; the callback signer
+/// (`esp256_external`) never has the key at all: it is in the Android
+/// Keystore or the Secure Enclave and only signs. All crypto, the canonical query
 /// and the AAD are `cratestack-cose`'s: this type only maps types.
 #[cfg_attr(feature = "frb-glue", flutter_rust_bridge::frb(opaque))]
 pub struct FlutterClientEnvelope {
@@ -69,7 +70,7 @@ impl FlutterClientEnvelope {
     }
 
     /// An envelope around any signer. Not bridged: it is how the tests
-    /// drive ESP256 and how a keystore signer will plug in.
+    /// drive ESP256 and how a keystore signer plugs in.
     #[cfg_attr(feature = "frb-glue", flutter_rust_bridge::frb(ignore))]
     pub fn from_signer(
         signer: Arc<dyn CoseSigner>,
@@ -151,7 +152,9 @@ impl FlutterClientEnvelope {
         binding: FlutterCallBinding,
     ) -> Result<Vec<u8>, FlutterCoseError> {
         let call = binding.with_audience(&self.audience)?;
-        let sealed = self.inner.seal_request(&payload, &call.request()).await?;
+        // Scoped so a keystore signer's cancelled / timed out / failed
+        // outcome reaches Dart as itself, not as the opaque seal error.
+        let sealed = outcome::scoped(self.inner.seal_request(&payload, &call.request())).await?;
         Ok(sealed.to_vec())
     }
 
