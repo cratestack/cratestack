@@ -61,6 +61,12 @@ pub(crate) const DROPPED_ATTRIBUTES: &[(&str, &str)] = &[
         "@authn",
         "authentication requirement (ADR 0022): decides who may call, not how bytes decode",
     ),
+    (
+        "@device_auth",
+        "marks a procedure as a leg of a device's enrolment, renewal or revocation \
+         (cratestack#1303): it makes a Dart helper over the existing ops and changes \
+         no wire type, route, op id or decode",
+    ),
     ("@length", "validator: only rejects"),
     ("@range", "validator"),
     ("@regex", "validator"),

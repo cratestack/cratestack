@@ -12,6 +12,8 @@ pub mod default_functions;
 pub mod default_literal;
 pub mod default_markers;
 mod default_sql;
+pub mod device_auth_attribute;
+pub mod device_auth_role;
 pub mod enum_ordinal;
 mod field_list;
 pub mod index_attribute;
@@ -47,6 +49,11 @@ pub use computed_attribute::{
     ComputedParamsArg, computed_params_type_name, is_computed_attribute, is_computed_field,
     parse_computed_params_arg,
 };
+pub use device_auth_attribute::{
+    DEVICE_AUTH_ATTRIBUTE, DEVICE_AUTH_KEYS, ParsedDeviceAuth, device_auth_attribute,
+    is_device_auth, parse_device_auth_attribute, procedure_device_auth,
+};
+pub use device_auth_role::DeviceAuthRole;
 pub use enum_ordinal::{ENUM_ORDINAL_MAX, ENUM_RESERVED_ATTRIBUTE, ReservedOrdinals};
 pub use index_attribute::{ParsedIndexAttribute, parse_index_attribute};
 pub use internal_attribute::{INTERNAL_ACTIONS, model_internal_actions, parse_internal_attribute};

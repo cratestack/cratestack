@@ -142,6 +142,7 @@ pub(crate) fn completion_items(
 
     items.extend(crate::mcp_completion::completion_items());
     items.extend(crate::authn_completion::completion_items());
+    items.extend(crate::device_auth_completion::completion_items());
 
     let mut seen = BTreeSet::new();
     if let Some(schema) = schema {

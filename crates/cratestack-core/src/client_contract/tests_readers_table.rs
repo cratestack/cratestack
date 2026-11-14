@@ -143,6 +143,11 @@ pub(super) const READERS: &[(&str, &[&str])] = &[
     // Read through `cratestack_core::schema::authn_attribute`; the LSP
     // only shows the attribute in its completion popup.
     ("@authn", &["cratestack-lsp/src/authn_completion.rs"]),
+    // Read through `schema::device_auth_attribute`; the LSP shows it in completion.
+    (
+        "@device_auth",
+        &["cratestack-lsp/src/device_auth_completion.rs"],
+    ),
     (
         "@length",
         &[

@@ -19,6 +19,7 @@
 //! | `@isolation`      | required  | `super::procedures`; enforced by the generated dispatch (`cratestack-macros` `procedure/instrument/invoke_isolated.rs`) |
 //! | `@mcp`            | required  | `crate::parse::mcp` (moved to `Procedure::mcp` while parsing) |
 //! | `@authn`          | required  | `cratestack_core::parse_authn_attribute`; enforced by the generated authorize step (`cratestack-macros` `procedure/authn.rs`) |
+//! | `@device_auth`    | required  | `cratestack_core::parse_device_auth_attribute`; read by `cratestack-client-dart`'s fespalier preset, which emits a `DeviceAuthServer` (cratestack#1303). The macros ignore it |
 //!
 //! Runs after the per-attribute validators, so their more specific
 //! messages (`@isolation requires a quoted level argument`, …) still win
@@ -42,6 +43,7 @@ const PROCEDURE_ATTRIBUTES: &[Known] = &[
     ("@isolation", Arguments::Required),
     ("@mcp", Arguments::Required),
     ("@authn", Arguments::Required),
+    ("@device_auth", Arguments::Required),
 ];
 
 /// The actions `@authorize(Model, action, args.path)` supports

@@ -6,7 +6,8 @@ use crate::type_hover::named_type_symbol;
 use crate::type_ref::{render_type_ref, type_ref_at_offset};
 
 pub(crate) fn locate_symbol(schema: &Schema, offset: usize) -> Option<SymbolInfo> {
-    let early = crate::mcp_hover::hover_symbol(schema, offset);
+    let early = crate::mcp_hover::hover_symbol(schema, offset)
+        .or_else(|| crate::device_auth_hover::hover_symbol(schema, offset));
     if let Some(symbol) = early.or_else(|| crate::type_hover::enum_symbol(schema, offset)) {
         return Some(symbol);
     }
