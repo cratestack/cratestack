@@ -4,7 +4,14 @@ publish_to: 'none'
 version: 0.1.0
 
 environment:
+{% if has_device_auth %}
+  # cratestack#1303: `fespalier_sign_keypair` (the generated `DeviceAuthServer`
+  # implements its interface) needs Dart 3.12 and Flutter 3.44.
+  sdk: '>=3.12.0 <4.0.0'
+  flutter: '>=3.44.0'
+{% else %}
   sdk: '>=3.0.0 <4.0.0'
+{% endif %}
 
 dependencies:
   flutter:
@@ -34,6 +41,27 @@ dependencies:
       url: https://github.com/fespalier/fespalier
       path: packages/fespalier_transport
       ref: '{{ fespalier_ref }}'
+{% if has_device_auth %}
+  # cratestack#1303: what the generated `DeviceAuthServer` imports. Every
+  # fespalier package is pinned at the ONE ref above: `fespalier_sign_keypair`
+  # pins its siblings at its own tag, so any other ref resolves to two copies
+  # of them, and pub refuses the graph.
+  fespalier_auth:
+    git:
+      url: https://github.com/fespalier/fespalier
+      path: packages/fespalier_auth
+      ref: '{{ fespalier_ref }}'
+  fespalier_keypair:
+    git:
+      url: https://github.com/fespalier/fespalier
+      path: packages/fespalier_keypair
+      ref: '{{ fespalier_ref }}'
+  fespalier_sign_keypair:
+    git:
+      url: https://github.com/fespalier/fespalier
+      path: packages/fespalier_sign_keypair
+      ref: '{{ fespalier_ref }}'
+{% endif %}
 {% else %}
   dio: ^5.8.0+1
 {% endif %}

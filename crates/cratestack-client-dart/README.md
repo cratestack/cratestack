@@ -94,8 +94,18 @@ schemas — a strict superset of the same content, never a redesign of what's ge
   The call option's abort and `TransportZone`'s are merged, so either aborts (so `fespalier_cratestack`'s
   `ref.cancellable` aborts a page's loads). The pubspec pins `fespalier_transport` by git at
   `DEFAULT_FESPALIER_REF` (`v0.21.0`), changed with `--fespalier-ref`. fespalier packages are git
-  dependencies by design; until the pinned ref is reachable, `just verify-dart-fespalier` resolves
-  it from a local checkout (`FESPALIER_TRANSPORT_PATH`) and skips without one.
+  dependencies by design; `just verify-dart-fespalier` resolves them from GitHub at that ref.
+  For a schema whose procedures carry `@device_auth(role: "...")` (cratestack#1303: roles
+  `beginEnrolment`, `confirmEnrolment`, `beginRenewal`, `confirmRenewal`, `revoke`, and the optional
+  `sendEnrolmentCode`; `proof: "<field>"` on `confirmEnrolment` names the field the one-time code
+  goes in) it also emits `lib/src/device_auth_server.dart`: `<Prefix>DeviceAuthServer implements
+  DeviceAuthServer` (`fespalier_sign_keypair`), built over `AuthConfig.transport` and the generated
+  client, with `fieldErrors` (a callback, so the package needs neither `fespalier` nor
+  `fespalier_cratestack`) and `userOf` (builds the `AuthUser` yourself) options, a 403 on a renewal
+  or `confirmEnrolment` as `AuthRejected`, a signed `revoke`, `unsignedPaths`, and an
+  abort-isolating `TransportZone` per leg. The pubspec then pins `fespalier_auth`,
+  `fespalier_keypair` and `fespalier_sign_keypair` at the same ref and needs Dart 3.12 and
+  Flutter 3.44. The `default` and `riverpod` presets ignore the marker.
 
 ```bash
 cratestack generate-dart \

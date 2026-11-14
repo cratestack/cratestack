@@ -1,0 +1,15 @@
+{# One call of a leg through the generated `ProceduresApi`: the wrapper
+   class, the schema type inside it, and its constructor's arguments. Each
+   line carries its own indentation, so call it at the start of a line. `api`
+   is the `ProceduresApi` the call goes through. #}
+{% macro call(leg, api="_procedures") %}
+      () => {{ api }}.{{ leg.method }}(
+        {{ leg.wrapper }}(
+          {{ leg.arg_field }}: {{ leg.arg_type }}(
+{% for arg in leg.args %}
+            {{ arg.name }}: {{ arg.expr }},
+{% endfor %}
+          ),
+        ),
+      ),
+{%- endmacro %}

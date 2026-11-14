@@ -7,6 +7,7 @@ mod dart_types;
 mod data_class_view;
 mod enum_filter_view;
 mod enum_view;
+mod fespalier_device_auth;
 mod field_view;
 mod find_many_order;
 mod find_many_views;

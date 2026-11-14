@@ -1,0 +1,130 @@
+name: device_auth_rest_client
+description: Generated CrateStack Flutter client package.
+publish_to: 'none'
+version: 0.1.0
+
+environment:
+  # cratestack#1303: `fespalier_sign_keypair` (the generated `DeviceAuthServer`
+  # implements its interface) needs Dart 3.12 and Flutter 3.44.
+  sdk: '>=3.12.0 <4.0.0'
+  flutter: '>=3.44.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_riverpod: ^3.3.1
+  # Exact pin, not a range — the pinned `riverpod_generator` dev
+  # dependency below itself depends on this exact `riverpod_annotation`
+  # release (also an exact pin, not a range), so this has to match it
+  # exactly or pub's resolver can't solve the graph at all. See the
+  # `build_runner`/`riverpod_generator` comment below for why these
+  # three are pinned together as one unit.
+  riverpod_annotation: 4.0.7
+  # cratestack#563: see the `default` preset's pubspec.yaml.j2 for the
+  # full comment — identical reasoning, this preset just carries its own
+  # copy of the dependency list (see this file's own header comment for
+  # why).
+  cratestack_cbor: '>=0.9.3 <0.20.0'
+  # cratestack#1204: the generated `CratestackFespalierTransport` sends through
+  # fespalier's `HttpTransport`. Not on pub.dev: fespalier packages are git
+  # dependencies, pinned at a release tag (`--fespalier-ref` changes it).
+  fespalier_transport:
+    git:
+      url: https://github.com/fespalier/fespalier
+      path: packages/fespalier_transport
+      ref: 'v0.21.0'
+  # cratestack#1303: what the generated `DeviceAuthServer` imports. Every
+  # fespalier package is pinned at the ONE ref above: `fespalier_sign_keypair`
+  # pins its siblings at its own tag, so any other ref resolves to two copies
+  # of them, and pub refuses the graph.
+  fespalier_auth:
+    git:
+      url: https://github.com/fespalier/fespalier
+      path: packages/fespalier_auth
+      ref: 'v0.21.0'
+  fespalier_keypair:
+    git:
+      url: https://github.com/fespalier/fespalier
+      path: packages/fespalier_keypair
+      ref: 'v0.21.0'
+  fespalier_sign_keypair:
+    git:
+      url: https://github.com/fespalier/fespalier
+      path: packages/fespalier_sign_keypair
+      ref: 'v0.21.0'
+  # issue #325: gives every generated data class real `operator ==`/
+  # `hashCode`/`copyWith` via `@MappableClass()` (see
+  # `enums_and_data_classes.dart.j2`) — a range, not an exact pin, since
+  # the runtime annotation package has no analyzer-version entanglement
+  # of its own; see `dart_mappable_builder` below (dev_dependencies) for
+  # the pin that actually matters.
+  dart_mappable: ^4.8.0
+  # issue #336: relation-list fields use `IList<T>` (immutable) instead
+  # of `List<T>`. `dart_mappable`'s generated `==`/`hashCode` handles
+  # `IList` field-by-field the same way it handles `List` — verified as
+  # part of resolving this merge conflict, see this PR's own comment
+  # for the real `flutter analyze`/`flutter test` run proving it.
+  fast_immutable_collections: ^11.2.0
+  # cratestack#498: see `pubspec.yaml.j2`'s identical dependency comment —
+  # same reason, same package, this preset's `shared_types.dart.j2`
+  # `DecimalFilter`/per-model data classes need it too.
+  decimal: ^3.2.6
+  # issue #668 phase 2: see `pubspec.yaml.j2`'s identical dependency
+  # comment — same annotation, same reasoning, every per-model file and
+  # `procedures.dart` carries `@CratestackBuilder()` here too.
+  cratestack_annotations: '>=0.8.10 <0.20.0'
+
+dev_dependencies:
+  flutter_lints: ^6.0.0
+  flutter_test:
+    sdk: flutter
+  # This trio (build_runner/riverpod_generator/riverpod_annotation above)
+  # is pinned as one unit, not three independent constraints, and the pins
+  # move whenever Flutter's `stable` channel moves its `flutter_test` pins.
+  # Re-pinned for Flutter 3.50.0 / Dart 3.14.0 (`flutter_test` pins
+  # `test_api` 0.7.14 and `matcher` 0.12.20). The previous set
+  # (riverpod_annotation 4.0.3 / riverpod_generator 4.0.4 / build_runner
+  # <2.15.2 / dart_mappable_builder 4.8.0) stopped resolving there:
+  #
+  #   `riverpod_annotation` 4.0.3 -> `riverpod` 3.3.2 -> `test` ^1.0.0, and
+  #   with `test_api` held at 0.7.14 the only `test` releases that fit all
+  #   need `analyzer <11.0.0`, while `riverpod_generator` 4.0.4 needs
+  #   `analyzer ^12.0.0`.
+  #
+  # `riverpod` 3.4.3 is the first release that drops `test` from its
+  # `dependencies` (3.4.2 and older keep it), which removes that whole
+  # chain from the graph. It is reached through the exact pin
+  # `riverpod_annotation: 4.0.7` (-> `riverpod` 3.4.3, which
+  # `flutter_riverpod` ^3.3.1 then resolves alongside), and the matching
+  # `riverpod_generator: 4.0.9` (the oldest release depending on
+  # annotation 4.0.7 exactly; `analyzer` >=13.0.0 <15.0.0). All three need
+  # Dart ^3.12.0.
+  #
+  # `build_runner` >=2.15.2 requires `analyzer` >=13.3.0 (the lower
+  # releases cap it below 13.3). 2.16.2 and later raise the floor to
+  # `analyzer` >=14.3.0, past what is verified here, so the range stops at
+  # 2.16.1 (the version `generate-dart`'s default preset resolves today).
+  # On the verified graph this resolves analyzer 13.3.0, source_gen 4.2.4
+  # and build 4.0.11. See issue #358.
+  build_runner: ">=2.15.2 <2.16.2"
+  riverpod_generator: 4.0.9
+  # issue #325: `dart_mappable_builder` joins the trio above as a fourth
+  # pinned-together package, not an independent constraint — it runs in
+  # the same `build_runner` pass as `riverpod_generator` and is subject
+  # to the exact same `analyzer`-version wall.
+  #
+  # Pinned to *exactly* `4.9.1`, not a range and not latest. `4.8.0`
+  # declared `analyzer: '>=10.0.0 <13.0.0'`, which no longer overlaps
+  # `riverpod_generator` 4.0.9's `analyzer >=13.0.0` / `build_runner`
+  # 2.15.2's `>=13.3.0`. `4.9.1` declares `analyzer: '>=13.0.0 <15.0.0'`
+  # (4.9.0 stopped at `<14.0.0`), so it lands on the same analyzer
+  # 13.3.0 as the rest of the group.
+  dart_mappable_builder: 4.9.1
+  # issue #668 phase 2: a fifth package joining the pinned-together group
+  # above, subject to the same `build_runner`-pass/`analyzer`-version wall.
+  # Published `cratestack_builder` releases from the floor up declare
+  # `analyzer: '>=12.0.0 <14.0.0'`, which contains the analyzer 13.x band
+  # the group above resolves to. A version range (not a pin) is fine here,
+  # unlike the trio: `cratestack_builder` isn't the thing whose own release
+  # cadence forced this wall, it just has to tolerate it.
+  cratestack_builder: '>=0.9.3 <0.20.0'

@@ -1,6 +1,8 @@
 //! Which preset a render is for, as the templates see it.
 use serde::Serialize;
 
+use cratestack_core::Schema;
+
 use crate::config::{DartGeneratorConfig, DartPreset};
 
 #[derive(Debug, Clone, Serialize)]
@@ -23,14 +25,18 @@ pub(crate) struct PresetView {
     /// `fespalier_transport` dependency. Meaningful only when
     /// `is_fespalier_preset`.
     pub(crate) fespalier_ref: String,
+    /// `--preset fespalier` and a procedure carries the device-auth marker
+    /// (cratestack#1303): the README documents `device_auth_server.dart`.
+    pub(crate) has_device_auth: bool,
 }
 
 impl PresetView {
-    pub(crate) fn new(config: &DartGeneratorConfig) -> Self {
+    pub(crate) fn new(schema: &Schema, config: &DartGeneratorConfig) -> Self {
         Self {
             is_riverpod_preset: config.preset.is_riverpod_layout(),
             is_fespalier_preset: config.preset == DartPreset::Fespalier,
             fespalier_ref: config.fespalier_ref.clone(),
+            has_device_auth: crate::fespalier_device_auth::applies(schema, config),
         }
     }
 }

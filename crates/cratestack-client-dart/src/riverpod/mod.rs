@@ -177,7 +177,21 @@ pub(crate) fn generate_package(
         });
     }
 
-    let library_context = build_library_file(schema, is_rest, config.preset);
+    // cratestack#1303: the `DeviceAuthServer` over the generated client, for
+    // a schema whose procedures carry the device-auth marker.
+    if let Some(view) = crate::fespalier_device_auth::build(schema, config)? {
+        files.push(GeneratedDartFile {
+            file_name: crate::fespalier_device_auth::OUTPUT_PATH.to_owned(),
+            contents: render(&environment, templates::DEVICE_AUTH_SERVER, &view)?,
+        });
+    }
+
+    let library_context = build_library_file(
+        schema,
+        is_rest,
+        config.preset,
+        crate::fespalier_device_auth::applies(schema, config),
+    );
     files.push(GeneratedDartFile {
         file_name: library_entrypoint,
         contents: render(&environment, templates::LIBRARY, &library_context)?,

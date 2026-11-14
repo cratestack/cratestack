@@ -23,6 +23,8 @@ pub(crate) const LIBRARY: &str = "riverpod/library.dart.j2";
 pub(crate) const PUBSPEC: &str = "riverpod/pubspec.yaml.j2";
 pub(crate) const REST_PACKAGE_TEST: &str = "riverpod/rest_package_test.dart.j2";
 pub(crate) const RPC_PACKAGE_TEST: &str = "riverpod/rpc_package_test.dart.j2";
+/// cratestack#1303: `lib/src/device_auth_server.dart`, `--preset fespalier` only.
+pub(crate) const DEVICE_AUTH_SERVER: &str = "fespalier/device-auth-server.dart.j2";
 
 /// `(template_name, default_source)`. The first three entries are
 /// include-only (issue #301's `enums_and_data_classes.dart.j2` and issue
@@ -45,6 +47,26 @@ const TEMPLATE_SOURCES: &[(&str, &str)] = &[
     (
         "riverpod/procedure_providers.dart.j2",
         include_str!("../../templates/riverpod/procedure_providers.dart.j2"),
+    ),
+    (
+        "fespalier/device-auth-calls.dart.j2",
+        include_str!("../../templates/fespalier/device-auth-calls.dart.j2"),
+    ),
+    (
+        "fespalier/device-auth-enrolment.dart.j2",
+        include_str!("../../templates/fespalier/device-auth-enrolment.dart.j2"),
+    ),
+    (
+        "fespalier/device-auth-renewal.dart.j2",
+        include_str!("../../templates/fespalier/device-auth-renewal.dart.j2"),
+    ),
+    (
+        "fespalier/device-auth-support.dart.j2",
+        include_str!("../../templates/fespalier/device-auth-support.dart.j2"),
+    ),
+    (
+        DEVICE_AUTH_SERVER,
+        include_str!("../../templates/fespalier/device-auth-server.dart.j2"),
     ),
     (
         REST_MODEL,

@@ -1,0 +1,118 @@
+// The device ceremonies of this schema as fespalier's `DeviceAuthServer`
+// (cratestack#1303): the procedures marked with the device-auth attribute,
+// called through the generated client.
+//
+// `fespalier_sign_keypair` knows the order of the legs, what is signed and
+// what is kept; it knows no URL and no payload. This class is the one place
+// that does. Hand it the transport you gave `AuthConfig.transport` (the plain
+// chain, with NO session on it, so the four legs go out unsigned by
+// construction):
+//
+//     final backend = DeviceAuthBackend(
+//       server: {{ class_name }}(
+//         transport,
+//         baseUri: Uri.parse('https://api.example.com'),
+//         fieldErrors: errors.fieldErrorsOf, // optional: a 422 as a form's FieldErrors
+//       ),
+//       keys: DeviceKeys.device(),
+//       profile: const DeviceSignatureProfile(audience: 'https://api.example.com'),
+//     );
+//
+// A 403 on a renewal (or on `confirmEnrolment`) is an `AuthRejected`; any
+// other failure is thrown as it is. The `fespalier_*` packages it imports are
+// git dependencies pinned in this package's pubspec at `{{ fespalier_ref }}`.
+
+import 'dart:async';
+
+import 'package:fespalier_auth/fespalier_auth.dart' show AuthRejected, AuthUser;
+import 'package:fespalier_keypair/fespalier_keypair.dart' show KeyRole;
+import 'package:fespalier_sign_keypair/fespalier_sign_keypair.dart'
+    show
+        Attestation,
+        DeviceAuthServer,
+        DeviceCredential,
+        DeviceEnrolment,
+        DeviceSigner,
+        EnrolmentChallenge,
+        EnrolmentStart,
+        RoleChallenge;
+import 'package:fespalier_transport/fespalier_transport.dart'
+    show HttpTransport, TransportRequest, TransportResponse, TransportZone;
+
+import '../{{ library_name }}.dart';
+
+/// The device-auth procedures of this schema, as a `DeviceAuthServer`.
+///
+/// Built over [transport]: `AuthConfig.transport`, the chain with no session
+/// on it. If the legs go through `authTransport` instead, list
+/// [unsignedPaths] in `DeviceAuthBackend.unsignedPaths`.
+final class {{ class_name }} implements DeviceAuthServer {
+  /// The device endpoints of the server at [baseUri], reached through
+  /// [transport] (no session).
+  {{ class_name }}(
+    this.transport, {
+    required Uri baseUri,
+{% if not is_rpc %}
+    String basePath = '{{ base_path_literal }}',
+{% endif %}
+    this.fieldErrors,
+    this.userOf,
+  }) : _baseUri = baseUri{% if not is_rpc %},
+       _basePath = basePath{% endif %};
+
+  /// What the legs go through: `AuthConfig.transport`.
+  final HttpTransport transport;
+
+  /// Turns an error answer into what a form shows under its field (a wrong
+  /// number or code is a `422`): pass `errors.fieldErrorsOf` of
+  /// `fespalier_cratestack`'s `CrateStackErrors`. When it returns something,
+  /// that is thrown; with no callback, or a `null`, the error is thrown as it
+  /// is.
+  final Object? Function(Object error)? fieldErrors;
+
+  /// Builds the signed-in user from the answer of `{{ confirm_enrolment.leg.method }}`, in place of the
+  /// default: `userId` is the id, `name` and `email` are those fields when the
+  /// answer has them, and every other field is in `claims`.
+  final AuthUser Function({{ confirm_enrolment.answer_type }} answer)? userOf;
+
+  final Uri _baseUri;
+{% if not is_rpc %}
+  final String _basePath;
+{% endif %}
+  late final ProceduresApi _procedures = _proceduresOver(transport);
+
+  ProceduresApi _proceduresOver(HttpTransport over) => {{ client_class_name }}(
+    {{ adapter_class }}(
+      CratestackFespalierTransport(over),
+      baseUri: _baseUri,
+    ),
+{% if not is_rpc %}
+    basePath: _basePath,
+{% endif %}
+  ).procedures;
+
+  /// The `request.uri.path` of each leg that goes out with no session, for
+  /// `DeviceAuthBackend(unsignedPaths: ...)`, when the legs go through a
+  /// transport that signs (`authTransport`) and not through
+  /// `AuthConfig.transport`.
+{% if is_rpc %}
+  static List<String> unsignedPaths(Uri baseUri) {
+{% else %}
+  static List<String> unsignedPaths(
+    Uri baseUri, {
+    String basePath = '{{ base_path_literal }}',
+  }) {
+{% endif %}
+    final prefix = baseUri.path.endsWith('/')
+        ? baseUri.path.substring(0, baseUri.path.length - 1)
+        : baseUri.path;
+    return <String>[
+{% for path in unsigned_paths %}
+      {{ path }},
+{% endfor %}
+    ];
+  }
+
+{% include "fespalier/device-auth-enrolment.dart.j2" %}
+{% include "fespalier/device-auth-renewal.dart.j2" %}
+{% include "fespalier/device-auth-support.dart.j2" %}

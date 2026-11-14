@@ -1,0 +1,58 @@
+
+  /// One call of a ceremony, mapped. A `403` is the server saying no, which
+  /// [rejectedOn403] makes an [AuthRejected] (the device is unknown or
+  /// revoked, and the session is over). Anything [fieldErrors] recognises (a
+  /// `422` on a wrong code or number) is thrown as what it returns, for a
+  /// form to show under its field. Anything else (offline, a `5xx`) is
+  /// thrown as it is: "could not ask", and the session stays.
+  ///
+  /// The call runs in a zone with **no abort trigger of the caller's**: a
+  /// renewal is shared by every request that waits for it, and one page
+  /// leaving (`ref.cancellable` puts its trigger in the zone of the load it
+  /// started) might abort it for the others. That is a **suspected**
+  /// `fespalier_auth` issue, read in its source and neither reproduced nor
+  /// confirmed; this guards against it until fespalier says it cannot happen.
+  Future<T> _leg<T>(
+    Future<T> Function() call, {
+    bool rejectedOn403 = false,
+  }) async {
+    final neverAborted = Completer<void>().future;
+    try {
+      return await TransportZone.run(neverAborted, call);
+    } on {{ exception_class }} catch (error) {
+      if (rejectedOn403 && error.status == 403) {
+        throw const AuthRejected();
+      }
+      final mapped = fieldErrors?.call(error);
+      if (mapped != null) throw mapped;
+      rethrow;
+    }
+  }
+{% for jwk in jwk_helpers %}
+
+  /// A public key of [EnrolmentStart.keys] as a `{{ jwk.type_name }}`.
+  static {{ jwk.type_name }} {{ jwk.name }}(Map<String, String> jwk) => {{ jwk.type_name }}(
+{% for field in jwk.fields %}
+    {{ field.name }}: {{ field.expr }},
+{% endfor %}
+  );
+{% endfor %}
+}
+
+/// A transport that signs every request with [signer] for [credential] before
+/// it sends it on: how `revoke` is signed by the device.
+final class _SignedBy implements HttpTransport {
+  const _SignedBy(this.inner, this.credential, this.signer);
+
+  final HttpTransport inner;
+  final DeviceCredential credential;
+  final DeviceSigner signer;
+
+  @override
+  Future<TransportResponse> send(TransportRequest request) async {
+    final signature = await signer.signFor(credential, request);
+    return inner.send(
+      request.copyWith(headers: {...request.headers, ...signature}),
+    );
+  }
+}

@@ -84,6 +84,32 @@ final client = {{ client_class_name }}(
 - a call that got no answer: `TransportAborted`, `TransportUnsent`, `TransportTimedOut` and `TransportBroken` map one to one onto `CratestackTransportAborted`, `Unsent`, `TimedOut` and `Broken`. `TransportPortal` and `TransportUntrusted` become `CratestackTransportBroken`; its `cause` is the original failure, so check `error.cause is TransportPortal` to tell them apart. Any other error a decorator throws (such as `AuthRejected`) reaches the caller unchanged.
 
 fespalier packages are git dependencies by design, so the pinned ref must be reachable for this package to resolve. `--fespalier-ref` changes it; where it is not reachable yet (an unreleased fespalier), point `fespalier_transport` at a local checkout with a `pubspec_overrides.yaml`.
+{% if has_device_auth %}
+
+### Device ceremonies
+
+The schema marks its device-auth procedures, so this package also has `lib/src/device_auth_server.dart`: a `DeviceAuthServer` (`package:fespalier_sign_keypair`) over the generated client, which `DeviceAuthBackend(server: ...)` calls for each leg of a device's enrolment, renewal and revocation. It is built over the transport you give `AuthConfig.transport`, the plain chain with no session on it, so the legs go out unsigned:
+
+```dart
+final backend = DeviceAuthBackend(
+  server: {{ client_class_name | replace("CratestackClient", "DeviceAuthServer") }}(
+    transport,
+    baseUri: Uri.parse('https://api.example.com'),
+    fieldErrors: errors.fieldErrorsOf, // optional: a 422 as a form's FieldErrors
+    // userOf: (answer) => AuthUser(...), // optional: build the signed-in user yourself
+  ),
+  keys: DeviceKeys.device(),
+  profile: const DeviceSignatureProfile(audience: 'https://api.example.com'),
+);
+```
+
+- A `403` on `beginRenewal`, `confirmRenewal` and `confirmEnrolment` is an `AuthRejected` (the device is dead). A `422` goes through `fieldErrors`; anything else, offline or a `5xx`, is thrown as it is.
+- Each call runs in a `TransportZone` with no abort trigger of the caller's, a guard against a suspected, unconfirmed `fespalier_auth` issue (a page leaving might abort a renewal shared by every waiting request).
+- `revoke` is signed by the device with the `DeviceSigner` `DeviceAuthBackend` hands it, through a transport that does that for this one call.
+- `{{ client_class_name | replace("CratestackClient", "DeviceAuthServer") }}.unsignedPaths(baseUri)` lists the unsigned legs' paths for `DeviceAuthBackend(unsignedPaths: ...)`, when the legs go through `authTransport` instead.
+- The generated package depends on `fespalier_auth`, `fespalier_keypair` and `fespalier_sign_keypair` as well, all at `{{ fespalier_ref }}`, and needs Dart 3.12 and Flutter 3.44, which `fespalier_sign_keypair` needs.
+
+{% endif %}
 {% else %}
 Dio is one transport (`CratestackDioTransport`, in `lib/src/dio_transport.dart`, the only file that names Dio):
 

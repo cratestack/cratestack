@@ -285,7 +285,7 @@ pub(crate) fn build_template_context(
             .collect(),
         has_subscriptions: crate::subscription_specs::has_subscriptions(schema),
         sample_model,
-        preset: PresetView::new(config),
+        preset: PresetView::new(schema, config),
         is_rpc: schema.transport == TransportStyle::Rpc,
         native_cbor: true,
         cratestack_cbor_version_requirement,
