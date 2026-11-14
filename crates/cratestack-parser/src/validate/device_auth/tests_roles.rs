@@ -12,10 +12,6 @@ fn a_duplicate_role_is_refused_at_the_second_with_the_first_named() {
         "  @device_auth(role: \"revoke\")\n",
         "  @device_auth(role: \"beginRenewal\")\n",
     );
-    let source = source.replace(
-        "mutation procedure beginRenewal(args: BeginRenewalArgs)",
-        "mutation procedure beginRenewal(args: BeginRenewalArgs)",
-    );
     let error = refused(
         &source,
         "`role: \"beginRenewal\"` is already on procedure `beginRenewal` (line",

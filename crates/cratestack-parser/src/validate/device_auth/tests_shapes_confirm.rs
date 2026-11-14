@@ -22,9 +22,7 @@ fn confirm_enrolments_other_inputs_must_come_back_from_leg_one() {
 #[test]
 fn confirm_enrolments_answer_has_the_device_and_its_user() {
     for field in ["deviceId", "userId", "ambient"] {
-        let needle = format!(
-            "type EnrolledDevice {{\n  deviceId String\n  userId String\n  phone String\n  ambient String\n"
-        );
+        let needle = "type EnrolledDevice {\n  deviceId String\n  userId String\n  phone String\n  ambient String\n".to_owned();
         let replaced = needle.replace(&format!("  {field} String\n"), "");
         broken(
             "confirmEnrolment",
