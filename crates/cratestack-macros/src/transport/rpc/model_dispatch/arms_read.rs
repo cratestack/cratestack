@@ -48,7 +48,7 @@ pub(super) fn get_arm(ctx: &ModelRpcContext) -> proc_macro2::TokenStream {
     let get_id = cratestack_core::ModelVerb::Get.rpc_op_id(m);
     let get_path = format!("/rpc/{get_id}");
     let get_dispatch = &ctx.get_dispatch;
-    let pk_type = &ctx.pk_type;
+    let pk_type = &ctx.pk_wire_type;
     quote! {
         #get_id => {
             let model_state = ModelRouterState {
@@ -75,7 +75,7 @@ pub(super) fn get_arm(ctx: &ModelRpcContext) -> proc_macro2::TokenStream {
                 },
                 headers,
                 client_ip_ctx,
-                input.id,
+                input.id.into(),
                 raw_query,
             ).await
         }

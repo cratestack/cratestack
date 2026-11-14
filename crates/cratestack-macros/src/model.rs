@@ -40,6 +40,8 @@ pub(crate) mod struct_only;
 mod tests_bigint;
 #[cfg(test)]
 mod tests_bigint_rows;
+#[cfg(test)]
+mod tests_uuid;
 
 pub(crate) use accessor::{
     generate_bound_model_accessor, generate_isolated_model_accessor, generate_model_accessor,
