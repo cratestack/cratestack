@@ -36,6 +36,18 @@ void main() {
     expect(codec.contentType, 'application/cbor');
   });
 
+  test('decodeJson writes a CBOR byte string as an array of integers '
+      '(cratestack#1359: a Uuid the server wrote as 16 bytes)', () {
+    expect(
+      jsonDecode(codec.decodeJson(unhex(uuidByteStringHex))),
+      jsonDecode(uuidByteStringJson),
+    );
+    expect(
+      jsonDecode(codec.decodeJson(unhex(uuidNestedByteStringHex))),
+      jsonDecode(uuidNestedByteStringJson),
+    );
+  });
+
   test('encodeJson -> decodeJson round-trips a JSON value', () {
     const input = '{"cratestack":["cool","stack"],"n":42}';
     final bytes = codec.encodeJson(input);
