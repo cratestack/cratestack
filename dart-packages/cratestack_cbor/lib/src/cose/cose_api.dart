@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 
 import 'errors.dart';
+import 'signers.dart';
 import 'types.dart';
 import 'unsupported_cose.dart'
     if (dart.library.io) 'native/native_cose.dart'

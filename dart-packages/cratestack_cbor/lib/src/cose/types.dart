@@ -37,6 +37,9 @@ final class CoseServerKey {
       CoseServerKey._(CoseAlg.ed25519, Uint8List.fromList(publicKey));
 
   /// A P-256 public key, SEC1 encoded (compressed or uncompressed), for ESP256.
+  ///
+  /// SEC1 only: unlike `ExternalSigner.publicKey`, a `SubjectPublicKeyInfo` is
+  /// not accepted for a server key.
   factory CoseServerKey.p256Sec1(Uint8List sec1) =>
       CoseServerKey._(CoseAlg.esp256, Uint8List.fromList(sec1));
 

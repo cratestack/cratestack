@@ -22,7 +22,7 @@
 ///
 /// ```dart
 /// final signer = ExternalSigner.esp256(
-///   publicKey: publicKey, // SEC1 point or SubjectPublicKeyInfo
+///   publicKey: publicKey, // SEC1 point (either form) or SubjectPublicKeyInfo
 ///   timeout: const Duration(seconds: 60),
 ///   sign: (tbs) async {
 ///     try {

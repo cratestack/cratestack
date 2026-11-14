@@ -7,7 +7,9 @@
   and returns a `SignOutcome` (`signature`, `cancelled`, `timedOut` or
   `failed(message)`); DER or raw `r || s` are accepted, and low-`s`
   normalisation and a verify-before-send check are done in Rust. `publicKey` is
-  a SEC1 point or a P-256 `SubjectPublicKeyInfo` (the kid is derived from it).
+  a SEC1 point (uncompressed or compressed) or a P-256
+  `SubjectPublicKeyInfo` (the kid is derived from it); server keys
+  (`CoseServerKey.p256Sec1`) remain SEC1 only.
   `timeout` is required and has no default; exceeding it is
   `CoseSignerTimedOut` and does not cancel the platform prompt. The three
   signer exceptions `CoseSignerCancelled`, `CoseSignerTimedOut` and

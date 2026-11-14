@@ -3,6 +3,7 @@
 import 'dart:typed_data';
 
 import 'cose_api.dart';
+import 'signers.dart';
 import 'types.dart';
 
 Never _unsupported() => throw UnsupportedError(

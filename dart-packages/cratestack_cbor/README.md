@@ -246,7 +246,7 @@ is derived from the public key (`envelope.kid`), never supplied.
 
 ```dart
 final signer = ExternalSigner.esp256(
-  publicKey: publicKey, // 65-byte SEC1 point or a SubjectPublicKeyInfo
+  publicKey: publicKey, // SEC1 point or a SubjectPublicKeyInfo
   timeout: const Duration(seconds: 60), // required: only your app knows
   sign: (tbs) async {
     try {
@@ -254,7 +254,7 @@ final signer = ExternalSigner.esp256(
     } on PromptDismissed {
       return const SignOutcome.cancelled();
     } catch (e) {
-      return SignOutcome.failed('keystore: $e');
+      return const SignOutcome.failed('keystore unavailable');
     }
   },
 );
@@ -271,8 +271,9 @@ final envelope = await ClientEnvelope.create(
   tbs, &error)`. Web: `crypto.subtle.sign({name: 'ECDSA', hash: 'SHA-256'},
   key, tbs)`. DER (Android, iOS) and raw `r || s` (WebCrypto) are both
   accepted, and a high `s` is normalised.
-- **The public key** is the 65-byte SEC1 point or a P-256
-  `SubjectPublicKeyInfo` (Android's `publicKey.encoded`). Anything else, a
+- **The public key** is a SEC1 point (65 bytes uncompressed or 33 bytes
+  compressed) or a P-256 `SubjectPublicKeyInfo` (Android's
+  `publicKey.encoded`). Server keys (`CoseServerKey.p256Sec1`) stay SEC1 only. Anything else, a
   point off the curve, or an SPKI of another curve or with trailing bytes is
   `CoseMisuse` from `ClientEnvelope.create`.
 - **Return an outcome, do not throw.** `SignOutcome.signature(bytes)`,

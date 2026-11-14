@@ -52,7 +52,7 @@ exports the COSE signed transport of ADR 0006 (cratestack#1026), over `cratestac
 - `envelope.mode`, `envelope.mediaType`, `envelope.kid`, and `contractHeaderValue(contractSha): string`.
 - `ClientEnvelope.external(alg, publicKey, sign, serverKeys, audience, options?)` — a key that never enters the
   module (a non-extractable WebCrypto key, a platform keystore). `sign(toBeSigned)` resolves to the signature
-  bytes (ESP256: DER or raw `r ‖ s`; `publicKey` is a SEC1 point or a P-256 SPKI). It may instead resolve to a
+  bytes (ESP256: DER or raw `r ‖ s`; `publicKey` is a SEC1 point, uncompressed or compressed, or a P-256 SPKI; server keys stay SEC1 only). It may instead resolve to a
   tagged outcome `{ outcome: "cancelled" | "timedOut" | "failed", message?: string }`; the seal then rejects with
   code `"signer_cancelled"`, `"signer_timed_out"` or `"signer_failed"` (cratestack#1151, which the Dart package's
   `ExternalSigner` uses). A callback that only returns bytes, or throws, behaves as before (`"misuse"`). The

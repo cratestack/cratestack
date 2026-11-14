@@ -12,6 +12,8 @@ use std::sync::Arc;
 
 use cratestack_core::CratestackError;
 use cratestack_cose::{CoseVerifyKey, ExternalSigner};
+#[cfg(feature = "frb-glue")]
+use flutter_rust_bridge::DartFnFuture;
 
 use super::envelope::FlutterClientEnvelope;
 use super::error::FlutterCoseError;
@@ -21,9 +23,10 @@ use super::types::{FlutterSealOptions, FlutterServerKey};
 
 impl FlutterClientEnvelope {
     /// A COSE_Sign1 (ESP256) envelope whose key lives in a platform
-    /// keystore. `public_key` is a 65-byte SEC1 P-256 point or a P-256
-    /// `SubjectPublicKeyInfo` (what Android's `getEncoded()` returns); the
-    /// `kid` is derived from it. `sign` is asked for an ECDSA/SHA-256
+    /// keystore. `public_key` is a SEC1 P-256 point (uncompressed, 65 bytes,
+    /// or compressed, 33 bytes) or a P-256 `SubjectPublicKeyInfo` (what
+    /// Android's `getEncoded()` returns); the `kid` is derived from it. The
+    /// server keys in `server_keys` are SEC1 only: no SPKI. `sign` is asked for an ECDSA/SHA-256
     /// signature over the bytes it is given, as `SHA256withECDSA` does, and
     /// returns a [`FlutterSignOutcome`]: it must not throw.
     ///
@@ -79,10 +82,7 @@ impl FlutterClientEnvelope {
     #[cfg(feature = "frb-glue")]
     pub async fn esp256_external(
         public_key: Vec<u8>,
-        sign: impl Fn(Vec<u8>) -> flutter_rust_bridge::DartFnFuture<FlutterSignOutcome>
-        + Send
-        + Sync
-        + 'static,
+        sign: impl Fn(Vec<u8>) -> DartFnFuture<FlutterSignOutcome> + Send + Sync + 'static,
         server_keys: Vec<FlutterServerKey>,
         audience: String,
         options: Option<FlutterSealOptions>,

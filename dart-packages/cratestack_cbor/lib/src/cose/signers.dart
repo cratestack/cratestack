@@ -76,9 +76,10 @@ final class Ed25519Signer extends CoseSigner {
 /// - Web: `crypto.subtle.sign({name: 'ECDSA', hash: 'SHA-256'}, key, tbs)`
 ///   (raw `r || s`).
 ///
-/// [publicKey] is the 65-byte SEC1 point (`0x04 || x || y`) or a P-256
-/// `SubjectPublicKeyInfo`, which is what Android's `PublicKey.getEncoded()`
-/// returns. A key that is neither, or not on the curve, is [CoseMisuse] when
+/// [publicKey] is a SEC1 point (uncompressed, 65 bytes `0x04 || x || y`, or
+/// compressed, 33 bytes) or a P-256 `SubjectPublicKeyInfo`, which is what
+/// Android's `PublicKey.getEncoded()` returns. This is asymmetric with the
+/// server keys ([CoseServerKey.p256Sec1]), which are SEC1 only. A key that is neither, or not on the curve, is [CoseMisuse] when
 /// the envelope is created.
 ///
 /// [sign] returns a [SignOutcome] and must not throw: report a dismissed
@@ -107,7 +108,8 @@ final class ExternalSigner extends CoseSigner {
     }
   }
 
-  /// The public key (a copy): a SEC1 point or a `SubjectPublicKeyInfo`.
+  /// The public key (a copy): a SEC1 point (uncompressed or compressed) or a
+  /// `SubjectPublicKeyInfo`.
   final Uint8List publicKey;
 
   /// Signs the to-be-signed bytes it is given with the keystore.
