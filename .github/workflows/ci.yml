@@ -2793,7 +2793,7 @@ jobs:
           # The step-up flow (cratestack#1245) on the generated client.
           pnpm --filter react-vite-swr-web run test
 
-  # ---- react-nextjs-daisyui example (lockfile + typecheck) ---------------
+  # ---- react-nextjs-daisyui example (lockfile + lint + typecheck + build) -
   # Blocking. Issue #1050: until this job existed, nothing in CI installed
   # this example, so its `pnpm-lock.yaml` drifted 7 dependencies behind
   # `web/package.json` without anyone noticing (Dependabot bumped the
@@ -2809,13 +2809,24 @@ jobs:
   # built `--no-typescript`, so tsc infers its types from the JS). A `--dev`
   # build is enough for that and skips wasm-opt, so no binaryen pin.
   #
-  # NOT covered here: `next build`. Its `prebuild` hook also builds the napi
-  # `.node` addon, and `lint` is `next lint`, which Next 16 removed. Neither
-  # is what #1050 is about; both belong to a job that runs the app.
+  # Also covered (cratestack#1061): `lint` (Biome, like react-vite-swr; the old
+  # `next lint` was removed in Next 16) and the full production `build`,
+  # including its `prebuild` hook: a RELEASE wasm bundle (wasm-opt, hence the
+  # pinned binaryen below) and the release napi `.node` addon, then
+  # `next build --webpack` (Serwist needs webpack). The build lives in this
+  # job rather than a sibling so it reuses the install, toolchain and
+  # rust-cache. It is not gated more narrowly than the typecheck because this
+  # job's own `if:` is already path-narrow: it only runs for `infra` / `ts`
+  # changes, and `ts` reaches this example through the Cargo graph
+  # (`react-nextjs-daisyui-wasm` in `.ci/affected-components.py`) rather than
+  # on every Rust change.
   react-nextjs-daisyui-example:
     needs: changes
     if: ${{ github.event_name == 'workflow_dispatch' || needs.changes.outputs.infra == 'true' || needs.changes.outputs.ts == 'true' }}
-    timeout-minutes: 20
+    # Dev wasm + release wasm + release napi addon + `next build`: on a cold
+    # rust-cache this can pass 20 minutes on a hosted runner (warm, the build
+    # alone is ~4 minutes locally).
+    timeout-minutes: 35
     name: js (react-nextjs-daisyui example)
     runs-on: ubuntu-latest
     steps:
@@ -2849,6 +2860,29 @@ jobs:
         if: ${{ !cancelled() }}
         working-directory: examples/react-nextjs-daisyui
         run: pnpm --filter react-nextjs-daisyui-example run typecheck
+      - name: Lint the web app
+        if: ${{ !cancelled() }}
+        working-directory: examples/react-nextjs-daisyui
+        run: pnpm --filter react-nextjs-daisyui-example run lint
+      # Same reason as the cbor jobs' identical step: wasm-pack downloads its
+      # own binaryen (hardcoded version) mid-build unless a `wasm-opt` is
+      # already on PATH, and that unpinned fetch has failed a real release
+      # run before. The release wasm build in `prebuild` runs wasm-opt.
+      - name: Install binaryen (wasm-opt), pinned
+        if: ${{ !cancelled() }}
+        run: |
+          set -euo pipefail
+          curl -fsSL -o binaryen.tar.gz \
+            "https://github.com/WebAssembly/binaryen/releases/download/version_130/binaryen-version_130-x86_64-linux.tar.gz"
+          tar -xzf binaryen.tar.gz
+          echo "$PWD/binaryen-version_130/bin" >> "$GITHUB_PATH"
+          rm binaryen.tar.gz
+      # `prebuild` builds the release wasm bundle and the napi addon, then
+      # `next build --webpack` runs.
+      - name: Build the app (prebuild wasm + napi, then next build)
+        if: ${{ !cancelled() }}
+        working-directory: examples/react-nextjs-daisyui
+        run: pnpm --filter react-nextjs-daisyui-example run build
 
   # ---- react-vite-refine example (generated client + WireMock backend) --
   # Blocking. Docs: examples/react-vite-refine/README.md. Unlike

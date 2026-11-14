@@ -1,8 +1,8 @@
-'use client';
+"use client";
 
-import { useCallback, useEffect, useState } from 'react';
-import type { FormEvent } from 'react';
-import type { NoteView } from './protocol';
+import type { FormEvent } from "react";
+import { useCallback, useEffect, useState } from "react";
+import type { NoteView } from "./protocol";
 
 // "Server (napi)" tab — fetches the canonical server-owned list via the
 // `/api/notes` route, which is backed by the napi-rs addon's SQLite file.
@@ -20,7 +20,7 @@ export function ServerTab({ revision }: { revision: number }) {
     setLoading(true);
     try {
       setError(null);
-      const response = await fetch('/api/notes', { cache: 'no-store' });
+      const response = await fetch("/api/notes", { cache: "no-store" });
       if (!response.ok) {
         throw new Error(`fetch failed: ${response.status}`);
       }
@@ -33,6 +33,7 @@ export function ServerTab({ revision }: { revision: number }) {
     }
   }, []);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: revision is a deliberate trigger: re-fetch when the parent bumps it.
   useEffect(() => {
     void refresh();
   }, [refresh, revision]);
@@ -42,16 +43,16 @@ export function ServerTab({ revision }: { revision: number }) {
       event.preventDefault();
       const form = event.currentTarget;
       const data = new FormData(form);
-      const title = String(data.get('title') ?? '').trim();
+      const title = String(data.get("title") ?? "").trim();
       if (!title) return;
       try {
-        const response = await fetch('/api/notes', {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
+        const response = await fetch("/api/notes", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
           body: JSON.stringify({
             title,
-            body: String(data.get('body') ?? ''),
-            pinned: data.get('pinned') === 'on',
+            body: String(data.get("body") ?? ""),
+            pinned: data.get("pinned") === "on",
           }),
         });
         if (!response.ok) {
@@ -72,9 +73,8 @@ export function ServerTab({ revision }: { revision: number }) {
         <div className="card-body">
           <h2 className="card-title">New server-side note</h2>
           <p className="text-sm text-base-content/70">
-            Writes go through the Next.js Route Handler into the napi-rs
-            addon's SQLite file. Visible to every device that hits this
-            server — try opening another tab.
+            Writes go through the Next.js Route Handler into the napi-rs addon's SQLite file.
+            Visible to every device that hits this server — try opening another tab.
           </p>
           <form onSubmit={onSubmit} className="mt-2 space-y-3">
             <input
@@ -93,11 +93,7 @@ export function ServerTab({ revision }: { revision: number }) {
             />
             <div className="flex items-center justify-between">
               <label className="label cursor-pointer gap-2">
-                <input
-                  type="checkbox"
-                  name="pinned"
-                  className="checkbox checkbox-primary"
-                />
+                <input type="checkbox" name="pinned" className="checkbox checkbox-primary" />
                 <span className="label-text">Pin</span>
               </label>
               <button type="submit" className="btn btn-secondary">
@@ -132,21 +128,14 @@ export function ServerTab({ revision }: { revision: number }) {
             </button>
           </div>
           {notes.length === 0 ? (
-            <p className="text-base-content/60 italic">
-              No server-side notes yet.
-            </p>
+            <p className="text-base-content/60 italic">No server-side notes yet.</p>
           ) : (
             <ul className="space-y-2">
               {notes.map((note) => (
-                <li
-                  key={note.id}
-                  className="note-row rounded-lg border border-base-300 p-3"
-                >
+                <li key={note.id} className="note-row rounded-lg border border-base-300 p-3">
                   <div className="flex items-center gap-2">
                     {note.pinned && <span className="badge badge-warning badge-sm">pinned</span>}
-                    {note.completed && (
-                      <span className="badge badge-success badge-sm">done</span>
-                    )}
+                    {note.completed && <span className="badge badge-success badge-sm">done</span>}
                     <h3 className="font-semibold">{note.title}</h3>
                   </div>
                   {note.body && (

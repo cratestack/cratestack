@@ -11,7 +11,7 @@
 use std::collections::BTreeMap;
 
 use crate::CratestackError;
-use crate::rpc::RpcErrorBody;
+use crate::rpc::{RpcErrorBody, RpcFrameValue};
 use serde::{Deserialize, Serialize};
 
 pub use super::codes::{close_code, reset_code};
@@ -37,7 +37,7 @@ pub struct ClientFrame {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub op: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub input: Option<serde_json::Value>,
+    pub input: Option<RpcFrameValue>,
     /// Ends subscription `id` (WebSocket; on WebTransport, resetting the
     /// stream is the cancel).
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -51,7 +51,7 @@ pub enum ClientMessage {
     Request {
         id: u64,
         op: String,
-        input: serde_json::Value,
+        input: RpcFrameValue,
     },
     Cancel {
         id: u64,
@@ -69,12 +69,12 @@ impl ClientFrame {
         }
     }
 
-    pub fn request(id: u64, op: impl Into<String>, input: serde_json::Value) -> Self {
+    pub fn request(id: u64, op: impl Into<String>, input: impl Into<RpcFrameValue>) -> Self {
         Self {
             id,
             init: None,
             op: Some(op.into()),
-            input: Some(input),
+            input: Some(input.into()),
             cancel: None,
         }
     }
@@ -105,7 +105,7 @@ impl ClientFrame {
             (None, Some(op)) => Ok(ClientMessage::Request {
                 id: self.id,
                 op,
-                input: self.input.unwrap_or(serde_json::Value::Null),
+                input: self.input.unwrap_or(RpcFrameValue::Null),
             }),
             (Some(_), Some(_)) => Err(bad_frame("a frame carries `init` or `op`, not both")),
             (None, None) => Err(bad_frame("a client frame needs `init` or `op`")),
@@ -126,7 +126,7 @@ pub struct ServerFrame {
         skip_serializing_if = "Option::is_none",
         deserialize_with = "present"
     )]
-    pub next: Option<serde_json::Value>,
+    pub next: Option<RpcFrameValue>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub end: Option<Empty>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -151,9 +151,9 @@ impl ServerFrame {
         }
     }
 
-    pub fn next(id: u64, item: serde_json::Value) -> Self {
+    pub fn next(id: u64, item: impl Into<RpcFrameValue>) -> Self {
         Self {
-            next: Some(item),
+            next: Some(item.into()),
             ..Self::empty(id)
         }
     }
@@ -173,13 +173,17 @@ impl ServerFrame {
     }
 }
 
-fn present<'de, D>(deserializer: D) -> Result<Option<serde_json::Value>, D::Error>
+fn present<'de, D>(deserializer: D) -> Result<Option<RpcFrameValue>, D::Error>
 where
     D: serde::Deserializer<'de>,
 {
-    serde_json::Value::deserialize(deserializer).map(Some)
+    RpcFrameValue::deserialize(deserializer).map(Some)
 }
 
 fn bad_frame(message: &str) -> CratestackError {
     CratestackError::BadRequest(format!("invalid subscription frame: {message}"))
 }
+
+#[cfg(test)]
+#[path = "tests_frame.rs"]
+mod tests;

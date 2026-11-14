@@ -1,7 +1,7 @@
-'use client';
+"use client";
 
-import { useCallback, useState } from 'react';
-import type { FormEvent } from 'react';
+import type { FormEvent } from "react";
+import { useCallback, useState } from "react";
 
 // "Remote" tab — fans out to an upstream CrateStack service via the typed
 // HTTP client living inside the napi addon. The browser hands a base URL
@@ -19,7 +19,7 @@ export function RemoteTab() {
   const [articles, setArticles] = useState<ArticleRow[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [url, setUrl] = useState<string>('http://localhost:8080');
+  const [url, setUrl] = useState<string>("http://localhost:8080");
 
   const onSubmit = useCallback(
     async (event: FormEvent<HTMLFormElement>) => {
@@ -27,10 +27,9 @@ export function RemoteTab() {
       setLoading(true);
       setError(null);
       try {
-        const response = await fetch(
-          `/api/remote?url=${encodeURIComponent(url)}`,
-          { cache: 'no-store' },
-        );
+        const response = await fetch(`/api/remote?url=${encodeURIComponent(url)}`, {
+          cache: "no-store",
+        });
         if (!response.ok) {
           const data = (await response.json().catch(() => ({}))) as {
             error?: string;
@@ -54,11 +53,10 @@ export function RemoteTab() {
         <div className="card-body">
           <h2 className="card-title">Call upstream service</h2>
           <p className="text-sm text-base-content/70">
-            The browser submits a URL; Next.js Route Handler delegates to
-            the napi addon's typed{' '}
+            The browser submits a URL; Next.js Route Handler delegates to the napi addon's typed{" "}
             <code className="kbd kbd-sm">include_client_schema!</code>
-            -generated client. Browser never speaks to the upstream
-            directly — CORS and credentials stay server-side.
+            -generated client. Browser never speaks to the upstream directly — CORS and credentials
+            stay server-side.
           </p>
           <form onSubmit={onSubmit} className="mt-2 flex flex-col gap-3 sm:flex-row">
             <input
@@ -91,16 +89,13 @@ export function RemoteTab() {
           </h2>
           {articles.length === 0 ? (
             <p className="text-base-content/60 italic">
-              No articles yet. Point this at a running CrateStack service
-              exposing an Article model and click Fetch.
+              No articles yet. Point this at a running CrateStack service exposing an Article model
+              and click Fetch.
             </p>
           ) : (
             <ul className="space-y-2">
               {articles.map((article) => (
-                <li
-                  key={article.id}
-                  className="note-row rounded-lg border border-base-300 p-3"
-                >
+                <li key={article.id} className="note-row rounded-lg border border-base-300 p-3">
                   <div className="flex items-center gap-2">
                     {article.published ? (
                       <span className="badge badge-success badge-sm">published</span>

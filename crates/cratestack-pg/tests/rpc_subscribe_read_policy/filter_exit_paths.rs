@@ -43,11 +43,14 @@ async fn every_update_path_sends_the_pre_image_to_a_filter_exit() {
     let ctx = caller(1);
     let mut feed = db
         .subscriptions()
-        .open(SubscriptionOpen {
-            op_id: "model.SubAudited.subscribe".to_owned(),
-            input: json!({"filters": [{"key": "body__contains", "value": "keep"}]}),
-            ctx: ctx.clone(),
-        })
+        .open(
+            SubscriptionOpen {
+                op_id: "model.SubAudited.subscribe".to_owned(),
+                input: json!({"filters": [{"key": "body__contains", "value": "keep"}]}),
+                ctx: ctx.clone(),
+            },
+            cratestack::JsonCodec,
+        )
         .await
         .expect("a filtered feed opens");
     let created = |id: i64, body: &str| cratestack_schema::CreateSubAuditedInput {
@@ -94,6 +97,7 @@ async fn every_update_path_sends_the_pre_image_to_a_filter_exit() {
     )
     .await
     {
+        let event = cratestack::serde_json::Value::from(event);
         if event["operation"] == "Updated" {
             exits.push((event["matches"].clone(), event["data"]["body"].clone()));
         }

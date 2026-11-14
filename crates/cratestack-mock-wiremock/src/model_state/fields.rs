@@ -12,13 +12,15 @@
 use std::collections::BTreeSet;
 
 use cratestack_core::{Field, Model, Schema};
+use serde_json::Value;
 
 use crate::error::WireMockGeneratorError;
+use crate::field_value::synthesize_field;
 use crate::model_attrs::{
     ScalarKind, classify_field_kind, is_computed_field, is_relation_field, is_server_only_field,
     is_version_field,
 };
-use crate::values::synthesize;
+use crate::validator_spec::ValidatorSpec;
 
 pub(crate) struct StateField {
     pub(crate) name: String,
@@ -100,7 +102,7 @@ pub(crate) fn build_field_plan(
             // bucket, regardless of what `classify_field_kind` would
             // otherwise say about their scalar kind.
             let mut in_progress = vec![model.name.clone()];
-            let value = synthesize(schema, &owner, &field.ty, &mut in_progress)?;
+            let value = synthesize_field(schema, &owner, field, &mut in_progress)?;
             frozen.push(FrozenField {
                 name: field.name.clone(),
                 literal_json: value.to_string(),
@@ -110,17 +112,46 @@ pub(crate) fn build_field_plan(
         match classify_field_kind(schema, field) {
             ScalarKind::Unsupported => {
                 let mut in_progress = vec![model.name.clone()];
-                let value = synthesize(schema, &owner, &field.ty, &mut in_progress)?;
+                let value = synthesize_field(schema, &owner, field, &mut in_progress)?;
                 frozen.push(FrozenField {
                     name: field.name.clone(),
                     literal_json: value.to_string(),
                 });
             }
-            kind => stateful.push(StateField {
-                name: field.name.clone(),
-                kind,
-                default_literal: scalar_default_literal(schema, &field.ty.name),
-            }),
+            kind => {
+                // A validated field's default must satisfy its validators
+                // (cratestack#1307); an unvalidated one keeps the fixed table.
+                let mut in_progress = vec![model.name.clone()];
+                let literal = if ValidatorSpec::from_field(field).is_empty() {
+                    Some(scalar_default_literal(schema, &field.ty.name))
+                } else {
+                    let value = synthesize_field(schema, &owner, field, &mut in_progress)?;
+                    let text = match &value {
+                        Value::String(text) => text.clone(),
+                        other => other.to_string(),
+                    };
+                    // Spliced into a quoted Handlebars/JSON template, so a
+                    // value with quoting or template characters is frozen
+                    // (JSON-escaped) instead of stateful.
+                    let unsafe_chars = text
+                        .chars()
+                        .any(|c| "\"'\\{}".contains(c) || c.is_control());
+                    (!unsafe_chars).then_some(text).or_else(|| {
+                        frozen.push(FrozenField {
+                            name: field.name.clone(),
+                            literal_json: value.to_string(),
+                        });
+                        None
+                    })
+                };
+                if let Some(default_literal) = literal {
+                    stateful.push(StateField {
+                        name: field.name.clone(),
+                        kind,
+                        default_literal,
+                    });
+                }
+            }
         }
     }
 

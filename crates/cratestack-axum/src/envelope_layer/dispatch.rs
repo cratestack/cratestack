@@ -72,14 +72,20 @@ pub(super) async fn by_mode<S: Inner>(
         (true, EnvelopeMode::Off) => {
             refusal::unsupported_envelope(&parts.headers, parts.uri.path())
         }
-        (true, EnvelopeMode::Required | EnvelopeMode::Optional) => {
-            signed::handle(config, inner, parts, body, route).await
-        }
+        (
+            true,
+            EnvelopeMode::Required
+            | EnvelopeMode::Optional
+            | EnvelopeMode::UnsignedRequestSealedReply,
+        ) => signed::handle(config, inner, parts, body, route).await,
         (false, EnvelopeMode::Required) => {
             refusal::unauthenticated(&parts.headers, parts.uri.path())
         }
         (false, EnvelopeMode::Optional) => {
-            unsigned::handle(config, inner, parts, body, route).await
+            unsigned::handle(config, inner, parts, body, route, false).await
+        }
+        (false, EnvelopeMode::UnsignedRequestSealedReply) => {
+            unsigned::handle(config, inner, parts, body, route, true).await
         }
         (false, EnvelopeMode::Off) => call(inner, Request::from_parts(parts, body)).await,
     }

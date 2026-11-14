@@ -66,12 +66,13 @@ pub(super) fn generate(
         quote! { ::cratestack::SqlColumnValue { column: #column, value: #value } }
     });
     let function = quote! {
-        pub(super) async fn #open_ident(
+        pub(super) async fn #open_ident<C: ::cratestack::CratestackCodec>(
             db: &super::Cratestack,
             query: Option<String>,
             ctx: ::cratestack::CratestackContext,
+            codec: C,
         ) -> Result<
-            ::cratestack::SubscriptionStream<::cratestack::serde_json::Value>,
+            ::cratestack::SubscriptionStream<::cratestack::rpc::RpcFrameValue>,
             ::cratestack::CratestackError,
         > {
             // The columns a policy and a filter are decided on, of one row.
@@ -119,6 +120,7 @@ pub(super) fn generate(
             let filter = ::std::sync::Arc::new(filter);
             let feed = ::cratestack::__private::model_feed(
                 stream,
+                codec,
                 move |event: ::cratestack::__private::FeedEvent<super::models::#model_ident>| {
                     let wanted = operations
                         .as_ref()

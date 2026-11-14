@@ -526,6 +526,13 @@ Error     { id: u64, err: RpcErrorBody }                      server → client
 A `next` that is present but `null` is an item whose value is `null`. Presence decides the kind,
 never the value.
 
+`<value>` is an `RpcFrameValue` (the batch frames' payload type), in the form of the socket's codec
+(cratestack#1360). On a CBOR socket the dispatcher encodes each item with `CborCodec`, so a `Uuid` is a
+16-byte string and `Bytes` inside a `Json` field a byte string, exactly as in a unary CBOR response; on
+a JSON socket, and on SSE, the same item is text and an integer array, byte for byte what
+`serde_json::to_value` gives. This is why `SubscriptionDispatcher::open` takes the codec. A `Uuid`
+subscription *argument* stays text: the input becomes a JSON query string.
+
 `Ready{id: 0}` acknowledges `Init`. `Ready{id: n}` says subscription `n` is live: the §2.1 guarantee
 starts at this frame.
 
@@ -1217,7 +1224,10 @@ matched (§5.3: design, security argument and `update_many` limit).
   `ProceduresClient`, generated for REST and RPC clients and for `include_client_schema!`. It
   resolves at `Ready` to a `ClientSubscription<Item>`, a bounded `mpsc::Receiver<Result<Item,
   ClientError>>`. A model feed's item is `ModelEvent<Model>`. With `fields` it is partial, so read
-  it as `ModelEvent<serde_json::Value>` through `runtime().subscribe`.
+  it as `ModelEvent<serde_json::Value>` through `runtime().subscribe`. That fails over WebSocket
+  and WebTransport once the item has a `Uuid` field (a byte string there, #1360); read it into a
+  struct of `Option<_>` fields, or use SSE. The socket bindings decode an item as a unary CBOR call
+  does, falling back to the text form an older server sent.
 - **Bindings** (`ClientConfig::subscription_transport`):
   - **SSE** is always `GET`, with the input as the query string: a model feed's `list` filters, a
     procedure's JSON-valued arguments. It goes through `request_streamed_with_query_and_accept`,

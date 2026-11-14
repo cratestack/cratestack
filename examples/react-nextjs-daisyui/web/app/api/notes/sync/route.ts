@@ -1,5 +1,5 @@
-import { NextResponse } from 'next/server';
-import { loadAddon, type NoteRow } from '../../addon';
+import { NextResponse } from "next/server";
+import { loadAddon, type NoteRow } from "../../addon";
 
 // Offline-first sync endpoint.
 //
@@ -16,8 +16,8 @@ import { loadAddon, type NoteRow } from '../../addon';
 // each via napi (last-write-wins by updatedAt). If the server's copy is
 // newer, the upsert is a no-op and the next pull will deliver the diff.
 
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 type SyncRequest = {
   cursor?: string;
@@ -32,7 +32,7 @@ export async function POST(request: Request) {
     for (const note of pushes) {
       addon.upsertNote(note);
     }
-    const cursor = typeof body.cursor === 'string' ? body.cursor : '';
+    const cursor = typeof body.cursor === "string" ? body.cursor : "";
     const remote = addon.notesSince(cursor);
     return NextResponse.json({
       cursor: new Date().toISOString(),

@@ -13,7 +13,7 @@ use reqwest::Method;
 use serde::de::DeserializeOwned;
 
 use super::failure::Failure;
-use super::frames::{item, rpc_error_to_client};
+use super::frames::{cbor_item, rpc_error_to_client};
 use super::{ClientSubscription, SubscriptionTarget};
 use crate::client::CratestackClient;
 use crate::codec::HttpClientCodec;
@@ -80,7 +80,7 @@ pub(super) async fn open<T: DeserializeOwned + Send + 'static>(
             let Some(next) = next else { return };
             let next = next
                 .map_err(|error| failure(error).into_error())
-                .and_then(item::<T>);
+                .and_then(cbor_item::<T>);
             let last = next.is_err();
             if tx.send(next).await.is_err() || last {
                 return;

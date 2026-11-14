@@ -20,9 +20,10 @@
 use std::future::Future;
 use std::pin::Pin;
 
+use cratestack_core::rpc::RpcFrameValue;
 use cratestack_core::{
-    BackplaneMessage, BackplaneReceiver, CratestackError, CratestackEventEnvelope, ModelEvent,
-    SubscriptionStream,
+    BackplaneMessage, BackplaneReceiver, CratestackCodec, CratestackError, CratestackEventEnvelope,
+    ModelEvent, SubscriptionStream,
 };
 use futures_util::Stream;
 use futures_util::stream::{self, StreamExt};
@@ -126,34 +127,38 @@ where
     Ok(Some(event))
 }
 
-/// `items` routed by `route` and encoded to JSON values, ending with the error
+/// `items` routed by `route` and encoded with `codec` (a `Uuid` is a byte
+/// string under CBOR, text under JSON: cratestack#1360), ending with the error
 /// that stopped it (module docs). `route` returns what to send for an item, or
 /// nothing to drop it.
-pub fn model_feed<I, O, S, F, Fut>(items: S, route: F) -> SubscriptionStream<serde_json::Value>
+pub fn model_feed<C, I, O, S, F, Fut>(
+    items: S,
+    codec: C,
+    route: F,
+) -> SubscriptionStream<RpcFrameValue>
 where
+    C: CratestackCodec,
     O: Serialize + Send + 'static,
     I: Send + 'static,
     S: Stream<Item = Result<I, CratestackError>> + Send + 'static,
     F: FnMut(I) -> Fut + Send + 'static,
     Fut: Future<Output = Result<Option<O>, CratestackError>> + Send + 'static,
 {
-    let state: (Pin<Box<S>>, F, bool) = (Box::pin(items), route, false);
+    let state: (Pin<Box<S>>, F, C, bool) = (Box::pin(items), route, codec, false);
     Box::pin(stream::unfold(
         state,
-        |(mut items, mut route, ended)| async move {
+        |(mut items, mut route, codec, ended)| async move {
             if ended {
                 return None;
             }
             loop {
                 let item = match items.next().await {
                     Some(Ok(item)) => item,
-                    Some(Err(error)) => return Some((Err(error), (items, route, true))),
-                    None => return Some((Err(interrupted()), (items, route, true))),
+                    Some(Err(error)) => return Some((Err(error), (items, route, codec, true))),
+                    None => return Some((Err(interrupted()), (items, route, codec, true))),
                 };
                 let verdict = match route(item).await {
-                    Ok(Some(event)) => serde_json::to_value(&event).map_err(|error| {
-                        CratestackError::Codec(format!("failed to encode a model event: {error}"))
-                    }),
+                    Ok(Some(event)) => RpcFrameValue::encode_with(&codec, &event),
                     Ok(None) => continue,
                     Err(error) => {
                         tracing::warn!(
@@ -165,7 +170,7 @@ where
                     }
                 };
                 let ended = verdict.is_err();
-                return Some((verdict, (items, route, ended)));
+                return Some((verdict, (items, route, codec, ended)));
             }
         },
     ))
@@ -173,3 +178,5 @@ where
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tests_codec;

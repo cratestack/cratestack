@@ -49,9 +49,9 @@ async fn fewer_than_max_size_calls_wait_for_explicit_flush() {
     let r2 = h2.await.unwrap().unwrap();
     let r3 = h3.await.unwrap().unwrap();
 
-    assert_eq!(r1.output.unwrap()["value"], 3);
-    assert_eq!(r2.output.unwrap()["value"], 12);
-    assert_eq!(r3.output.unwrap()["value"], 30);
+    assert_eq!(serde_json::Value::from(r1.output.unwrap())["value"], 3);
+    assert_eq!(serde_json::Value::from(r2.output.unwrap())["value"], 12);
+    assert_eq!(serde_json::Value::from(r3.output.unwrap())["value"], 30);
 
     // Buffer drained.
     assert_eq!(debouncer.pending_len().await, 0);
@@ -86,8 +86,8 @@ async fn hitting_max_size_triggers_auto_flush() {
     // enqueue trips the size limit.
     let r1 = h1.await.unwrap().unwrap();
     let r2 = h2.await.unwrap().unwrap();
-    assert_eq!(r1.output.unwrap()["value"], 200);
-    assert_eq!(r2.output.unwrap()["value"], 400);
+    assert_eq!(serde_json::Value::from(r1.output.unwrap())["value"], 200);
+    assert_eq!(serde_json::Value::from(r2.output.unwrap())["value"], 400);
 }
 
 #[tokio::test]
@@ -129,14 +129,14 @@ async fn per_call_errors_route_to_the_right_awaiter() {
     let r3 = h3.await.unwrap().unwrap();
 
     assert!(r1.error.is_none());
-    assert_eq!(r1.output.unwrap()["value"], 2);
+    assert_eq!(serde_json::Value::from(r1.output.unwrap())["value"], 2);
 
     // Per-frame error didn't contaminate other awaiters.
     let err = r2.error.expect("frame 2 should error");
     assert_eq!(err.code, "failed_precondition");
 
     assert!(r3.error.is_none());
-    assert_eq!(r3.output.unwrap()["value"], 42);
+    assert_eq!(serde_json::Value::from(r3.output.unwrap())["value"], 42);
 }
 
 #[tokio::test]

@@ -1,8 +1,8 @@
-'use client';
+"use client";
 
-import { useCallback, useEffect, useRef, useState } from 'react';
-import type { LocalClient } from './useLocalNotes';
-import type { NoteView } from './protocol';
+import { useCallback, useEffect, useRef, useState } from "react";
+import type { NoteView } from "./protocol";
+import type { LocalClient } from "./useLocalNotes";
 
 // Offline-first sync engine.
 //
@@ -34,7 +34,7 @@ import type { NoteView } from './protocol';
 // latest state via refs.
 
 const SYNC_INTERVAL_MS = 30_000;
-const CURSOR_KEY = 'cratestack:sync:cursor';
+const CURSOR_KEY = "cratestack:sync:cursor";
 
 export type SyncState = {
   online: boolean;
@@ -55,39 +55,40 @@ export function useSync(client: LocalClient | null): SyncState {
   const [syncing, setSyncing] = useState(false);
   const [lastSyncAt, setLastSyncAt] = useState<string | null>(null);
   const [pending, setPending] = useState(0);
-  const [cursor, setCursor] = useState<string>('');
+  const [cursor, setCursor] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
 
   const inFlightRef = useRef(false);
   const clientRef = useRef<LocalClient | null>(client);
-  const cursorRef = useRef<string>('');
+  const cursorRef = useRef<string>("");
   clientRef.current = client;
   cursorRef.current = cursor;
 
   // Hydrate online + cursor from the browser environment after mount.
   useEffect(() => {
-    if (typeof navigator !== 'undefined') {
+    if (typeof navigator !== "undefined") {
       setOnline(navigator.onLine);
     }
-    if (typeof window !== 'undefined') {
-      const stored = window.localStorage.getItem(CURSOR_KEY) ?? '';
+    if (typeof window !== "undefined") {
+      const stored = window.localStorage.getItem(CURSOR_KEY) ?? "";
       if (stored) setCursor(stored);
     }
   }, []);
 
   // Track navigator online state.
   useEffect(() => {
-    if (typeof window === 'undefined') return;
+    if (typeof window === "undefined") return;
     const handler = () => setOnline(navigator.onLine);
-    window.addEventListener('online', handler);
-    window.addEventListener('offline', handler);
+    window.addEventListener("online", handler);
+    window.addEventListener("offline", handler);
     return () => {
-      window.removeEventListener('online', handler);
-      window.removeEventListener('offline', handler);
+      window.removeEventListener("online", handler);
+      window.removeEventListener("offline", handler);
     };
   }, []);
 
   // Refresh the pending count off the wasm side whenever cursor/client move.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: lastSyncAt is a deliberate trigger: re-read the pending count after each sync.
   useEffect(() => {
     if (!client) return;
     let cancelled = false;
@@ -110,8 +111,8 @@ export function useSync(client: LocalClient | null): SyncState {
     const currentClient = clientRef.current;
     if (!currentClient) return;
     if (inFlightRef.current) return;
-    if (typeof navigator !== 'undefined' && !navigator.onLine) {
-      setError('offline — sync deferred');
+    if (typeof navigator !== "undefined" && !navigator.onLine) {
+      setError("offline — sync deferred");
       return;
     }
     inFlightRef.current = true;
@@ -120,9 +121,9 @@ export function useSync(client: LocalClient | null): SyncState {
     try {
       const currentCursor = cursorRef.current;
       const pushes = await currentClient.since(currentCursor);
-      const response = await fetch('/api/notes/sync', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
+      const response = await fetch("/api/notes/sync", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
         body: JSON.stringify({ cursor: currentCursor, pushes }),
       });
       if (!response.ok) {
@@ -137,7 +138,7 @@ export function useSync(client: LocalClient | null): SyncState {
         await currentClient.upsertRemote(note);
       }
       setCursor(data.cursor);
-      if (typeof window !== 'undefined') {
+      if (typeof window !== "undefined") {
         window.localStorage.setItem(CURSOR_KEY, data.cursor);
       }
       setLastSyncAt(new Date().toISOString());
@@ -166,8 +167,8 @@ export function useSync(client: LocalClient | null): SyncState {
   useEffect(() => {
     if (!client) return;
     const interval = setInterval(() => {
-      if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
-      if (typeof navigator !== 'undefined' && !navigator.onLine) return;
+      if (typeof document !== "undefined" && document.visibilityState !== "visible") return;
+      if (typeof navigator !== "undefined" && !navigator.onLine) return;
       void push();
     }, SYNC_INTERVAL_MS);
     return () => clearInterval(interval);

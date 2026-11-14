@@ -79,11 +79,11 @@ pub(crate) fn generate_subscription_module(
     }
     let model_arms = feeds.iter().map(|feed| {
         let (op_id, open) = (&feed.op_id, &feed.open_ident);
-        quote! { #op_id => #open(&self.db, query, ctx).await, }
+        quote! { #op_id => #open(&self.db, query, ctx, codec).await, }
     });
     let procedure_arms = procedures.iter().map(|feed| {
         let (op_id, open) = (&feed.op_id, &feed.open_ident);
-        quote! { #op_id => #open(&self.db, &self.registry, query, ctx).await, }
+        quote! { #op_id => #open(&self.db, &self.registry, query, ctx, codec).await, }
     });
     let functions = feeds
         .iter()

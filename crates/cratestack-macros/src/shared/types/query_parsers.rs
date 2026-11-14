@@ -30,7 +30,7 @@ pub(crate) fn query_scalar_parser_tokens(
     }
 
     Some(match ty.name.as_str() {
-        "String" => quote! { Ok((#value_expr).to_owned()) },
+        "String" => quote! { Ok::<_, CratestackError>((#value_expr).to_owned()) },
         "Cuid" => quote! { ::cratestack::parse_cuid(#value_expr) },
         "Int" => quote! {
             (#value_expr).parse::<i64>().map_err(|error| {

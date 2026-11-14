@@ -1,4 +1,6 @@
+use cratestack_codec_json::JsonCodec;
 use cratestack_core::CratestackError;
+use cratestack_core::rpc::RpcFrameValue;
 use futures_util::StreamExt;
 use futures_util::stream;
 use serde::Deserialize;
@@ -44,17 +46,23 @@ fn a_query_argument_must_be_json() {
 
 #[tokio::test]
 async fn a_feed_ends_after_its_first_error_and_on_its_own() {
-    let items = procedure_feed(Box::pin(stream::iter([
-        Ok(1),
-        Err(CratestackError::Forbidden("gone".to_owned())),
-        Ok(2),
-    ])));
+    let items = procedure_feed(
+        Box::pin(stream::iter([
+            Ok(1),
+            Err(CratestackError::Forbidden("gone".to_owned())),
+            Ok(2),
+        ])),
+        JsonCodec,
+    );
     let items: Vec<_> = items.collect().await;
     assert_eq!(items.len(), 2);
-    assert_eq!(items[0].as_ref().unwrap(), &json!(1));
+    assert_eq!(items[0].as_ref().unwrap(), &RpcFrameValue::from(json!(1)));
     assert!(items[1].is_err());
-    let ended: Vec<_> = procedure_feed(Box::pin(stream::iter([Ok::<_, CratestackError>("a")])))
-        .collect()
-        .await;
+    let ended: Vec<_> = procedure_feed(
+        Box::pin(stream::iter([Ok::<_, CratestackError>("a")])),
+        JsonCodec,
+    )
+    .collect()
+    .await;
     assert_eq!(ended.len(), 1);
 }

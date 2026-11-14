@@ -1,6 +1,6 @@
-import 'server-only';
-import path from 'node:path';
-import { createRequire } from 'node:module';
+import "server-only";
+import { createRequire } from "node:module";
+import path from "node:path";
 
 // Loader for the napi-rs native addon.
 //
@@ -52,12 +52,11 @@ let cached: Addon | null = null;
 
 export function loadAddon(): Addon {
   if (cached) return cached;
-  const addon = requireFromHere('react-nextjs-daisyui-napi') as Addon;
-  const dbPath =
-    process.env.CRATESTACK_NEXT_DB ?? path.resolve(process.cwd(), 'data/notes.db');
+  const addon = requireFromHere("react-nextjs-daisyui-napi") as Addon;
+  const dbPath = process.env.CRATESTACK_NEXT_DB ?? path.resolve(process.cwd(), "data/notes.db");
   addon.init(dbPath);
   cached = addon;
   return addon;
 }
 
-export type { NoteRow, ArticleRow };
+export type { ArticleRow, NoteRow };

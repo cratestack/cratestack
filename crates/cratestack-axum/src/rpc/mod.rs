@@ -62,8 +62,8 @@ mod tests_response_rebuffer;
 // on those types for the full story.
 pub use cratestack_core::rpc::{
     RPC_BATCH_PATH, RPC_STREAM_ERROR_TAG, RPC_SUBSCRIBE_PATH, RPC_UNARY_PATH, RpcErrorBody,
-    RpcGetInput, RpcListInput, RpcListPredicate, RpcPkInput, RpcRequest, RpcResponseFrame,
-    RpcUpdateInput, cratestack_error_code_to_rpc_code, rpc_code,
+    RpcFrameValue, RpcGetInput, RpcListInput, RpcListPredicate, RpcPkInput, RpcRequest,
+    RpcResponseFrame, RpcUpdateInput, cratestack_error_code_to_rpc_code, rpc_code,
 };
 
 pub use batch::response_to_frame;
@@ -73,7 +73,7 @@ pub use error_encode::{convert_handler_error_response, encode_rpc_error};
 pub use model_feed::{FeedEvent, model_events, model_feed, route_event};
 pub use procedure_subscription::{procedure_feed, procedure_input_query, procedure_query_args};
 pub use sse::{encode_model_event_sse_response, validate_subscribe_accept_header};
-pub use sse_subscription::encode_subscription_sse_response;
+pub use sse_subscription::{SseCodec, encode_subscription_sse_response};
 pub use subscribe_error::encode_subscribe_error;
 pub use subscribe_query::{
     SubscribeQuery, project_event_fields, split_subscribe_query, subscribe_input_query,

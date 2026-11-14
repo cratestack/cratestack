@@ -14,7 +14,7 @@ use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 
 use super::failure::Failure;
-use super::frames::{item, rpc_error_to_client};
+use super::frames::{cbor_item, rpc_error_to_client};
 use super::{ClientSubscription, SubscriptionTarget};
 use crate::client::CratestackClient;
 use crate::codec::HttpClientCodec;
@@ -109,7 +109,9 @@ async fn pump<T: DeserializeOwned + Send + 'static>(
         };
         let (item, last) = match frame {
             Some(Ok(frame)) if frame.id != ID => continue,
-            Some(Ok(frame)) if frame.next.is_some() => (item(frame.next.expect("checked")), false),
+            Some(Ok(frame)) if frame.next.is_some() => {
+                (cbor_item(frame.next.expect("checked")), false)
+            }
             Some(Ok(frame)) if frame.err.is_some() => {
                 (Err(rpc_error_to_client(frame.err.expect("checked"))), true)
             }

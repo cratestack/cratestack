@@ -3,7 +3,7 @@
 // directives (see DaisyUI 5 setup there).
 const config = {
   plugins: {
-    '@tailwindcss/postcss': {},
+    "@tailwindcss/postcss": {},
   },
 };
 

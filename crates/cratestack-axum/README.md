@@ -351,7 +351,10 @@ let app = axum::Router::new().nest("/api", router);
 - **Modes, per op** (`EnvelopePolicy`, no default; it sees a `PolicyRequest`, never a
   header): `Required` (everything signed, `GET` included, every response sealed),
   `Optional` (a signed request is opened and always answered sealed; an unsigned one is
-  sealed only with a valid `Cratestack-Nonce` and `Accept: application/cose`), `Off`. An
+  sealed only with a valid `Cratestack-Nonce` and `Accept: application/cose`, otherwise it
+  runs and is answered plain), `UnsignedRequestSealedReply` (as `Optional`, but an unsigned
+  request whose reply cannot be sealed is refused with a `406` before the handler runs),
+  `Off`. An
   `application/cose` body is opened or refused in every mode, never forwarded. A
   `/rpc/batch` call runs under the strictest mode of `batch` and every frame's op.
 - **Fail closed.** Under `Required`, a route the router matched but the layer cannot bind

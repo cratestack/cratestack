@@ -7,18 +7,24 @@
 //! exactly the same thing and none of them carries its own copy of the
 //! policy code.
 //!
-//! Values cross this boundary as `serde_json::Value`, the same opaque
-//! codec value `RpcRequest::input` / `RpcResponseFrame::output` already use:
-//! the binding decodes its wire codec into it and encodes items back out,
-//! so a dispatcher never knows which codec or transport it is serving.
+//! Items cross this boundary as [`RpcFrameValue`], a JSON-shaped value with
+//! a byte-string arm (the payload of a batch frame too). The dispatcher is
+//! handed the binding's codec and encodes each item with it, so a `Uuid` or
+//! `Bytes` is a byte string on a CBOR binding and text or an integer array
+//! on a JSON one, exactly as in a unary response of that codec
+//! (cratestack#1360). The binding decodes its wire into the same value and
+//! writes it back out, so a dispatcher never knows which transport it is
+//! serving.
 
 use std::future::Future;
 use std::pin::Pin;
 
 use futures_core::Stream;
 
+use crate::codec::CratestackCodec;
 use crate::context::CratestackContext;
 use crate::error::CratestackError;
+use crate::rpc::RpcFrameValue;
 
 /// A live subscription's items. Ending (`None`) means the subscription is
 /// over; an `Err` item is terminal too — the binding sends it and stops.
@@ -33,7 +39,8 @@ pub struct SubscriptionOpen {
     /// Dotted op id, e.g. `"model.Widget.subscribe"` or
     /// `"procedure.roomMessages"`.
     pub op_id: String,
-    /// The op's input, decoded from the binding's codec.
+    /// The op's input, decoded from the binding's codec. It becomes a JSON
+    /// query string either way, so it stays JSON-shaped.
     pub input: serde_json::Value,
     /// The authenticated caller. Captured once, at open, and used for every
     /// item of this subscription (design §5.1).
@@ -47,9 +54,14 @@ pub struct SubscriptionOpen {
 /// `async fn`. Returning `Err` refuses the subscription before the binding
 /// tells the client it is ready, so policy refusals and setup failures
 /// ("room not found") never look like a mid-stream error.
+///
+/// `codec` is the binding's wire codec (SSE passes the JSON one). Each item
+/// is encoded with it ([`RpcFrameValue::encode_with`]), so the frame an item
+/// ends up in matches what a unary call of that codec would return.
 pub trait SubscriptionDispatcher: Clone + Send + Sync + 'static {
-    fn open(
+    fn open<C: CratestackCodec>(
         &self,
         request: SubscriptionOpen,
-    ) -> impl Future<Output = Result<SubscriptionStream<serde_json::Value>, CratestackError>> + Send;
+        codec: C,
+    ) -> impl Future<Output = Result<SubscriptionStream<RpcFrameValue>, CratestackError>> + Send;
 }

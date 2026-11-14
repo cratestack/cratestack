@@ -1,5 +1,5 @@
-import type { NextConfig } from 'next';
-import withSerwistInit from '@serwist/next';
+import withSerwistInit from "@serwist/next";
+import type { NextConfig } from "next";
 
 // @serwist/next is a webpack plugin — there's no Turbopack equivalent at
 // the time of writing. Next.js 16 enables Turbopack by default, which
@@ -8,14 +8,14 @@ import withSerwistInit from '@serwist/next';
 // `--webpack` explicitly to keep Serwist in the build graph.
 
 const withSerwist = withSerwistInit({
-  swSrc: 'app/sw.ts',
-  swDest: 'public/sw.js',
+  swSrc: "app/sw.ts",
+  swDest: "public/sw.js",
   // Dev mode service worker registration can interfere with HMR; we keep it
   // off in dev and rely on next start / next build for the PWA story.
-  disable: process.env.NODE_ENV === 'development',
+  disable: process.env.NODE_ENV === "development",
 });
 
-const NAPI_PACKAGE = 'react-nextjs-daisyui-napi';
+const NAPI_PACKAGE = "react-nextjs-daisyui-napi";
 
 const nextConfig: NextConfig = {
   // Tell Next's tracer to leave the napi addon out of the bundle — it's a
@@ -56,10 +56,10 @@ const nextConfig: NextConfig = {
   async headers() {
     return [
       {
-        source: '/(.*)',
+        source: "/(.*)",
         headers: [
-          { key: 'Cross-Origin-Opener-Policy', value: 'same-origin' },
-          { key: 'Cross-Origin-Embedder-Policy', value: 'require-corp' },
+          { key: "Cross-Origin-Opener-Policy", value: "same-origin" },
+          { key: "Cross-Origin-Embedder-Policy", value: "require-corp" },
         ],
       },
     ];

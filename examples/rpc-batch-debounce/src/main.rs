@@ -54,7 +54,9 @@ async fn main() {
     for h in handles {
         let (i, op, frame) = h.await.expect("task");
         match (frame.output, frame.error) {
-            (Some(out), None) => println!("  call {i:2} ({op:20}) -> {out}"),
+            (Some(out), None) => {
+                println!("  call {i:2} ({op:20}) -> {}", serde_json::Value::from(out))
+            }
             (None, Some(err)) => println!("  call {i:2} ({op:20}) -> ERROR {err:?}"),
             _ => unreachable!(),
         }

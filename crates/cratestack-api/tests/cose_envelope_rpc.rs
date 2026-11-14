@@ -128,7 +128,7 @@ async fn the_batch_route_is_one_signed_message() {
     let frames = vec![RpcRequest {
         id: 1,
         op: "procedure.ping".to_owned(),
-        input: serde_json::json!({ "args": { "nonce": "b1" } }),
+        input: serde_json::json!({ "args": { "nonce": "b1" } }).into(),
         idem: None,
     }];
     let batch = Call {

@@ -150,11 +150,14 @@ async fn a_subscription_procedure_streams_its_topic() {
     assert_eq!(posted.status(), StatusCode::OK);
     let mut dispatched = db
         .subscriptions(Rooms)
-        .open(SubscriptionOpen {
-            op_id: "procedure.roomMessages".to_owned(),
-            input: json!({"args": {"roomId": "r1"}}),
-            ctx: CratestackContext::authenticated([("id".to_owned(), Value::Int(1))]),
-        })
+        .open(
+            SubscriptionOpen {
+                op_id: "procedure.roomMessages".to_owned(),
+                input: json!({"args": {"roomId": "r1"}}),
+                ctx: CratestackContext::authenticated([("id".to_owned(), Value::Int(1))]),
+            },
+            cratestack::JsonCodec,
+        )
         .await
         .expect("the dispatcher opens it");
 
@@ -213,7 +216,7 @@ async fn a_subscription_procedure_streams_its_topic() {
         .await
         .expect("an item")
         .expect("not an error");
-    assert_eq!(first["body"], "one");
+    assert_eq!(serde_json::Value::from(first)["body"], "one");
 }
 
 /// The client contract's op list is what the macro emits (cratestack#1123):

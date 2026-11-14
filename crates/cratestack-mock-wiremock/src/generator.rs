@@ -4,6 +4,7 @@ use cratestack_core::Schema;
 
 use crate::config::{GeneratedWireMockFile, GeneratedWireMockPackage, WireMockGeneratorConfig};
 use crate::error::WireMockGeneratorError;
+use crate::gaps::{attach, model_gaps, procedure_gaps};
 use crate::mapping::build_procedure_mapping;
 use crate::model_mapping::build_model_mappings;
 
@@ -32,7 +33,8 @@ pub fn generate_package(
         .procedures
         .iter()
         .map(|procedure| {
-            let mapping = build_procedure_mapping(schema, config, procedure)?;
+            let mut mapping = build_procedure_mapping(schema, config, procedure)?;
+            attach(&mut mapping, procedure_gaps(schema, procedure));
             let contents = serde_json::to_string_pretty(&mapping).map_err(|source| {
                 WireMockGeneratorError::Serialize {
                     subject: format!("procedure `{}`", procedure.name),
@@ -57,7 +59,8 @@ pub fn generate_package(
         .collect();
 
     for model in &schema.models {
-        for (verb, mapping) in build_model_mappings(schema, config, model, &model_names)? {
+        for (verb, mut mapping) in build_model_mappings(schema, config, model, &model_names)? {
+            attach(&mut mapping, model_gaps(schema, model, &model_names));
             let contents = serde_json::to_string_pretty(&mapping).map_err(|source| {
                 WireMockGeneratorError::Serialize {
                     subject: format!("model `{}` `{verb}` mapping", model.name),

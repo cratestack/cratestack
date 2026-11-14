@@ -183,7 +183,7 @@ async fn batch(router: &Router, wire: Wire, frames: &[(u64, &str, Json)]) -> (Re
         .map(|(id, op, input)| RpcRequest {
             id: *id,
             op: (*op).to_owned(),
-            input: input.clone(),
+            input: input.clone().into(),
             idem: None,
         })
         .collect();

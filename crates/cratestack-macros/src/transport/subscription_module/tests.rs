@@ -48,6 +48,23 @@ fn a_feed_gets_a_dispatcher_arm_on_the_backplane() {
     assert!(!code.contains("on_widget_created"));
     assert!(code.contains("fn with_backplane"));
     assert!(code.contains("missing_policy_columns"));
+    // Items are encoded with the binding's codec (cratestack#1360).
+    assert!(
+        code.contains("fn open < C : :: cratestack :: CratestackCodec >"),
+        "{code}"
+    );
+    assert!(
+        code.contains("open_query < C : :: cratestack :: CratestackCodec >"),
+        "{code}"
+    );
+    assert!(code.contains("SubscriptionStream < :: cratestack :: rpc :: RpcFrameValue >"));
+    assert!(
+        code.contains(
+            "\"model.Widget.subscribe\" => open_widget (& self . db , query , ctx , codec)"
+        )
+    );
+    assert!(code.contains("model_feed (stream , codec ,"), "{code}");
+    assert!(!code.contains("serde_json :: Value"), "{code}");
     assert!(!code.contains("fn webtransport"));
 }
 
