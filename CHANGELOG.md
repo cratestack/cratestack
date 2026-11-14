@@ -14,6 +14,8 @@ Additive. Closes the keystore half of #1151: `package:cratestack_cbor/cose.dart`
 
 **Transport parity.** No REST or RPC request surface changes: this is the client's signing path, identical on both. MCP is exempt (ADR 0002 D5).
 
+## 0.19.7 (2026-11-14)
+
 ### `@device_auth` procedure marker; `generate-dart --preset fespalier` emits a `DeviceAuthServer` (cratestack#1303)
 
 Additive. Not breaking: the marker is an ordinary procedure attribute read through a core reader (`cratestack_core::schema::parse_device_auth_attribute`, as `@authn` is), so `Procedure` and the IR gain no field.
