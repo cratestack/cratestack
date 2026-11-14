@@ -1,5 +1,10 @@
 ## Unreleased
 
+## 0.19.7 (2026-11-14)
+
+- No functional changes. Version kept in lockstep with the CrateStack
+  workspace, which every published CrateStack artifact shares.
+
 ## 0.19.6 (2026-11-14)
 
 - Fix: `decodeJson` now writes a CBOR byte string (major type 2) as a JSON
