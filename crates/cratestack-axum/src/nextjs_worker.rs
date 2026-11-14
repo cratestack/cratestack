@@ -1,13 +1,13 @@
 //! Next.js `NativeRouteManager` worker handshake helpers.
 //!
 //! Next.js's multi-language API route architecture (`NativeRouteManager` in
-//! `packages/next/src/server/dev/native-route-manager.ts`) runs native backend
-//! route handlers as a single persistent child process per project rather than
-//! spawning a process per HTTP request:
+//! [`packages/next/src/server/lib/native-route.external.ts`](https://github.com/vercel/next.js/blob/canary/packages/next/src/server/lib/native-route.external.ts),
+//! introduced in [`vercel/next.js#100130`](https://github.com/vercel/next.js/pull/100130))
+//! runs native backend route handlers as a persistent child process per project
+//! rather than spawning a process per HTTP request:
 //!
-//! 1. In development (`next dev`), Next.js spawns the native backend binary (or
-//!    `cargo run`) and waits up to 30 seconds for a line matching
-//!    `/^PORT=(\d+)/m` on the worker's `stdout`.
+//! 1. Next.js spawns the native backend binary with `PORT=0` and waits for a
+//!    line matching `/^PORT=(\d+)\s*$/m` on the worker's `stdout`.
 //! 2. The worker binds an ephemeral loopback port (`127.0.0.1:0`, or `PORT`
 //!    when explicitly supplied), writes `PORT=<port>\n` to `stdout`, flushes
 //!    `stdout` immediately, and serves HTTP requests proxied by Next.js to
