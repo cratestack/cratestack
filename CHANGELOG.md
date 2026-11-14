@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.19.7 (2026-11-14)
+
 ### `@device_auth` procedure marker; `generate-dart --preset fespalier` emits a `DeviceAuthServer` (cratestack#1303)
 
 Additive. Not breaking: the marker is an ordinary procedure attribute read through a core reader (`cratestack_core::schema::parse_device_auth_attribute`, as `@authn` is), so `Procedure` and the IR gain no field.
