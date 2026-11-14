@@ -39,7 +39,6 @@ pub mod envelope_layer;
 pub mod headers;
 pub mod idempotency;
 mod middleware_error;
-pub mod nextjs_worker;
 pub mod projection;
 pub mod query;
 pub mod ratelimit;
@@ -83,9 +82,3 @@ pub use query::{
 };
 
 pub use trusted_proxy::{ForwardedHeader, TrustedProxyConfig};
-
-pub use nextjs_worker::{
-    NEXTJS_WORKER_ENV, PORT_ENV, emit_port_handshake, format_port_handshake,
-    resolve_nextjs_worker_addr, resolve_nextjs_worker_addr_from, serve_nextjs_worker,
-    write_port_handshake,
-};

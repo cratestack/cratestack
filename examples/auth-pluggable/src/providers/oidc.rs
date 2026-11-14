@@ -84,17 +84,19 @@ fn context(claims: Claims) -> CratestackContext {
         .roles(words("roles").split_whitespace())
         .amr(top_amr.iter().map(String::as_str));
 
-    if let Some(acr) = attribute("acr").or_else(|| {
-        claims
-            .extra
-            .get("acr")
-            .and_then(|v| v.as_str().map(str::to_owned))
-    }) {
+    if let Some(acr) = claims
+        .extra
+        .get("acr")
+        .and_then(|v| v.as_str().map(str::to_owned))
+        .or_else(|| attribute("acr"))
+    {
         builder = builder.acr(acr);
     }
-    if let Some(auth_time) = attribute("auth_time")
-        .and_then(|value| value.parse().ok())
-        .or_else(|| claims.extra.get("auth_time").and_then(|v| v.as_i64()))
+    if let Some(auth_time) = claims
+        .extra
+        .get("auth_time")
+        .and_then(|v| v.as_i64())
+        .or_else(|| attribute("auth_time").and_then(|value| value.parse().ok()))
     {
         builder = builder.auth_time(auth_time);
     }

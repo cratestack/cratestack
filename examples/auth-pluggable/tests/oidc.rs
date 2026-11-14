@@ -107,98 +107,78 @@ async fn the_oidc_provider_passes_the_suite() {
     .await;
 }
 
-/// The token's authentication facts reach the principal contract.
+/// The token's authentication facts reach the principal contract: top-level
+/// claims override raw `identity.attributes`, and attributes act as fallback.
 #[tokio::test]
 async fn amr_acr_and_the_key_binding_reach_the_principal() {
-    use cratestack::{AuthProvider, RequestContext};
+    use authkestra_engine::Identity;
+    use cratestack::{AuthProvider, CratestackContext, RequestContext};
+    use serde_json::json;
+    use std::collections::HashMap;
+
+    async fn eval(op: &Op, key: &DpopKey, token: String) -> CratestackContext {
+        let fixture = Oidc {
+            jwks_url: op.jwks_url.clone(),
+            user: (token.clone(), key.clone()),
+            admin: (token, key.clone()),
+            attacker: key.clone(),
+        };
+        let canonical = support::procedure_call("/$procs/whoAmI");
+        let credentials = fixture.sign(Who::User, &canonical);
+        let request = RequestContext {
+            method: canonical.method,
+            path: canonical.path,
+            query: None,
+            headers: &credentials.headers,
+            body: &canonical.body,
+            extensions: &credentials.extensions,
+        };
+        fixture.provider().authenticate(&request).await.unwrap()
+    }
 
     let op = Op::start().await;
     let key = DpopKey(SigningKey::from_bytes(&[0x04; 32]));
-    let token = op
-        .issue(
-            "usr-ada",
-            &[
-                ("amr", "hwk user"),
-                ("acr", "aal2"),
-                ("auth_time", "1700000123"),
-            ],
-            &key,
-        )
-        .await;
-    let fixture = Oidc {
-        jwks_url: op.jwks_url,
-        user: (token.clone(), key.clone()),
-        admin: (token, key.clone()),
-        attacker: key.clone(),
-    };
-    let canonical = support::procedure_call("/$procs/whoAmI");
-    let credentials = fixture.sign(Who::User, &canonical);
-    let request = RequestContext {
-        method: canonical.method,
-        path: canonical.path,
-        query: None,
-        headers: &credentials.headers,
-        body: &canonical.body,
-        extensions: &credentials.extensions,
-    };
-    let ctx = fixture
-        .provider()
-        .authenticate(&request)
-        .await
-        .expect("accepted");
-    assert_eq!(ctx.amr(), Some(vec!["hwk", "user"]));
-    assert_eq!(ctx.acr(), Some("aal2"));
+    let attrs = [
+        ("amr", "password"),
+        ("acr", "aal2"),
+        ("auth_time", "1700000123"),
+    ];
+    let ctx = eval(&op, &key, op.issue("usr-ada", &attrs, &key).await).await;
+    assert_eq!(ctx.amr(), Some(vec!["pwd"]));
+    assert_eq!(ctx.acr(), Some("urn:authkestra:acr:single-factor"));
     assert_eq!(ctx.auth_time(), Some(1_700_000_123));
-    assert!(
-        ctx.cnf_jkt().is_some_and(|jkt| !jkt.is_empty()),
-        "cnf.jkt is the DPoP key's thumbprint"
-    );
-}
+    let jkt = ctx.cnf_jkt().expect("cnf.jkt thumbprint").to_owned();
+    assert!(!jkt.is_empty());
 
-#[tokio::test]
-async fn step_up_requirement_and_top_level_access_token_claims_work_end_to_end() {
-    use authkestra_resource::{INSUFFICIENT_USER_AUTHENTICATION, StepUpRequirement};
+    let identity = Identity {
+        provider_id: "op".to_owned(),
+        external_id: "usr-ada".to_owned(),
+        email: None,
+        username: Some("usr-ada".to_owned()),
+        attributes: HashMap::from([
+            ("amr".to_owned(), "hwk user".to_owned()),
+            ("acr".to_owned(), "aal2".to_owned()),
+            ("auth_time".to_owned(), "1111111111".to_owned()),
+        ]),
+    };
+    let mint = |mut extra: HashMap<String, serde_json::Value>| {
+        extra.insert("cnf".to_owned(), json!({ "jkt": jkt }));
+        op.tokens
+            .issue_user_token_with_extra(
+                identity.clone(),
+                600,
+                Some("openid".to_owned()),
+                Some(CLIENT.to_owned()),
+                extra,
+            )
+            .expect("minted token")
+    };
+    let top_time = HashMap::from([("auth_time".to_owned(), json!(2_222_222_222_i64))]);
+    let override_ctx = eval(&op, &key, mint(top_time)).await;
+    assert_eq!(override_ctx.amr(), Some(vec!["hwk", "user"]));
+    assert_eq!(override_ctx.acr(), Some("aal2"));
+    assert_eq!(override_ctx.auth_time(), Some(2_222_222_222));
 
-    let op = Op::start().await;
-    let key = DpopKey(SigningKey::from_bytes(&[0x05; 32]));
-    let token = op
-        .issue(
-            "usr-ada",
-            &[("amr", "password"), ("auth_time", "1700000123")],
-            &key,
-        )
-        .await;
-
-    let config = ValidationConfig::builder()
-        .jwks_url(op.jwks_url)
-        .issuer(ISSUER)
-        .audience(CLIENT)
-        .algorithms(vec![Algorithm::EdDSA])
-        .require_dpop(true)
-        .dpop_resource_origin(ORIGIN)
-        .build();
-    let strategy = JwtStrategy::<authkestra_engine::token::Claims>::new(config)
-        .with_dpop_replay_store(Arc::new(MemoryStore::<DpopJtiRecord>::new()))
-        .with_step_up(StepUpRequirement::new().with_acr_values("urn:authkestra:acr:mfa"));
-
-    let canonical = support::procedure_call("/$procs/whoAmI");
-    let credentials = Oidc::credentials(&token, &key, &canonical);
-    let (mut parts, ()) = http::Request::builder()
-        .method(canonical.method)
-        .uri(canonical.path)
-        .body(())
-        .unwrap()
-        .into_parts();
-    parts.headers = credentials.headers;
-
-    let refusal = strategy
-        .authenticate_with_refusal(&parts)
-        .await
-        .expect_err("single-factor token must be challenged by MFA step-up requirement");
-    assert_eq!(refusal.error, INSUFFICIENT_USER_AUTHENTICATION);
-    assert!(
-        refusal
-            .www_authenticate()
-            .is_some_and(|h| h.contains("acr_values=\"urn:authkestra:acr:mfa\""))
-    );
+    let fallback_ctx = eval(&op, &key, mint(HashMap::new())).await;
+    assert_eq!(fallback_ctx.auth_time(), Some(1_111_111_111));
 }

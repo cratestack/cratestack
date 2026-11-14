@@ -96,12 +96,9 @@ impl Devsig {
         let mut headers = HeaderMap::new();
         headers.insert(
             "x-attestation",
-            HeaderValue::from_str(&attestation).expect("ASCII"),
+            HeaderValue::from_str(&attestation).unwrap(),
         );
-        headers.insert(
-            "x-signature",
-            HeaderValue::from_str(&signature).expect("ASCII"),
-        );
+        headers.insert("x-signature", HeaderValue::from_str(&signature).unwrap());
         headers.into()
     }
 }
@@ -157,21 +154,6 @@ impl Fixture for Devsig {
 
 #[tokio::test]
 async fn the_device_signature_provider_passes_the_suite() {
-    let issuer = Key::generate(Some("issuer-1"));
-    let jwks = IssuerJwks::new();
-    jwks.insert(ISSUER, "issuer-1", issuer.jwk.clone()).await;
-    suite(Devsig {
-        issuer,
-        jwks: Arc::new(jwks),
-        user: Key::generate(None),
-        admin: Key::generate(None),
-        attacker: Key::generate(None),
-    })
-    .await;
-}
-
-#[tokio::test]
-async fn device_signature_signed_at_reaches_principal_auth_time() {
     use cratestack::{AuthProvider, RequestContext};
 
     let issuer = Key::generate(Some("issuer-1"));
@@ -199,8 +181,6 @@ async fn device_signature_signed_at_reaches_principal_auth_time() {
         .authenticate(&request)
         .await
         .expect("accepted");
-    assert!(
-        ctx.auth_time().is_some_and(|ts| ts > 0),
-        "verified X-Signature iat (DeviceIdentity::signed_at) must populate CratestackContext::auth_time"
-    );
+    assert!(ctx.auth_time().is_some_and(|ts| ts > 0));
+    suite(fixture).await;
 }

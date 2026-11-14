@@ -208,8 +208,8 @@ dependencies = [
 
 [[package]]
 name = "authkestra-crypto-util"
-version = "0.15.0"
-source = "git+https://github.com/Authkestra/authkestra?rev=a795b0c6bb1ae9691f7b1781af9a8a0f849c1c96#a795b0c6bb1ae9691f7b1781af9a8a0f849c1c96"
+version = "0.15.1"
+source = "git+https://github.com/Authkestra/authkestra?rev=57285d64a5811e9b98f4c895aca6170e05e01370#57285d64a5811e9b98f4c895aca6170e05e01370"
 dependencies = [
  "aes-gcm",
  "base64 0.22.1",
@@ -221,8 +221,8 @@ dependencies = [
 
 [[package]]
 name = "authkestra-devsig"
-version = "0.15.0"
-source = "git+https://github.com/Authkestra/authkestra?rev=a795b0c6bb1ae9691f7b1781af9a8a0f849c1c96#a795b0c6bb1ae9691f7b1781af9a8a0f849c1c96"
+version = "0.15.1"
+source = "git+https://github.com/Authkestra/authkestra?rev=57285d64a5811e9b98f4c895aca6170e05e01370#57285d64a5811e9b98f4c895aca6170e05e01370"
 dependencies = [
  "async-trait",
  "authkestra-crypto-util",
@@ -240,8 +240,8 @@ dependencies = [
 
 [[package]]
 name = "authkestra-engine"
-version = "0.15.0"
-source = "git+https://github.com/Authkestra/authkestra?rev=a795b0c6bb1ae9691f7b1781af9a8a0f849c1c96#a795b0c6bb1ae9691f7b1781af9a8a0f849c1c96"
+version = "0.15.1"
+source = "git+https://github.com/Authkestra/authkestra?rev=57285d64a5811e9b98f4c895aca6170e05e01370#57285d64a5811e9b98f4c895aca6170e05e01370"
 dependencies = [
  "aes-gcm",
  "argon2",
@@ -268,8 +268,8 @@ dependencies = [
 
 [[package]]
 name = "authkestra-op"
-version = "0.15.0"
-source = "git+https://github.com/Authkestra/authkestra?rev=a795b0c6bb1ae9691f7b1781af9a8a0f849c1c96#a795b0c6bb1ae9691f7b1781af9a8a0f849c1c96"
+version = "0.15.1"
+source = "git+https://github.com/Authkestra/authkestra?rev=57285d64a5811e9b98f4c895aca6170e05e01370#57285d64a5811e9b98f4c895aca6170e05e01370"
 dependencies = [
  "async-trait",
  "authkestra-crypto-util",
@@ -291,8 +291,8 @@ dependencies = [
 
 [[package]]
 name = "authkestra-resource"
-version = "0.15.0"
-source = "git+https://github.com/Authkestra/authkestra?rev=a795b0c6bb1ae9691f7b1781af9a8a0f849c1c96#a795b0c6bb1ae9691f7b1781af9a8a0f849c1c96"
+version = "0.15.1"
+source = "git+https://github.com/Authkestra/authkestra?rev=57285d64a5811e9b98f4c895aca6170e05e01370#57285d64a5811e9b98f4c895aca6170e05e01370"
 dependencies = [
  "async-trait",
  "authkestra-engine",
