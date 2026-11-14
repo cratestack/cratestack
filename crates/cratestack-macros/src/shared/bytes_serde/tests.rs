@@ -45,7 +45,7 @@ fn rendered(name: &str, arity: TypeArity, wrap_for_patch: bool) -> Option<String
 
 #[test]
 fn only_bytes_fields_opt_in() {
-    for name in ["String", "Int", "Json", "Vector", "Uuid", "SomeCustomType"] {
+    for name in ["String", "Int", "Json", "Vector", "SomeCustomType"] {
         for arity in [TypeArity::Required, TypeArity::Optional, TypeArity::List] {
             for wrap_for_patch in [false, true] {
                 assert!(

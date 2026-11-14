@@ -29,6 +29,7 @@ export type Decimal = DecimalJs;
 export interface WireShape {
   readonly decimalKeys: readonly string[];
   readonly bigintKeys: readonly string[];
+  readonly uuidKeys: readonly string[];
   readonly bytesKeys: readonly string[];
   readonly bytesListKeys: readonly string[];
   readonly nested: Readonly<Record<string, string>>;
@@ -38,7 +39,7 @@ export interface WireShape {
  *  why this is keyed by structural path (via `nested`) rather than a
  *  single flat, schema-wide field-name set. */
 export const wireShapes: Readonly<Record<string, WireShape>> = {
-  Widget: { decimalKeys: [], bigintKeys: [], bytesKeys: [], bytesListKeys: [], nested: {  } },
+  Widget: { decimalKeys: [], bigintKeys: [], uuidKeys: [], bytesKeys: [], bytesListKeys: [], nested: {  } },
 };
 
 export function reviveWireFields(value: unknown, shapeName: string): unknown {
@@ -75,6 +76,8 @@ function reviveShaped(value: unknown, shape: WireShape, shapeName: string): unkn
         result[key] = toDecimal(entry);
       } else if (shape.bigintKeys.includes(key)) {
         result[key] = toBigInt(entry, `${shapeName}.${key}`);
+      } else if (shape.uuidKeys.includes(key)) {
+        result[key] = toUuid(entry, `${shapeName}.${key}`);
       } else if (shape.bytesKeys.includes(key)) {
         result[key] = toBytes(entry);
       } else if (shape.bytesListKeys.includes(key)) {
@@ -125,6 +128,32 @@ function toBigInt(value: unknown, where: string): unknown {
 }
 
 /** See the default preset's `models.ts.j2` for the full doc comment on
+ *  `toUuid` (cratestack#1359): a 16-byte `Uint8Array` becomes the canonical
+ *  hyphenated string, strings pass through, anything else throws —
+ *  identical implementation. */
+function toUuid(value: unknown, where: string): unknown {
+  if (value === null || value === undefined || typeof value === "string") {
+    return value;
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) => toUuid(item, where));
+  }
+  if (value instanceof Uint8Array && value.length === 16) {
+    const hex = Array.from(value, (byte) => byte.toString(16).padStart(2, "0")).join("");
+    return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+  }
+  const found =
+    value instanceof Uint8Array
+      ? `${value.length} bytes`
+      : typeof value === "object"
+        ? "an object"
+        : `${typeof value} ${String(value)}`;
+  throw new TypeError(
+    `Uuid field ${where}: expected a UUID string or 16 bytes, got ${found}`,
+  );
+}
+
+/** See the default preset's `models.ts.j2` for the full doc comment on
  *  why `null`/non-array values pass through untouched — identical
  *  implementation. */
 function toBytes(value: unknown): unknown {
@@ -144,6 +173,9 @@ export function reviveWireScalar(value: unknown, kind: string): unknown {
   }
   if (kind === "bigint") {
     return toBigInt(value, "procedure return");
+  }
+  if (kind === "uuid") {
+    return toUuid(value, "procedure return");
   }
   if (kind !== "decimal") {
     return value;

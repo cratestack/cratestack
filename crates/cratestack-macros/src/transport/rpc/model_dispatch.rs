@@ -19,6 +19,8 @@ mod arms_write;
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tests_uuid_pk;
 
 use cratestack_core::Model;
 use cratestack_core::ModelVerb;
@@ -40,7 +42,10 @@ pub(super) struct ModelRpcContext {
     /// Only populated (and only read by `get`/`update`/`delete`'s arm
     /// builders) once a primary key is confirmed to exist — see the
     /// no-pk early return below.
-    pub(super) pk_type: proc_macro2::TokenStream,
+    /// The type the `{ id }` frame decodes into: `LenientUuid` for a `Uuid`
+    /// key (text or 16 bytes under CBOR, cratestack#1359), else the key's
+    /// own Rust type.
+    pub(super) pk_wire_type: proc_macro2::TokenStream,
 }
 
 /// Emit `model.<X>.{list,get,create,update,delete}` dispatch arms.
@@ -88,7 +93,11 @@ pub(crate) fn generate_model_rpc_dispatch_arms(model: &Model) -> Vec<proc_macro2
         update_dispatch: ident(&format!("handle_update_{}_dispatch", to_snake_case(m))),
         delete_dispatch: ident(&format!("handle_delete_{}_dispatch", to_snake_case(m))),
         update_input_ident: ident(&format!("Update{m}Input")),
-        pk_type: rust_type_tokens(&pk.ty),
+        pk_wire_type: if pk.ty.name == "Uuid" {
+            quote! { ::cratestack::LenientUuid }
+        } else {
+            rust_type_tokens(&pk.ty)
+        },
     };
 
     let mut arms = Vec::new();

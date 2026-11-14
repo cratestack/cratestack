@@ -9,7 +9,7 @@ use serde_json::{Map, Value, json};
 use super::scalar::int;
 
 /// Serde-derive lets a missing `Option<T>` field default to `None`, and
-/// the `Bytes` fields that opt out of that with `deserialize_with` add
+/// the `Bytes`/`Uuid` fields that opt out of that with `deserialize_with` add
 /// `default` back (`crate::shared::bytes_serde`). Every other arity is a
 /// hard "missing field" error, and `Page`/`FindMany` are never `Option`.
 pub(super) fn is_required(ty: &TypeRef) -> bool {

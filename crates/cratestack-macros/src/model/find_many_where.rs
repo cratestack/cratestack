@@ -81,7 +81,16 @@ pub(crate) fn generate_where_struct(
     let field_defs = fields.iter().map(|field| {
         let field_ident = ident(&field.name);
         let scalar_type = scalar_type_tokens(field);
+        // A `Uuid` operand is text or 16 bytes under CBOR (cratestack#1359).
+        // `default` rides along: a custom `deserialize_with` opts an
+        // `Option` field out of serde's implicit missing-is-`None`.
+        let lenient = (field.ty.name == "Uuid").then(|| {
+            quote! {
+                #[serde(default, deserialize_with = "::cratestack::deserialize_optional_uuid_filter")]
+            }
+        });
         quote! {
+            #lenient
             pub #field_ident: Option<::cratestack::FieldFilterInput<#scalar_type>>,
         }
     });

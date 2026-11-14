@@ -55,6 +55,24 @@ const sharedFixtures = <CborFixture>[
   ...bigIntFixtures,
 ];
 
+/// cratestack#1359: what the server writes for a `Uuid` under CBOR, a 16-byte
+/// byte string (major type 2, `0x50`): `{"id": h'0123456789abcdef0123456789abcdef'}`.
+/// JSON text has no byte-string primitive, so `decodeJson` must hand it over
+/// as an array of 16 integers on BOTH backends. Before the fix the native
+/// bridge refused the whole body (`serde_json` has no byte-string arm) and
+/// the web bridge wrote an index-keyed object (`{"0":1,"1":35,...}`).
+/// `uuidByteStringJson` is the expected text; a `Uuid` the generated client
+/// holds is rebuilt from the integers by `cratestackDecodeUuid`.
+const uuidByteStringHex = 'a1626964500123456789abcdef0123456789abcdef';
+const uuidByteStringJson =
+    '{"id":[1,35,69,103,137,171,205,239,1,35,69,103,137,171,205,239]}';
+
+/// The same shape nested in a list, plus a null, as a struct of `Uuid`s
+/// would be: `{"ids":[h'..', null]}` with the same 16 bytes.
+const uuidNestedByteStringHex = 'a16369647382500123456789abcdef0123456789abcdeff6';
+const uuidNestedByteStringJson =
+    '{"ids":[[1,35,69,103,137,171,205,239,1,35,69,103,137,171,205,239],null]}';
+
 /// `hex` as bytes, for the decode direction.
 List<int> unhex(String hex) => [
   for (var i = 0; i < hex.length; i += 2)

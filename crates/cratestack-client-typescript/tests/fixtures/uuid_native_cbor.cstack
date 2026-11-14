@@ -1,0 +1,32 @@
+// cratestack#1359: the fixture `tests/native_cbor_uuid.rs` runs against the
+// REAL, published `@cratestack/cbor`. RPC transport, so the generated runtime
+// resolves the native codec by default.
+//
+// A server writes a `Uuid` as a 16-byte CBOR byte string, which the native
+// codec decodes to a `Uint8Array` — not the `string` the generated type
+// promises. Needs, from one schema: a `Uuid` model field (required, optional,
+// list), a `Uuid @id` (`get(id: string)`), a nested `type`, and procedures
+// with a `Uuid` argument and a bare `Uuid` return.
+
+transport rpc
+
+model Doc {
+  id Uuid @id
+  ownerId Uuid
+  parentId Uuid?
+  tagIds Uuid[]
+  title String
+
+  @@allow("read", true)
+  @@allow("create", true)
+  @@allow("update", true)
+}
+
+type Pair {
+  first Uuid
+  others Uuid[]
+}
+
+procedure echoId(id: Uuid): Uuid
+
+procedure echoPair(input: Pair): Pair

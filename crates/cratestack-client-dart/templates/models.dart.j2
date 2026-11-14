@@ -398,15 +398,15 @@ class UuidFilter {
 
   factory UuidFilter.fromWire(CratestackValueMap value) {
     return UuidFilter(
-      eq: value['eq'] as String?,
-      ne: value['ne'] as String?,
+      eq: value['eq'] == null ? null : cratestackDecodeUuid(value['eq'], 'UuidFilter.eq'),
+      ne: value['ne'] == null ? null : cratestackDecodeUuid(value['ne'], 'UuidFilter.ne'),
       in$: value['in'] == null
           ? null
-          : cratestackAsValueList(value['in']).map((item) => item as String).toList(growable: false),
-      lt: value['lt'] as String?,
-      lte: value['lte'] as String?,
-      gt: value['gt'] as String?,
-      gte: value['gte'] as String?,
+          : cratestackAsValueList(value['in']).map((item) => cratestackDecodeUuid(item, 'UuidFilter.in')).toList(growable: false),
+      lt: value['lt'] == null ? null : cratestackDecodeUuid(value['lt'], 'UuidFilter.lt'),
+      lte: value['lte'] == null ? null : cratestackDecodeUuid(value['lte'], 'UuidFilter.lte'),
+      gt: value['gt'] == null ? null : cratestackDecodeUuid(value['gt'], 'UuidFilter.gt'),
+      gte: value['gte'] == null ? null : cratestackDecodeUuid(value['gte'], 'UuidFilter.gte'),
       isNull: value['isNull'] as bool?,
     );
   }

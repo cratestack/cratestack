@@ -121,7 +121,12 @@ fn decode_required_scalar(
     }
 
     match ty.name.as_str() {
-        "String" | "Cuid" | "Uuid" => format!("{expr} as String"),
+        "String" | "Cuid" => format!("{expr} as String"),
+        // cratestack#1359: the server writes a `Uuid` as 16 bytes under CBOR,
+        // which the bridge hands over as a list of 16 integers; the runtime's
+        // `cratestackDecodeUuid` accepts that or the JSON string, and throws
+        // a `FormatException` naming `site` for anything else.
+        "Uuid" => format!("cratestackDecodeUuid({expr}, '{site}')"),
         "Int" => format!("({expr} as num).toInt()"),
         // ADR 0019: the wire form is a canonical decimal string, decoded by
         // the runtime's `cratestackDecodeBigInt` (a `FormatException` naming

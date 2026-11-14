@@ -1,5 +1,7 @@
 //! Picks the `#[serde(deserialize_with = "…")]` a generated `Bytes` field
-//! needs so it accepts a CBOR byte string (RFC 8949 major type 2) as well
+//! (and, since cratestack#1359, a `Uuid` field — `cratestack_core::lenient_uuid`
+//! accepts a text string *or* 16 bytes under CBOR, same table, `uuid` helper
+//! family) needs so it accepts a CBOR byte string (RFC 8949 major type 2) as well
 //! as the integer array every deployed client sends — cratestack#783.
 //!
 //! `Bytes` generates as `Vec<u8>`, whose blanket `Deserialize` accepts a
@@ -61,7 +63,7 @@ impl BytesSerde {
     }
 }
 
-/// `None` for every type but the byte-valued ones. `Page<Bytes>`/
+/// `None` for every type but the byte-valued ones and `Uuid`. `Page<Bytes>`/
 /// `FindMany<Bytes>` fall out here too — their `TypeRef::name` is the
 /// wrapper, not `Bytes`.
 ///
@@ -73,17 +75,20 @@ impl BytesSerde {
 /// here emits a `serialize_with`, so a geometry goes out as an array of
 /// integers, in JSON and CBOR alike, never as base64.
 pub(crate) fn bytes_serde(ty: &TypeRef, wrap_for_patch: bool) -> Option<BytesSerde> {
-    if !matches!(ty.name.as_str(), "Bytes" | "Geography" | "Geometry") {
-        return None;
-    }
+    // `(bytes | uuid)` helper family; the arity table is the same.
+    let family = match ty.name.as_str() {
+        "Bytes" | "Geography" | "Geometry" => "bytes",
+        "Uuid" => "uuid",
+        _ => return None,
+    };
 
     let (helper, needs_default) = match (wrap_for_patch, ty.arity) {
-        (false, TypeArity::Required) => ("deserialize_bytes", false),
-        (false, TypeArity::Optional) => ("deserialize_optional_bytes", true),
-        (false, TypeArity::List) => ("deserialize_bytes_list", false),
-        (true, TypeArity::Required) => ("deserialize_optional_bytes", true),
-        (true, TypeArity::Optional) => ("deserialize_double_option_bytes", true),
-        (true, TypeArity::List) => ("deserialize_optional_bytes_list", true),
+        (false, TypeArity::Required) => (format!("deserialize_{family}"), false),
+        (false, TypeArity::Optional) => (format!("deserialize_optional_{family}"), true),
+        (false, TypeArity::List) => (format!("deserialize_{family}_list"), false),
+        (true, TypeArity::Required) => (format!("deserialize_optional_{family}"), true),
+        (true, TypeArity::Optional) => (format!("deserialize_double_option_{family}"), true),
+        (true, TypeArity::List) => (format!("deserialize_optional_{family}_list"), true),
     };
 
     let path = format!("::cratestack::{helper}");
@@ -121,3 +126,5 @@ pub(crate) fn bytes_deserialize_with(
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod uuid_tests;

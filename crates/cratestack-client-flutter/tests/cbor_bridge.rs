@@ -56,6 +56,11 @@
 //! base64-string tradeoff: a JSON-shaped boundary carries no format hint,
 //! so it always takes the human-readable branch. Worth revisiting when
 //! the generator seam (explicitly out of scope for this PR) is designed.
+//!
+//! cratestack#1359 settled it: the encode side stays text (the server's
+//! `LenientUuid` accepts it), and the decode side writes a byte string as a
+//! JSON integer array; see `uuid_round_trips_against_the_server_codec_in_
+//! both_directions`.
 
 use std::str::FromStr;
 
@@ -350,6 +355,72 @@ fn uuid_scalar_diverges_from_a_native_uuid_typed_struct_encoding() {
     let decoded_json = cbor::decode_json(bridged_bytes).expect("bridge decode");
     let decoded: UuidOnly = serde_json::from_str(&decoded_json).expect("deserialize");
     assert_eq!(decoded, fixture);
+}
+
+/// cratestack#1359, both halves. The bridge still *writes* a `Uuid` as CBOR
+/// text (previous test), and the *server* now reads that
+/// (`cratestack_core::lenient_uuid`); and the bridge now *reads* the 16-byte
+/// string the server writes, as the 16 integers the generated Dart
+/// `cratestackDecodeUuid` turns back into the canonical string, where it used
+/// to refuse the whole body.
+#[test]
+fn uuid_round_trips_against_the_server_codec_in_both_directions() {
+    #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+    struct Native {
+        id: Uuid,
+        maybe: Option<Uuid>,
+        ids: Vec<Uuid>,
+    }
+    #[derive(Debug, PartialEq, Deserialize)]
+    struct Lenient {
+        #[serde(deserialize_with = "cratestack_core::deserialize_uuid")]
+        id: Uuid,
+        #[serde(
+            default,
+            deserialize_with = "cratestack_core::deserialize_optional_uuid"
+        )]
+        maybe: Option<Uuid>,
+        #[serde(deserialize_with = "cratestack_core::deserialize_uuid_list")]
+        ids: Vec<Uuid>,
+    }
+
+    let id = Uuid::parse_str("67e55044-10b1-426f-9247-bb680e5fe0c8").unwrap();
+    let other = Uuid::parse_str("01234567-89ab-cdef-0123-456789abcdef").unwrap();
+
+    // Dart -> server: bridge-encoded text decodes through the lenient path.
+    let sent = format!(r#"{{"id":"{id}","maybe":"{other}","ids":["{id}","{other}"]}}"#);
+    let bridged = cbor::encode_json(sent).expect("bridge encode");
+    let lenient: Lenient = CborCodec.decode(&bridged).expect("server lenient decode");
+    assert_eq!(
+        lenient,
+        Lenient {
+            id,
+            maybe: Some(other),
+            ids: vec![id, other]
+        }
+    );
+    let omitted: Lenient = CborCodec
+        .decode(&cbor::encode_json(format!(r#"{{"id":"{id}","ids":[]}}"#)).unwrap())
+        .expect("an omitted nullable Uuid defaults to None");
+    assert_eq!(omitted.maybe, None);
+
+    // Server -> Dart: the server's real bytes decode to integer arrays.
+    let native = Native {
+        id,
+        maybe: None,
+        ids: vec![id, other],
+    };
+    let server_bytes = CborCodec.encode(&native).expect("server encode");
+    let decoded: serde_json::Value =
+        serde_json::from_str(&cbor::decode_json(server_bytes).expect("bridge decode")).unwrap();
+    assert_eq!(
+        decoded,
+        json!({
+            "id": id.as_bytes(),
+            "maybe": null,
+            "ids": [id.as_bytes(), other.as_bytes()],
+        })
+    );
 }
 
 #[test]

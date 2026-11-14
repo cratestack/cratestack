@@ -42,7 +42,7 @@ pub(super) fn update_arm(ctx: &ModelRpcContext) -> proc_macro2::TokenStream {
     let update_path = format!("/rpc/{update_id}");
     let update_dispatch = &ctx.update_dispatch;
     let update_input_ident = &ctx.update_input_ident;
-    let pk_type = &ctx.pk_type;
+    let pk_type = &ctx.pk_wire_type;
     quote! {
         #update_id => {
             let model_state = ModelRouterState {
@@ -80,7 +80,7 @@ pub(super) fn update_arm(ctx: &ModelRpcContext) -> proc_macro2::TokenStream {
                 },
                 headers,
                 client_ip_ctx,
-                input.id,
+                input.id.into(),
                 ::cratestack::axum::body::Bytes::from(patch_bytes),
             ).await
         }
@@ -92,7 +92,7 @@ pub(super) fn delete_arm(ctx: &ModelRpcContext) -> proc_macro2::TokenStream {
     let delete_id = cratestack_core::ModelVerb::Delete.rpc_op_id(m);
     let delete_path = format!("/rpc/{delete_id}");
     let delete_dispatch = &ctx.delete_dispatch;
-    let pk_type = &ctx.pk_type;
+    let pk_type = &ctx.pk_wire_type;
     quote! {
         #delete_id => {
             let model_state = ModelRouterState {
@@ -118,7 +118,7 @@ pub(super) fn delete_arm(ctx: &ModelRpcContext) -> proc_macro2::TokenStream {
                 },
                 headers,
                 client_ip_ctx,
-                input.id,
+                input.id.into(),
             ).await
         }
     }
