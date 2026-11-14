@@ -66,8 +66,9 @@ final class CratestackHttpRequest {
   final Future<void>? abort;
 
   /// Transport-local attributes that are NOT sent on the wire (for example
-  /// [cratestackUseRustTransportExtraKey]). A transport forwards the ones it
-  /// understands to its own machinery and ignores the rest.
+  /// [cratestackUseRustTransportExtraKey], or a call option's `extra`). A
+  /// transport forwards the ones it understands to its own machinery and
+  /// ignores the rest.
   final Map<String, Object?> extra;
 }
 
@@ -1065,6 +1066,7 @@ class CratestackCallOptions {
     this.headers = const <String, String>{},
     this.idempotencyKey,
     this.abort,
+    this.extra = const <String, Object?>{},
   });
 
   /// Extra request headers; they win over the adapter's own.
@@ -1076,6 +1078,12 @@ class CratestackCallOptions {
   /// Completing this future cancels the call; the adapter then throws a
   /// [CratestackTransportAborted].
   final Future<void>? abort;
+
+  /// Per-call transport attributes, merged into
+  /// [CratestackHttpRequest.extra] after the adapter's own entries (never on
+  /// the wire). They are not kept by `prepare`: a prepared call persists no
+  /// `extra`.
+  final Map<String, Object?> extra;
 }
 
 class CratestackRequest {
@@ -1387,6 +1395,7 @@ class CratestackHttpAdapter implements CratestackClientAdapter {
         abort: options?.abort,
         extra: <String, Object?>{
           if (useRustTransport) cratestackUseRustTransportExtraKey: true,
+          ...?options?.extra,
         },
       );
 

@@ -158,6 +158,8 @@ fn rest_runtime_has_the_http_adapter_the_typed_error_and_the_new_call_options() 
         .expect("REST call options")..];
     assert!(options.contains("final String? idempotencyKey;"));
     assert!(options.contains("final Future<void>? abort;"));
+    assert!(options.contains("final Map<String, Object?> extra;"));
+    assert!(runtime.contains("...?options?.extra,"));
     assert!(!runtime.contains("class CratestackRpcHttpAdapter"));
 }
 
@@ -179,6 +181,8 @@ fn rpc_runtime_has_the_http_adapter_the_streaming_scanner_and_the_new_call_optio
         .expect("RPC call options")..];
     assert!(options.contains("final String? idempotencyKey;"));
     assert!(options.contains("final Future<void>? abort;"));
+    assert!(options.contains("final Map<String, Object?> extra;"));
+    assert!(runtime.contains("extra: <String, Object?>{...?options?.extra},"));
     // `stream()` must not buffer the body any more.
     assert!(
         !runtime.contains("TODO: stream `application/cbor-seq`"),

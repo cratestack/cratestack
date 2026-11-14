@@ -135,6 +135,16 @@ const options = CratestackCallOptions(
 );
 ```
 
+Per-call transport attributes (never sent):
+
+```dart
+const options = CratestackCallOptions(
+  extra: {'confirm': 'Pay order 42'}, // reaches CratestackHttpRequest.extra
+);
+```
+
+`extra` is merged into `CratestackHttpRequest.extra` after the adapter's own entries, so a key it shares with one of them wins. It reaches only a transport that reads `extra` (`CratestackFespalierTransport` forwards it as `TransportRequest.attributes`). It does not survive `prepare` / `executePrepared`: the persisted prepared call holds no `extra`.
+
 ## Riverpod Setup
 
 Generated providers include:

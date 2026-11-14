@@ -113,6 +113,18 @@ void main() {
       expect(cbor.cbor.decode(sent.body), {'id': 7});
     });
 
+    test('call option extra reaches the attributes, never a header', () async {
+      final fake = FakeTransport((_, __) => fakeResponse(204));
+      await _adapter(fake).call(
+        'model.Author.get',
+        {'id': 7},
+        options: const CratestackRpcCallOptions(extra: {'k': 1}),
+      );
+      final request = fake.requests.single.request;
+      expect(request.attributes['k'], 1);
+      expect(request.headers.keys, isNot(contains('k')));
+    });
+
     test('the answer is decoded by its own Content-Type', () async {
       final fake = FakeTransport(
         (_, __) => _answer(200, 'application/cbor', cbor.cbor.encode({'id': 1})),

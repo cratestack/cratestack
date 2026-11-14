@@ -227,6 +227,7 @@ class CratestackRpcHttpAdapter implements CratestackRpcAdapter {
         ]),
         body: encoded,
         abort: options?.abort,
+        extra: <String, Object?>{...?options?.extra},
       );
   }
 

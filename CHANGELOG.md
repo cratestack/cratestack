@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Dart call options carry per-call transport attributes (`extra`, cratestack#1207)
+
+Additive. `CratestackCallOptions` (REST) and `CratestackRpcCallOptions` (RPC) gain `extra` (`Map<String, Object?>`, default `const <String, Object?>{}`), merged into `CratestackHttpRequest.extra` after the adapter's own entries (so `options.extra` wins on key collision, while `useRustTransport` keeps its key when not overridden). `extra` is never sent on the wire and is not persisted by `prepare` / `prepareCall` / `executePrepared`; `CratestackFespalierTransport` forwards it as `TransportRequest.attributes`.
+
 ### Fix: subscription frames carry `Uuid` and `Bytes` in their CBOR forms (`cratestack#1360`)
 
 Over the CBOR WebSocket and WebTransport bindings, the generated feeds turned every item into a `serde_json::Value` (`serde_json::to_value` is always human-readable), so a `Uuid` went out as 36-character text instead of the 16-byte string a unary CBOR response carries (every model event's `eventId` among them), and a `Value::Bytes` inside a `Json` field went out as base64, which the Rust client read back as `Value::String`. The frame types held a `serde_json::Value` too, which has no byte-string arm, so a CBOR request `input` holding one closed the socket with 4400. Frames now carry `RpcFrameValue` (as `/rpc/batch` frames do since #1352) and the dispatcher encodes each item with the binding's own codec (`RpcFrameValue::encode_with`), so a CBOR item matches the unary CBOR response of the same value. JSON output, SSE included, is byte-identical to before on every binding, and the generated TypeScript and Dart clients (JSON frames only) need no change. A schema `Bytes` field was never lost: it is an integer array on every wire, unary CBOR included.

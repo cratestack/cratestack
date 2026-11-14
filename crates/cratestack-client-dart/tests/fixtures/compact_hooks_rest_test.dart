@@ -70,6 +70,19 @@ void main() {
     );
   });
 
+  test('call option extra is not kept by a prepared call', () async {
+    final transport = _Script([
+      (_) => _cbor(204, 'application/cbor', Uint8List(0)),
+    ]);
+    final adapter = _adapter(transport, null);
+    const request = CratestackRequest(method: 'POST', path: '/api/authors', body: _author);
+    final saved = await adapter.prepare(request, options: const CratestackCallOptions(
+      idempotencyKey: 'k', extra: {'marker': 1}));
+    expect(jsonEncode(saved.toJson()), isNot(contains('marker')));
+    await adapter.executePrepared(saved);
+    expect(transport.requests.single.extra, isEmpty);
+  });
+
   test('prepared compact bytes survive adapter recreation and validate contracts', () async {
     final named = await _named(codec, _author);
     final transport = _Script([

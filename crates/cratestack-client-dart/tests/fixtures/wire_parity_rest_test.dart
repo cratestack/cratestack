@@ -196,6 +196,36 @@ void main() {
       expect(request.headers.keys, isNot(contains(cratestackUseRustTransportExtraKey)));
     });
 
+    test('call option extra travels in extra, never on the wire', () async {
+      final transport = RecordingTransport();
+      await _adapter(transport).execute(
+        const CratestackRequest(method: 'GET', path: '/api/posts'),
+        options: const CratestackCallOptions(extra: {'k': 1}),
+      );
+      final request = transport.requests.single;
+      expect(request.extra['k'], 1);
+      expect(request.headers.keys, isNot(contains('k')));
+      expect(request.headers.values, isNot(contains('1')));
+    });
+
+    test('call option extra is merged after useRustTransport', () async {
+      final transport = RecordingTransport();
+      final adapter = CratestackHttpAdapter(
+        transport,
+        baseUri: Uri.parse('http://127.0.0.1:9'),
+        useRustTransport: true,
+      );
+      const get = CratestackRequest(method: 'GET', path: '/api/posts');
+      await adapter.execute(get, options: const CratestackCallOptions(extra: {'k': 1}));
+      await adapter.execute(
+        get,
+        options: const CratestackCallOptions(extra: {cratestackUseRustTransportExtraKey: false}),
+      );
+      expect(transport.requests[0].extra[cratestackUseRustTransportExtraKey], isTrue);
+      expect(transport.requests[0].extra['k'], 1);
+      expect(transport.requests[1].extra[cratestackUseRustTransportExtraKey], isFalse);
+    });
+
     test('abort is handed to the transport', () async {
       final transport = RecordingTransport();
       final abort = Completer<void>();

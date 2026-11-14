@@ -293,6 +293,7 @@ class CratestackHttpAdapter implements CratestackClientAdapter {
         abort: options?.abort,
         extra: <String, Object?>{
           if (useRustTransport) cratestackUseRustTransportExtraKey: true,
+          ...?options?.extra,
         },
       );
 
