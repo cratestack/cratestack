@@ -30,20 +30,22 @@ final class CoseMisuse extends CoseException {
   const CoseMisuse(super.message);
 }
 
-/// The person dismissed the keystore's prompt. Produced by a keystore
-/// signer, which a later release adds.
+/// The person dismissed the keystore's prompt: an [ExternalSigner] whose
+/// callback returned [SignOutcome.cancelled].
 final class CoseSignerCancelled extends CoseException {
   const CoseSignerCancelled() : super('');
 }
 
-/// The keystore did not answer in time. Produced by a keystore signer,
-/// which a later release adds.
+/// The keystore did not answer in time: the callback of an [ExternalSigner]
+/// returned [SignOutcome.timedOut], or exceeded [ExternalSigner.timeout].
 final class CoseSignerTimedOut extends CoseException {
   const CoseSignerTimedOut() : super('');
 }
 
-/// The keystore failed. Produced by a keystore signer, which a later release
-/// adds.
+/// The keystore failed: the callback of an [ExternalSigner] returned
+/// [SignOutcome.failed] (the [message] is the callback's), or threw (the
+/// message names only the exception's type). A signature that is not a valid
+/// one by the key is [CoseMisuse] instead, because the callback did not fail.
 final class CoseSignerFailed extends CoseException {
   const CoseSignerFailed(super.message);
 }

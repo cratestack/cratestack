@@ -3,11 +3,10 @@
 // backends run this one body: `vectors_vm_test.dart` loads the JSON with
 // `dart:io`, `vectors_web_test.dart` through `spawnHybridUri`.
 //
-// Requests: every case this client can sign must seal byte for byte at the
-// vector's fixed `iat` and `cti`. The four ESP256 requests cannot be
-// signed from here (this release has no ESP256 signer: that is the
-// keystore callback signer's job); `cratestack-client-flutter` and
-// `cratestack-cbor-wasm` check those bytes in Rust. Responses: the 12 that
+// Requests: every case must seal byte for byte at the vector's fixed `iat`
+// and `cti`. The four ESP256 requests are signed through an
+// `ExternalSigner` whose callback replays the vector's own signature (see
+// `esp256_oracle.dart`), in every spelling a keystore may return it. Responses: the 12 that
 // answer a signed request open; the 4 that answer an unsigned one are not
 // this client's (it is Required-only, like the Rust client).
 import 'dart:typed_data';
@@ -15,6 +14,8 @@ import 'dart:typed_data';
 import 'package:cratestack_cbor/cose.dart';
 import 'package:cratestack_cbor/cose_testing.dart';
 import 'package:test/test.dart';
+
+import 'esp256_oracle.dart';
 
 typedef Json = Map<String, dynamic>;
 
@@ -43,7 +44,9 @@ CoseAlg algOf(int id) => switch (id) {
       _ => throw ArgumentError.value(id, 'alg_id'),
     };
 
-/// The signer a `keys.json` entry names, or `null` for ESP256 (see above).
+/// The in-memory signer a `keys.json` entry names, or `null` for ESP256,
+/// whose requests are signed by an [Esp256Oracle] (and whose responses are
+/// opened by any signer of the response's mode).
 CoseSigner? signerFor(String name, Json key) => switch (name) {
       'ed25519' => Ed25519Signer.fromSeed(unhex(key['seed'] as String)),
       'p256' => null,
@@ -65,6 +68,18 @@ CoseServerKey serverKeyFor(String name, Json key) => switch (name) {
         ),
     };
 
+/// The oracle for the ESP256 request vector [c], over `keys.json`'s `p256`.
+Esp256Oracle esp256Oracle(
+  Json c,
+  Json key, {
+  Spelling spelling = Spelling.raw,
+}) =>
+    Esp256Oracle(
+      publicKey: unhex(key['public_sec1_uncompressed'] as String),
+      coseMessage: unhex(c['cose'] as String),
+      spelling: spelling,
+    );
+
 /// Registers the vector tests against [load], which returns
 /// `(keys.json, unary.json)`.
 void defineVectorTests(Future<(Json, Json)> Function() load) {
@@ -77,20 +92,15 @@ void defineVectorTests(Future<(Json, Json)> Function() load) {
     cases = (unary['cases'] as List).cast<Json>();
   });
 
-  test('every request this client can sign seals byte for byte', () async {
+  test('every request seals byte for byte', () async {
     var sealed = 0;
-    var skippedEsp256 = 0;
     for (final c in cases.where((c) => c['direction'] == 'request')) {
       final name = c['name'] as String;
       final keyName = c['key'] as String;
       final key = keys[keyName] as Json;
-      final signer = signerFor(keyName, key);
-      if (signer == null) {
-        skippedEsp256++;
-        continue;
-      }
+      final oracle = keyName == 'p256' ? esp256Oracle(c, key) : null;
       final envelope = await ClientEnvelopeForVectors.forVectors(
-        signer: signer,
+        signer: oracle?.signer ?? signerFor(keyName, key)!,
         serverKeys: [serverKeyFor(keyName, key)],
         audience: 'payments',
         iat: c['iat'] as int,
@@ -102,10 +112,44 @@ void defineVectorTests(Future<(Json, Json)> Function() load) {
       );
       expect(got, unhex(c['cose'] as String), reason: name);
       expect(envelope.kid, unhex(key['kid'] as String), reason: name);
+      if (oracle != null) {
+        // Asked exactly once, for exactly the vector's to-be-signed bytes.
+        expect(oracle.seen, [unhex(c['to_be_signed'] as String)],
+            reason: name);
+      }
       sealed++;
     }
-    // 13 of the 17 request vectors (16 plus the empty-query twin).
-    expect((sealed, skippedEsp256), (13, 4));
+    // All 17 request vectors (16 plus the empty-query twin).
+    expect(sealed, 17);
+  });
+
+  test('the ESP256 requests seal the same bytes whatever the keystore returns',
+      () async {
+    var sealed = 0;
+    for (final c in cases.where(
+      (c) => c['direction'] == 'request' && c['key'] == 'p256',
+    )) {
+      final key = keys['p256'] as Json;
+      for (final spelling in Spelling.values) {
+        final oracle = esp256Oracle(c, key, spelling: spelling);
+        final envelope = await ClientEnvelopeForVectors.forVectors(
+          signer: oracle.signer,
+          serverKeys: [serverKeyFor('p256', key)],
+          audience: 'payments',
+          iat: c['iat'] as int,
+          cti: unhex(c['cti'] as String),
+        );
+        final got = await envelope.sealRequest(
+          unhex(c['payload'] as String),
+          binding(c['binding'] as Json),
+        );
+        // DER is converted and a high `s` normalised, in Rust.
+        expect(got, unhex(c['cose'] as String),
+            reason: '${c['name']} as $spelling');
+        sealed++;
+      }
+    }
+    expect(sealed, 4 * Spelling.values.length);
   });
 
   test('every response to a signed request opens; unsigned ones are skipped',

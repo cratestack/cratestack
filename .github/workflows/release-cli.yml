@@ -2198,7 +2198,7 @@ jobs:
           # without `--features cose` would too). The listing must also
           # name the glue files, i.e. they are not ignored out of the archive.
           cose_glue_ok=1
-          for symbol in FlutterClientEnvelope FlutterCoseError coseContractHeaderValue; do
+          for symbol in FlutterClientEnvelope FlutterCoseError coseContractHeaderValue FlutterSignOutcome esp256External; do
             grep -rq "$symbol" lib/src/native/rust || cose_glue_ok=0
           done
           # Compact wire keys (`createCompactKeys`) are in the codec-only
@@ -2213,6 +2213,10 @@ jobs:
           for symbol in 'export class ClientEnvelope' sealRequest openResponse; do
             grep -q "$symbol" lib/src/web/wasm-pkg/cratestack_cbor_wasm.js || cose_web_ok=0
           done
+          # The keystore signer (cratestack#1151): the web backend calls
+          # `ClientEnvelope.external(alg, publicKey, sign, ...)`, which
+          # wasm-bindgen emits as a static method of that name.
+          grep -qE 'static external\(' lib/src/web/wasm-pkg/cratestack_cbor_wasm.js || cose_web_ok=0
 
           fail=0
           if [ "$cose_glue_ok" -ne 1 ] || [ "$cose_glue_listed" -lt 1 ]; then
@@ -2224,7 +2228,7 @@ jobs:
             fail=1
           fi
           if [ "$cose_web_ok" -ne 1 ]; then
-            echo "::error::the vendored web JS does not export ClientEnvelope with sealRequest/openResponse. cbor-vendor-web did not build cratestack-cbor-wasm with --features cose — DO NOT PUBLISH." >&2
+            echo "::error::the vendored web JS does not export ClientEnvelope with sealRequest/openResponse/external. cbor-vendor-web did not build cratestack-cbor-wasm with --features cose — DO NOT PUBLISH." >&2
             fail=1
           fi
           if [ "$so_count" -ne 4 ]; then

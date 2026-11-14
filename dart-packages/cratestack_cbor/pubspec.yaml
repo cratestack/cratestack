@@ -122,6 +122,13 @@ dev_dependencies:
   # `StreamChannel`. Neither is a dependency of the published library.
   http: ^1.2.0
   stream_channel: ^2.1.0
+  # `test/cose/software_keystore.dart`: a real P-256 key to sign with for the
+  # live ESP256 round trip (cratestack#1151), standing in for a platform
+  # keystore. TEST-ONLY and never a runtime dependency: the library signs
+  # nothing in Dart, and a wrong signature is refused in Rust before it is
+  # sent. The vector tests need no crypto (they replay the vectors' own
+  # signatures).
+  pointycastle: ^4.0.0
 
 # Declared even though this package has no Flutter-framework Dart code of
 # its own (no widgets, no `package:flutter` import) — cratestack#563's

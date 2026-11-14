@@ -179,13 +179,13 @@ final opened = await envelope.openResponse(
 final reply = codec.decodeJson(opened.payload);
 ```
 
-- **Signers (this release):** `HmacSigner(CoseAlg, secret)` for `COSE_Mac0`
-  (at least 32 random bytes) and `Ed25519Signer.fromSeed(seed)` for
-  `COSE_Sign1`. Both hold the key in memory, so they are for service
-  credentials and tests. A key in the Android Keystore or the Secure Enclave
-  comes with the callback signer of a later release (`CoseSignerCancelled`,
-  `CoseSignerTimedOut` and `CoseSignerFailed` are already in the exception
-  hierarchy for it).
+- **Signers:** `HmacSigner(CoseAlg, secret)` for `COSE_Mac0` (at least 32
+  random bytes) and `Ed25519Signer.fromSeed(seed)` for `COSE_Sign1`. Both hold
+  the key in memory, so they are for service credentials and tests. A key that
+  must stay in the Android Keystore, the Secure Enclave or WebCrypto signs
+  through `ExternalSigner.esp256` (next section). `CoseSigner` is sealed:
+  an exhaustive `switch` over it needs a third arm.
+- **External signer (keystore).** See the section below.
 - **Compact wire keys / other payload types.** `CallBinding(payloadType: ..,
   payloadAccept: [..])` seals the payload under that media type (bound in the
   AAD; compact keys are `application/vnd.cratestack.compact+cbor`) and lets
@@ -233,6 +233,61 @@ example server of `crates/cratestack-api`, with the real clock and
 randomness: `CRATESTACK_COSE_SERVER=<path of the built cose_roundtrip_server
 example> dart test test/cose/live_test.dart`. `just cbor-verify-package`
 builds the server and sets the variable.
+
+### Keystore keys: `ExternalSigner.esp256` (cratestack#1151)
+
+For a P-256 key that must never enter the process, the envelope is given the
+key's **public** half and a callback that signs. The callback receives the
+complete to-be-signed bytes and returns an ECDSA signature over the SHA-256 of
+exactly those bytes; the CBOR, the binding, DER to raw `r || s`, low-`s`, and a
+check that the signature verifies under your public key before anything is
+sent are all `cratestack-cose`'s, so the callback does none of it. The `kid`
+is derived from the public key (`envelope.kid`), never supplied.
+
+```dart
+final signer = ExternalSigner.esp256(
+  publicKey: publicKey, // 65-byte SEC1 point or a SubjectPublicKeyInfo
+  timeout: const Duration(seconds: 60), // required: only your app knows
+  sign: (tbs) async {
+    try {
+      return SignOutcome.signature(await keystore.sign(tbs));
+    } on PromptDismissed {
+      return const SignOutcome.cancelled();
+    } catch (e) {
+      return SignOutcome.failed('keystore: $e');
+    }
+  },
+);
+final envelope = await ClientEnvelope.create(
+  signer: signer,
+  serverKeys: [CoseServerKey.ed25519(serverPublicKey)],
+  audience: 'payments',
+);
+```
+
+- **Sign the bytes as given, never a digest** (the platform hashes for you).
+  Android: `Signature.getInstance("SHA256withECDSA")`, `update(tbs)`,
+  `sign()`. iOS: `SecKeyCreateSignature(key, .ecdsaSignatureMessageX962SHA256,
+  tbs, &error)`. Web: `crypto.subtle.sign({name: 'ECDSA', hash: 'SHA-256'},
+  key, tbs)`. DER (Android, iOS) and raw `r || s` (WebCrypto) are both
+  accepted, and a high `s` is normalised.
+- **The public key** is the 65-byte SEC1 point or a P-256
+  `SubjectPublicKeyInfo` (Android's `publicKey.encoded`). Anything else, a
+  point off the curve, or an SPKI of another curve or with trailing bytes is
+  `CoseMisuse` from `ClientEnvelope.create`.
+- **Return an outcome, do not throw.** `SignOutcome.signature(bytes)`,
+  `.cancelled()` (the person dismissed the prompt: `CoseSignerCancelled`),
+  `.timedOut()` (`CoseSignerTimedOut`) and `.failed(message)`
+  (`CoseSignerFailed(message)`). A throw is still caught and becomes
+  `CoseSignerFailed`, naming the exception's type but not its text.
+- **A signature that is not a valid one by your key is `CoseMisuse`**, not a
+  signer failure: the callback did not fail, the bytes are wrong.
+- **`timeout` is required and has no default.** Exceeding it is
+  `CoseSignerTimedOut`. It does **not** cancel the platform prompt: the
+  callback keeps running and its late answer is discarded. A Dart isolate that
+  dies mid-call leaves that seal pending.
+- The callback runs once per seal, on the isolate that called `sealRequest`.
+  Seals may overlap; each keeps its own outcome.
 
 ## Why a JSON-text boundary, not a native Dart value type
 

@@ -17,6 +17,23 @@
 /// );
 /// ```
 ///
+/// **Keystore keys.** A key that must not enter the process (Android Keystore,
+/// Secure Enclave, WebCrypto) signs through a callback; see [ExternalSigner]:
+///
+/// ```dart
+/// final signer = ExternalSigner.esp256(
+///   publicKey: publicKey, // SEC1 point or SubjectPublicKeyInfo
+///   timeout: const Duration(seconds: 60),
+///   sign: (tbs) async {
+///     try {
+///       return SignOutcome.signature(await keystore.sign(tbs));
+///     } on UserDismissed {
+///       return const SignOutcome.cancelled();
+///     }
+///   },
+/// );
+/// ```
+///
 /// **Errors.** Everything the Rust side refuses is a [CoseException] (a sealed
 /// class: `CoseRejected`, `CoseMisuse`, and the signer variants). Dart-side
 /// argument checks that cannot be right are [ArgumentError], thrown by the
@@ -30,4 +47,6 @@ library;
 
 export 'src/cose/cose_api.dart' show ClientEnvelope;
 export 'src/cose/errors.dart';
+export 'src/cose/sign_outcome.dart';
+export 'src/cose/signers.dart';
 export 'src/cose/types.dart';

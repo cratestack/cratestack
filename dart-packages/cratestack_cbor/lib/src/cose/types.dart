@@ -28,55 +28,6 @@ enum CoseMode {
   mac0,
 }
 
-/// Who signs a request. Sealed: the signers of this release hold their key
-/// in memory; a key in the Android Keystore or the Secure Enclave comes with
-/// the callback signer of a later release.
-sealed class CoseSigner {
-  const CoseSigner();
-}
-
-/// Signs a COSE_Mac0 with a shared secret of at least 32 random bytes.
-///
-/// The secret lives in this process's memory: for service credentials and
-/// tests, never for an end user's device. The object keeps its copy
-/// ([secret]) for as long as it is reachable, and Dart cannot wipe memory,
-/// so drop the signer once the [ClientEnvelope] is built. The Rust side wipes
-/// its own copy when the envelope is dropped. [secret] is public only because
-/// the backends, in other libraries, read it.
-///
-/// Throws [ArgumentError] if [alg] is not an HMAC algorithm.
-final class HmacSigner extends CoseSigner {
-  /// [alg] must be [CoseAlg.hmac256x64] or [CoseAlg.hmac256x256].
-  HmacSigner(this.alg, Uint8List secret) : secret = Uint8List.fromList(secret) {
-    if (!alg.isHmac) {
-      throw ArgumentError.value(alg, 'alg', 'must be an HMAC algorithm');
-    }
-  }
-
-  /// The HMAC algorithm.
-  final CoseAlg alg;
-
-  /// The shared secret (a copy).
-  final Uint8List secret;
-}
-
-/// Signs a COSE_Sign1 with the Ed25519 key of a 32-byte seed.
-///
-/// **In memory only: never a device key.** The seed is held in this
-/// process's memory, so use it for tests and service credentials. A key
-/// that must survive on a phone belongs in the platform keystore. The object
-/// keeps its copy ([seed]) for as long as it is reachable (Dart cannot wipe
-/// memory), so drop the signer once the [ClientEnvelope] is built; [seed] is
-/// public only because the backends, in other libraries, read it. A seed of
-/// the wrong length is [CoseMisuse] when the envelope is created.
-final class Ed25519Signer extends CoseSigner {
-  /// The key derived from [seed] (32 bytes).
-  Ed25519Signer.fromSeed(Uint8List seed) : seed = Uint8List.fromList(seed);
-
-  /// The seed (a copy).
-  final Uint8List seed;
-}
-
 /// A key the server's responses verify with, pinned at enrolment.
 final class CoseServerKey {
   const CoseServerKey._(this.alg, this.bytes);

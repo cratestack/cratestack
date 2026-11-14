@@ -5,6 +5,10 @@
 // The server prints the op digests a generated client would bake in, then
 // `listening <port>`.
 //
+// Three clients: Ed25519 and HMAC in memory, and ESP256 through an
+// `ExternalSigner` over a software P-256 key (`software_keystore.dart`), the
+// keystore callback signer of cratestack#1151.
+//
 // VM only: it spawns a process. Set CRATESTACK_COSE_SERVER to the built
 // example (`cargo build -p cratestack-api --features cose --example
 // cose_roundtrip_server`); `just cbor-verify-package` does. Without it the
@@ -13,7 +17,6 @@
 @Tags(['live'])
 library;
 
-import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
@@ -23,70 +26,7 @@ import 'package:cratestack_cbor/cose.dart';
 import 'package:http/http.dart' as http;
 import 'package:test/test.dart';
 
-const audience = 'roundtrip';
-
-Uint8List seed(int start) =>
-    Uint8List.fromList([for (var i = 0; i < 32; i++) start + i]);
-
-Uint8List unhex(String text) => Uint8List.fromList([
-      for (var i = 0; i < text.length; i += 2)
-        int.parse(text.substring(i, i + 2), radix: 16),
-    ]);
-
-/// `ed25519_other` of `keys.json`: the public half of the server's seed.
-final serverPublic = unhex(
-  'cd14b37f956e953194ff7fb73b3d81dcc561d61a7538094b7c3e1a643ee5f3aa',
-);
-
-/// One running example server.
-class Server {
-  Server(this.process, this.port, this.contracts);
-
-  final Process process;
-  final int port;
-
-  /// Route to op digest, as the server printed them.
-  final Map<String, Uint8List> contracts;
-
-  static Future<Server> start(String executable, String mode) async {
-    final process = await Process.start(executable, ['--mode', mode]);
-    final contracts = <String, Uint8List>{};
-    final ready = Completer<int>();
-    process.stdout
-        .transform(utf8.decoder)
-        .transform(const LineSplitter())
-        .listen((line) {
-      final parts = line.split(' ');
-      if (parts.first == 'contract' && parts.length == 4) {
-        contracts[parts[2]] = unhex(parts[3]);
-      } else if (parts.first == 'listening') {
-        ready.complete(int.parse(parts[1]));
-      }
-    });
-    unawaited(process.stderr.drain<void>());
-    final port = await ready.future.timeout(const Duration(seconds: 30));
-    return Server(process, port, contracts);
-  }
-
-  void stop() => process.kill();
-}
-
-/// What a mode signs with and trusts.
-({CoseSigner signer, CoseServerKey server, int alg}) credentials(String mode) {
-  if (mode == 'sign1') {
-    return (
-      signer: Ed25519Signer.fromSeed(seed(0)),
-      server: CoseServerKey.ed25519(serverPublic),
-      alg: -19,
-    );
-  }
-  final secret = seed(0x40);
-  return (
-    signer: HmacSigner(CoseAlg.hmac256x64, secret),
-    server: CoseServerKey.hmac(CoseAlg.hmac256x64, secret),
-    alg: 4,
-  );
-}
+import 'live_support.dart';
 
 void main() {
   final executable = Platform.environment['CRATESTACK_COSE_SERVER'];
@@ -100,8 +40,12 @@ void main() {
     return;
   }
 
-  for (final mode in ['sign1', 'mac0']) {
-    group(mode, () {
+  for (final (mode, kind) in [
+    ('sign1', 'ed25519'),
+    ('sign1', 'esp256'),
+    ('mac0', 'hmac'),
+  ]) {
+    group('$mode/$kind', () {
       late Server server;
       late ClientEnvelope envelope;
       late CratestackCborCodec codec;
@@ -110,7 +54,7 @@ void main() {
       setUpAll(() async {
         server = await Server.start(executable, mode);
         codec = await createCborCodec();
-        final creds = credentials(mode);
+        final creds = credentials(mode, kind);
         envelope = await ClientEnvelope.create(
           signer: creds.signer,
           serverKeys: [creds.server],
@@ -177,13 +121,14 @@ void main() {
             sealedRequest: sealed,
             status: response.statusCode,
           );
+          // The server signs as its mode says, whatever the client signed with.
           expect(opened.alg,
               mode == 'sign1' ? CoseAlg.ed25519 : CoseAlg.hmac256x64);
           expect(opened.kid, hasLength(8));
           final reply = jsonDecode(codec.decodeJson(opened.payload))
               as Map<String, dynamic>;
           expect(reply['message'], 'hello');
-          expect(reply['signer'], 'Some(${credentials(mode).alg})');
+          expect(reply['signer'], 'Some(${credentials(mode, kind).alg})');
         });
 
         test('$transport: a replay is refused with 401', () async {
@@ -204,6 +149,12 @@ void main() {
               reason: 'byte $at',
             );
           }
+        });
+      }
+
+      if (kind == 'esp256') {
+        test('the kid is the thumbprint of the keystore key', () {
+          expect(envelope.kid, unhex(p256Kid));
         });
       }
 
