@@ -69,9 +69,14 @@ pub fn app<A: AuthProvider>(auth: A) -> Router {
     )
 }
 
-/// Serves [`app`] on `addr` until the process is stopped.
+/// Serves [`app`] on `addr` (or the port resolved via `PORT` /
+/// `CRATESTACK_NEXTJS_WORKER` for Next.js `NativeRouteManager`) until the
+/// process is stopped.
 pub async fn serve<A: AuthProvider>(auth: A, addr: &str) -> std::io::Result<()> {
-    let listener = tokio::net::TcpListener::bind(addr).await?;
-    println!("listening on http://{}", listener.local_addr()?);
+    let bind_addr = cratestack::resolve_nextjs_worker_addr(addr)?;
+    let listener = tokio::net::TcpListener::bind(bind_addr).await?;
+    let local_addr = listener.local_addr()?;
+    cratestack::emit_port_handshake(&local_addr)?;
+    println!("listening on http://{local_addr}");
     cratestack::axum::serve(listener, app(auth)).await
 }

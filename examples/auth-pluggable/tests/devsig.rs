@@ -169,3 +169,38 @@ async fn the_device_signature_provider_passes_the_suite() {
     })
     .await;
 }
+
+#[tokio::test]
+async fn device_signature_signed_at_reaches_principal_auth_time() {
+    use cratestack::{AuthProvider, RequestContext};
+
+    let issuer = Key::generate(Some("issuer-1"));
+    let jwks = IssuerJwks::new();
+    jwks.insert(ISSUER, "issuer-1", issuer.jwk.clone()).await;
+    let fixture = Devsig {
+        issuer,
+        jwks: Arc::new(jwks),
+        user: Key::generate(None),
+        admin: Key::generate(None),
+        attacker: Key::generate(None),
+    };
+    let canonical = support::procedure_call("/$procs/whoAmI");
+    let credentials = fixture.sign(Who::User, &canonical);
+    let request = RequestContext {
+        method: canonical.method,
+        path: canonical.path,
+        query: None,
+        headers: &credentials.headers,
+        body: &canonical.body,
+        extensions: &credentials.extensions,
+    };
+    let ctx = fixture
+        .provider()
+        .authenticate(&request)
+        .await
+        .expect("accepted");
+    assert!(
+        ctx.auth_time().is_some_and(|ts| ts > 0),
+        "verified X-Signature iat (DeviceIdentity::signed_at) must populate CratestackContext::auth_time"
+    );
+}

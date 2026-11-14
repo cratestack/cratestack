@@ -115,7 +115,15 @@ async fn amr_acr_and_the_key_binding_reach_the_principal() {
     let op = Op::start().await;
     let key = DpopKey(SigningKey::from_bytes(&[0x04; 32]));
     let token = op
-        .issue("usr-ada", &[("amr", "hwk user"), ("acr", "aal2")], &key)
+        .issue(
+            "usr-ada",
+            &[
+                ("amr", "hwk user"),
+                ("acr", "aal2"),
+                ("auth_time", "1700000123"),
+            ],
+            &key,
+        )
         .await;
     let fixture = Oidc {
         jwks_url: op.jwks_url,
@@ -140,8 +148,57 @@ async fn amr_acr_and_the_key_binding_reach_the_principal() {
         .expect("accepted");
     assert_eq!(ctx.amr(), Some(vec!["hwk", "user"]));
     assert_eq!(ctx.acr(), Some("aal2"));
+    assert_eq!(ctx.auth_time(), Some(1_700_000_123));
     assert!(
         ctx.cnf_jkt().is_some_and(|jkt| !jkt.is_empty()),
         "cnf.jkt is the DPoP key's thumbprint"
+    );
+}
+
+#[tokio::test]
+async fn step_up_requirement_and_top_level_access_token_claims_work_end_to_end() {
+    use authkestra_resource::{INSUFFICIENT_USER_AUTHENTICATION, StepUpRequirement};
+
+    let op = Op::start().await;
+    let key = DpopKey(SigningKey::from_bytes(&[0x05; 32]));
+    let token = op
+        .issue(
+            "usr-ada",
+            &[("amr", "password"), ("auth_time", "1700000123")],
+            &key,
+        )
+        .await;
+
+    let config = ValidationConfig::builder()
+        .jwks_url(op.jwks_url)
+        .issuer(ISSUER)
+        .audience(CLIENT)
+        .algorithms(vec![Algorithm::EdDSA])
+        .require_dpop(true)
+        .dpop_resource_origin(ORIGIN)
+        .build();
+    let strategy = JwtStrategy::<authkestra_engine::token::Claims>::new(config)
+        .with_dpop_replay_store(Arc::new(MemoryStore::<DpopJtiRecord>::new()))
+        .with_step_up(StepUpRequirement::new().with_acr_values("urn:authkestra:acr:mfa"));
+
+    let canonical = support::procedure_call("/$procs/whoAmI");
+    let credentials = Oidc::credentials(&token, &key, &canonical);
+    let (mut parts, ()) = http::Request::builder()
+        .method(canonical.method)
+        .uri(canonical.path)
+        .body(())
+        .unwrap()
+        .into_parts();
+    parts.headers = credentials.headers;
+
+    let refusal = strategy
+        .authenticate_with_refusal(&parts)
+        .await
+        .expect_err("single-factor token must be challenged by MFA step-up requirement");
+    assert_eq!(refusal.error, INSUFFICIENT_USER_AUTHENTICATION);
+    assert!(
+        refusal
+            .www_authenticate()
+            .is_some_and(|h| h.contains("acr_values=\"urn:authkestra:acr:mfa\""))
     );
 }
