@@ -43,11 +43,19 @@ fn a_uuid_field_and_a_same_named_string_field_get_independent_shapes() {
     );
     let shapes = build_wire_shapes(&schema);
     assert_eq!(
-        shapes.iter().find(|s| s.name == "Doc").unwrap().uuid_keys_js,
+        shapes
+            .iter()
+            .find(|s| s.name == "Doc")
+            .unwrap()
+            .uuid_keys_js,
         "['ref']"
     );
     assert_eq!(
-        shapes.iter().find(|s| s.name == "Note").unwrap().uuid_keys_js,
+        shapes
+            .iter()
+            .find(|s| s.name == "Note")
+            .unwrap()
+            .uuid_keys_js,
         "[]"
     );
 }

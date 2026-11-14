@@ -108,9 +108,9 @@ use std::collections::BTreeSet;
 use cratestack_core::{Field, Schema, TypeArity};
 use serde::Serialize;
 
-pub(crate) use crate::procedure_revival::{ProcedureRevival, procedure_revival};
 #[cfg(test)]
 pub(crate) use crate::procedure_revival::ScalarRevival;
+pub(crate) use crate::procedure_revival::{ProcedureRevival, procedure_revival};
 
 /// One row of the generated `wireShapes` registry (`models.ts.j2`) —
 /// see this module's doc comment for the scheme.

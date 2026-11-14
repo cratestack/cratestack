@@ -89,7 +89,10 @@ async fn text_uuids_are_accepted_in_every_position_and_answered_as_bytes() {
     let (status, body) = post("/$procs/echo", cbor(json!({"input": item}))).await;
     assert_eq!(status, 200, "{}", String::from_utf8_lossy(&body));
     let sent: cratestack::Value = CborCodec.decode(&body).unwrap();
-    assert!(!format!("{sent:?}").contains(TEXT), "response must carry bytes: {sent:?}");
+    assert!(
+        !format!("{sent:?}").contains(TEXT),
+        "response must carry bytes: {sent:?}"
+    );
 
     let (status, body) = post("/$procs/echoId", cbor(json!({"id": TEXT}))).await;
     assert_eq!(status, 200, "{}", String::from_utf8_lossy(&body));

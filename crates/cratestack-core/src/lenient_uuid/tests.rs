@@ -82,9 +82,13 @@ fn required_accepts_cbor_text_and_cbor_bytes_and_refuses_bad_input() {
         from_cbor::<Required>(&bytes(id().as_bytes())).unwrap().p,
         id()
     );
-    let short = from_cbor::<Required>(&bytes(&[1; 15])).unwrap_err().to_string();
+    let short = from_cbor::<Required>(&bytes(&[1; 15]))
+        .unwrap_err()
+        .to_string();
     assert!(short.contains("UUID parsing failed"), "{short}");
-    let bad = from_cbor::<Required>(&text("not-a-uuid")).unwrap_err().to_string();
+    let bad = from_cbor::<Required>(&text("not-a-uuid"))
+        .unwrap_err()
+        .to_string();
     assert!(bad.contains("UUID parsing failed"), "{bad}");
 }
 
@@ -93,13 +97,17 @@ fn required_json_is_unchanged() {
     let ok: Required = serde_json::from_str(&format!(r#"{{"p":"{TEXT}"}}"#)).unwrap();
     assert_eq!(ok.p, id());
     assert!(serde_json::from_str::<Required>(r#"{"p":[1,2,3]}"#).is_err());
-    let lenient = serde_json::from_str::<Required>(r#"{"p":"nope"}"#).unwrap_err().to_string();
+    let lenient = serde_json::from_str::<Required>(r#"{"p":"nope"}"#)
+        .unwrap_err()
+        .to_string();
     #[derive(Debug, Deserialize)]
     struct Strict {
         #[allow(dead_code)]
         p: Uuid,
     }
-    let strict = serde_json::from_str::<Strict>(r#"{"p":"nope"}"#).unwrap_err().to_string();
+    let strict = serde_json::from_str::<Strict>(r#"{"p":"nope"}"#)
+        .unwrap_err()
+        .to_string();
     assert_eq!(lenient, strict, "JSON error text must match uuid's own");
 }
 
@@ -119,7 +127,10 @@ fn optional_shapes_default_and_accept_both_forms() {
     assert_eq!(from_cbor::<OptionalList>(&missing).unwrap().p, None);
     assert_eq!(from_cbor::<Double>(&missing).unwrap().p, None);
     assert_eq!(from_cbor::<Double>(&null).unwrap().p, Some(None));
-    assert_eq!(from_cbor::<Double>(&text(TEXT)).unwrap().p, Some(Some(id())));
+    assert_eq!(
+        from_cbor::<Double>(&text(TEXT)).unwrap().p,
+        Some(Some(id()))
+    );
     assert_eq!(from_cbor::<Filter>(&missing).unwrap().p, None);
 }
 
@@ -130,7 +141,12 @@ fn cbor_empty_map() -> Vec<u8> {
 #[test]
 fn lists_accept_mixed_forms_per_element() {
     let mixed = cbor(|e| {
-        e.array(2).unwrap().str(TEXT).unwrap().bytes(id().as_bytes()).unwrap();
+        e.array(2)
+            .unwrap()
+            .str(TEXT)
+            .unwrap()
+            .bytes(id().as_bytes())
+            .unwrap();
     });
     assert_eq!(from_cbor::<List>(&mixed).unwrap().p, vec![id(), id()]);
     assert_eq!(
@@ -144,7 +160,14 @@ fn filter_operands_accept_both_forms() {
     let body = cbor(|e| {
         e.map(3).unwrap();
         e.str("eq").unwrap().str(TEXT).unwrap();
-        e.str("in").unwrap().array(2).unwrap().str(TEXT).unwrap().bytes(id().as_bytes()).unwrap();
+        e.str("in")
+            .unwrap()
+            .array(2)
+            .unwrap()
+            .str(TEXT)
+            .unwrap()
+            .bytes(id().as_bytes())
+            .unwrap();
         e.str("isNull").unwrap().bool(false).unwrap();
     });
     let filter = from_cbor::<Filter>(&body).unwrap().p.unwrap();

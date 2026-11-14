@@ -124,8 +124,10 @@ pub fn deserialize_double_option_uuid<'de, D: Deserializer<'de>>(
 pub fn deserialize_optional_uuid_filter<'de, D: Deserializer<'de>>(
     deserializer: D,
 ) -> Result<Option<FieldFilterInput<Uuid>>, D::Error> {
-    Ok(Option::<FieldFilterInput<LenientUuid>>::deserialize(deserializer)?
-        .map(|filter| filter.map_values(|u| u.0)))
+    Ok(
+        Option::<FieldFilterInput<LenientUuid>>::deserialize(deserializer)?
+            .map(|filter| filter.map_values(|u| u.0)),
+    )
 }
 
 #[cfg(test)]

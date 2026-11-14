@@ -6,8 +6,8 @@ use std::collections::BTreeSet;
 
 use super::find_many_where::generate_where_struct;
 use super::generate_model_struct_only;
-use crate::shared::test_support::render;
 use crate::shared::model_name_set;
+use crate::shared::test_support::render;
 
 const FIXTURE: &str = r#"
 model Doc {
@@ -33,7 +33,10 @@ fn where_struct_uses_the_lenient_filter_deserializer_for_uuid_fields_only() {
             "`{field}` lacks the lenient attribute"
         );
     }
-    assert_eq!(rendered.matches("deserialize_optional_uuid_filter").count(), 3);
+    assert_eq!(
+        rendered.matches("deserialize_optional_uuid_filter").count(),
+        3
+    );
 }
 
 #[test]

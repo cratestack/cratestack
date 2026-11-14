@@ -74,8 +74,14 @@ fn uuid_decodes_through_the_runtime_helper_at_every_position() {
             models.contains(".map((item) => cratestackDecodeUuid(item, 'Pair.others'))"),
             "{fixture}: {models}"
         );
-        assert!(!models.contains("value['id'] as String"), "{fixture}: {models}");
-        assert!(!models.contains("value['ownerId'] as String"), "{fixture}: {models}");
+        assert!(
+            !models.contains("value['id'] as String"),
+            "{fixture}: {models}"
+        );
+        assert!(
+            !models.contains("value['ownerId'] as String"),
+            "{fixture}: {models}"
+        );
 
         // The filter class: every operand, including the list.
         for operand in ["eq", "ne", "lt", "lte", "gt", "gte"] {
@@ -108,12 +114,20 @@ fn the_runtime_defines_the_helper_for_both_transports() {
         let package = generate(fixture, DartPreset::Default);
         let everything = all_dart(&package);
         assert_eq!(
-            everything.matches("String cratestackDecodeUuid(Object? value, String site)").count(),
+            everything
+                .matches("String cratestackDecodeUuid(Object? value, String site)")
+                .count(),
             1,
             "{fixture}: exactly one definition"
         );
-        assert!(everything.contains("value is List && value.length == 16"), "{fixture}");
-        assert!(everything.contains("expected a Uuid as a string or 16 bytes"), "{fixture}");
+        assert!(
+            everything.contains("value is List && value.length == 16"),
+            "{fixture}"
+        );
+        assert!(
+            everything.contains("expected a Uuid as a string or 16 bytes"),
+            "{fixture}"
+        );
     }
 }
 
@@ -135,11 +149,17 @@ fn the_riverpod_preset_decodes_uuid_through_the_helper_too() {
     for fixture in ["uuid_scalar", "uuid_scalar_rpc"] {
         let package = generate(fixture, DartPreset::Riverpod);
         let everything = all_dart(&package);
-        assert!(everything.contains("String cratestackDecodeUuid(Object? value, String site)"), "{fixture}");
+        assert!(
+            everything.contains("String cratestackDecodeUuid(Object? value, String site)"),
+            "{fixture}"
+        );
         assert!(
             everything.contains("cratestackDecodeUuid(value['eq'], 'UuidFilter.eq')"),
             "{fixture}: the riverpod UuidFilter.fromWire"
         );
-        assert!(everything.contains("cratestackDecodeUuid(value['id'], 'Doc.id')"), "{fixture}");
+        assert!(
+            everything.contains("cratestackDecodeUuid(value['id'], 'Doc.id')"),
+            "{fixture}"
+        );
     }
 }

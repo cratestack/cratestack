@@ -82,7 +82,9 @@ async fn post(router: &Router, path: &str, body: Json) -> (StatusCode, Vec<u8>) 
 }
 
 fn doc(bytes: &[u8]) -> UuidRpcDoc {
-    CborCodec.decode(bytes).expect("a strict Uuid decode of the response")
+    CborCodec
+        .decode(bytes)
+        .expect("a strict Uuid decode of the response")
 }
 
 #[tokio::test]
@@ -160,7 +162,12 @@ async fn text_uuids_work_in_every_rpc_request_position_against_postgres() {
     )
     .await;
     assert_eq!(status, StatusCode::OK);
-    assert!(CborCodec.decode::<Vec<UuidRpcDoc>>(&body).unwrap().is_empty());
+    assert!(
+        CborCodec
+            .decode::<Vec<UuidRpcDoc>>(&body)
+            .unwrap()
+            .is_empty()
+    );
 
     // /rpc/batch with text ids in every frame.
     let (status, body) = post(

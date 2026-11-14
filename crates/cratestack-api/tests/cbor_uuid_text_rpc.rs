@@ -61,7 +61,9 @@ impl cratestack::AuthProvider for AllowAllAuth {
     }
 }
 
-async fn spawn<C: CratestackCodec>(codec: C) -> (std::net::SocketAddr, tokio::task::JoinHandle<()>) {
+async fn spawn<C: CratestackCodec>(
+    codec: C,
+) -> (std::net::SocketAddr, tokio::task::JoinHandle<()>) {
     let router = srv::axum::rpc_router(
         srv::Cratestack::builder().build(),
         Procedures,
@@ -113,7 +115,10 @@ fn item(id: serde_json::Value, ids: serde_json::Value) -> serde_json::Value {
 fn assert_uuid_bytes(body: &[u8]) {
     let value: cratestack::Value = CborCodec.decode(body).unwrap();
     let text = format!("{value:?}");
-    assert!(!text.contains(TEXT), "response must carry bytes, not text: {text}");
+    assert!(
+        !text.contains(TEXT),
+        "response must carry bytes, not text: {text}"
+    );
     assert!(text.contains("Bytes"), "{text}");
 }
 
@@ -121,13 +126,29 @@ fn assert_uuid_bytes(body: &[u8]) {
 async fn unary_accepts_text_uuids_in_every_position_and_still_answers_bytes() {
     let (addr, server) = spawn(CborCodec).await;
     let input = item(json!(TEXT), json!([TEXT, TEXT]));
-    let (status, body) = post(addr, "/rpc/procedure.echo", "application/cbor", cbor(json!({"input": input}))).await;
+    let (status, body) = post(
+        addr,
+        "/rpc/procedure.echo",
+        "application/cbor",
+        cbor(json!({"input": input})),
+    )
+    .await;
     assert_eq!(status, 200, "{}", String::from_utf8_lossy(&body));
     assert_uuid_bytes(&body);
 
-    let (status, body) = post(addr, "/rpc/procedure.echoId", "application/cbor", cbor(json!({"id": TEXT}))).await;
+    let (status, body) = post(
+        addr,
+        "/rpc/procedure.echoId",
+        "application/cbor",
+        cbor(json!({"id": TEXT})),
+    )
+    .await;
     assert_eq!(status, 200, "{}", String::from_utf8_lossy(&body));
-    assert_eq!(body, [&[0x50u8][..], &UUID.to_be_bytes()[..]].concat(), "a bare Uuid return is 0x50 + 16 bytes");
+    assert_eq!(
+        body,
+        [&[0x50u8][..], &UUID.to_be_bytes()[..]].concat(),
+        "a bare Uuid return is 0x50 + 16 bytes"
+    );
     server.abort();
 }
 
@@ -164,7 +185,13 @@ async fn batch_accepts_text_uuids() {
 #[tokio::test]
 async fn malformed_uuids_are_a_400_invalid_argument() {
     let (addr, server) = spawn(CborCodec).await;
-    let (status, body) = post(addr, "/rpc/procedure.echoId", "application/cbor", cbor(json!({"id": "not-a-uuid"}))).await;
+    let (status, body) = post(
+        addr,
+        "/rpc/procedure.echoId",
+        "application/cbor",
+        cbor(json!({"id": "not-a-uuid"})),
+    )
+    .await;
     assert_eq!(status, 400, "{}", String::from_utf8_lossy(&body));
     let short = id_bytes_frame(&[1; 15]);
     let (status, body) = post(addr, "/rpc/procedure.echoId", "application/cbor", short).await;
@@ -181,9 +208,21 @@ async fn json_wire_is_byte_identical() {
     assert_eq!(status, 200);
     assert_eq!(String::from_utf8(reply).unwrap(), format!(r#""{TEXT}""#));
 
-    let (status, _) = post(addr, "/rpc/procedure.echoId", "application/json", br#"{"id":[1,2,3]}"#.to_vec()).await;
+    let (status, _) = post(
+        addr,
+        "/rpc/procedure.echoId",
+        "application/json",
+        br#"{"id":[1,2,3]}"#.to_vec(),
+    )
+    .await;
     assert_eq!(status, 400, "a JSON integer array stays refused");
-    let (status, bad) = post(addr, "/rpc/procedure.echoId", "application/json", br#"{"id":"nope"}"#.to_vec()).await;
+    let (status, bad) = post(
+        addr,
+        "/rpc/procedure.echoId",
+        "application/json",
+        br#"{"id":"nope"}"#.to_vec(),
+    )
+    .await;
     server.abort();
     assert_eq!(status, 400);
     // The response is the generic envelope, as it was before this change.

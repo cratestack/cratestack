@@ -106,7 +106,11 @@ async fn text_uuids_work_in_rest_bodies_and_find_many_filters_against_postgres()
         ),
     )
     .await;
-    assert!(status.is_success(), "{status} {}", String::from_utf8_lossy(&body));
+    assert!(
+        status.is_success(),
+        "{status} {}",
+        String::from_utf8_lossy(&body)
+    );
     let created: UuidRestDoc = CborCodec.decode(&body).expect("strict Uuid decode");
     assert_eq!(created.id.to_string(), A);
 
@@ -118,7 +122,11 @@ async fn text_uuids_work_in_rest_bodies_and_find_many_filters_against_postgres()
         ),
     )
     .await;
-    assert!(status.is_success(), "{status} {}", String::from_utf8_lossy(&body));
+    assert!(
+        status.is_success(),
+        "{status} {}",
+        String::from_utf8_lossy(&body)
+    );
     let updated: UuidRestDoc = CborCodec.decode(&body).expect("strict Uuid decode");
     assert_eq!(updated.ownerId.to_string(), B);
     assert_eq!(updated.parentId, None);

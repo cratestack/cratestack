@@ -27,7 +27,10 @@ fn uuid_key_frames_decode_through_lenient_uuid_and_convert_back() {
         );
     }
     assert!(out.contains("input . id . into ()"), "{out}");
-    assert!(!out.contains("RpcGetInput < :: cratestack :: uuid"), "{out}");
+    assert!(
+        !out.contains("RpcGetInput < :: cratestack :: uuid"),
+        "{out}"
+    );
 }
 
 #[test]

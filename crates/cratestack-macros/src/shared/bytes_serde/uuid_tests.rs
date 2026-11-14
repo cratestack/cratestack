@@ -31,11 +31,26 @@ fn uuid_ref(arity: TypeArity) -> TypeRef {
 fn uuid_helpers_match_the_emitted_field_types_and_default_flag() {
     let expectations = [
         (TypeArity::Required, false, "deserialize_uuid", false),
-        (TypeArity::Optional, false, "deserialize_optional_uuid", true),
+        (
+            TypeArity::Optional,
+            false,
+            "deserialize_optional_uuid",
+            true,
+        ),
         (TypeArity::List, false, "deserialize_uuid_list", false),
         (TypeArity::Required, true, "deserialize_optional_uuid", true),
-        (TypeArity::Optional, true, "deserialize_double_option_uuid", true),
-        (TypeArity::List, true, "deserialize_optional_uuid_list", true),
+        (
+            TypeArity::Optional,
+            true,
+            "deserialize_double_option_uuid",
+            true,
+        ),
+        (
+            TypeArity::List,
+            true,
+            "deserialize_optional_uuid_list",
+            true,
+        ),
     ];
     for (arity, patch, helper, needs_default) in expectations {
         let serde = bytes_serde(&uuid_ref(arity), patch).expect("Uuid opts in");
@@ -44,7 +59,10 @@ fn uuid_helpers_match_the_emitted_field_types_and_default_flag() {
             format!("deserialize_with = \"::cratestack::{helper}\""),
             "{arity:?} patch={patch}"
         );
-        assert_eq!(serde.needs_default, needs_default, "{arity:?} patch={patch}");
+        assert_eq!(
+            serde.needs_default, needs_default,
+            "{arity:?} patch={patch}"
+        );
 
         let field = Field {
             name: "id".to_owned(),
