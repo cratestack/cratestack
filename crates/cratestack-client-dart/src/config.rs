@@ -135,6 +135,16 @@ pub enum DartGeneratorError {
     /// none of which a git ref can contain.
     #[error("invalid fespalier ref {0:?}: expected a git tag, branch or commit, e.g. v0.21.0")]
     InvalidFespalierRef(String),
+    /// The schema marks device-auth procedures, so the generated package
+    /// depends on `fespalier_sign_keypair`, whose own pubspec pins its sibling
+    /// fespalier packages at a release tag: a branch or commit cannot resolve.
+    #[error(
+        "fespalier ref {0:?} is not a release tag: a schema with `@device_auth` procedures \
+         pulls in `fespalier_sign_keypair`, which pins its sibling packages at a tag in its \
+         own pubspec, so `--fespalier-ref` must be a release tag of the form vMAJOR.MINOR.PATCH \
+         (e.g. v0.21.0), not a branch or a commit"
+    )]
+    FespalierRefNotATag(String),
     /// A procedure carries the device-auth marker, but the schema does not
     /// have the shapes the parser requires of it (`cratestack check` says
     /// which), so no `DeviceAuthServer` can be generated over it.

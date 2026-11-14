@@ -53,8 +53,13 @@ pub(crate) enum Command {
         /// is not on pub.dev (see `--fespalier-ref`).
         #[arg(long, value_enum, default_value_t = DartPresetArg::Default)]
         preset: DartPresetArg,
-        /// Git ref (tag, branch or commit) of github.com/fespalier/fespalier
-        /// that `--preset fespalier` pins `fespalier_transport` at. Defaults
+        /// Git ref of github.com/fespalier/fespalier that `--preset
+        /// fespalier` pins its fespalier packages (`fespalier_transport`, and
+        /// with `@device_auth` procedures also `fespalier_auth`,
+        /// `fespalier_keypair` and `fespalier_sign_keypair`) at. A tag,
+        /// branch or commit, except that a schema with `@device_auth`
+        /// procedures needs a release tag (`vMAJOR.MINOR.PATCH`), because
+        /// `fespalier_sign_keypair` pins its siblings at a tag. Defaults
         /// to the release the generator targets
         /// (`cratestack_client_dart::DEFAULT_FESPALIER_REF`, `v0.21.0`).
         /// An error with any other preset.

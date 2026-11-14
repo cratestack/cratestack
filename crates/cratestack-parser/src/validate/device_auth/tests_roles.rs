@@ -142,3 +142,32 @@ fn a_public_revoke_is_a_hard_error() {
     );
     refused(&spaced, "`revoke` must not be public");
 }
+
+fn revoke_with(policy: &str) -> String {
+    edit(
+        "  @device_auth(role: \"revoke\")\n  @allow(auth() != null)\n",
+        &format!("  @device_auth(role: \"revoke\")\n  {policy}\n"),
+    )
+}
+
+#[test]
+fn revoke_is_public_when_any_top_level_disjunct_is_true() {
+    let source = revoke_with("@allow(true || auth() != null)");
+    let error = refused(&source, "`revoke` must not be public");
+    assert_eq!(error.line(), line_of(&source, REVOKE));
+    refused(
+        &revoke_with("@allow(auth() == null)"),
+        "`revoke` must not be public",
+    );
+}
+
+#[test]
+fn revoke_with_a_deny_that_blocks_anonymous_callers_is_not_public() {
+    parse(&revoke_with("@allow(true)\n  @deny(auth() == null)"))
+        .expect("the deny refuses a caller with no session");
+}
+
+#[test]
+fn revoke_with_no_allow_is_denied_to_everyone_not_public() {
+    parse(&revoke_with("")).expect("deny-by-default is not public");
+}

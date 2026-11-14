@@ -16,12 +16,12 @@
     Future<T> Function() call, {
     bool rejectedOn403 = false,
   }) async {
-    final neverAborted = Completer<void>().future;
+    final neverAborted = async.Completer<void>().future;
     try {
-      return await TransportZone.run(neverAborted, call);
+      return await ftransport.TransportZone.run(neverAborted, call);
     } on {{ exception_class }} catch (error) {
       if (rejectedOn403 && error.status == 403) {
-        throw const AuthRejected();
+        throw const fauth.AuthRejected();
       }
       final mapped = fieldErrors?.call(error);
       if (mapped != null) throw mapped;
@@ -41,15 +41,15 @@
 
 /// A transport that signs every request with [signer] for [credential] before
 /// it sends it on: how `revoke` is signed by the device.
-final class _SignedBy implements HttpTransport {
+final class _SignedBy implements ftransport.HttpTransport {
   const _SignedBy(this.inner, this.credential, this.signer);
 
-  final HttpTransport inner;
-  final DeviceCredential credential;
-  final DeviceSigner signer;
+  final ftransport.HttpTransport inner;
+  final fsign.DeviceCredential credential;
+  final fsign.DeviceSigner signer;
 
   @override
-  Future<TransportResponse> send(TransportRequest request) async {
+  Future<ftransport.TransportResponse> send(ftransport.TransportRequest request) async {
     final signature = await signer.signFor(credential, request);
     return inner.send(
       request.copyWith(headers: {...request.headers, ...signature}),

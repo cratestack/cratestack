@@ -45,20 +45,20 @@ pub(super) fn begin(
     for f in &input.fields {
         let expr = match f.name.as_str() {
             "ambient" => format!(
-                "{}(start.keys[KeyRole.ambient]!)",
+                "{}(start.keys[fkey.KeyRole.ambient]!)",
                 jwk_helper(legs, &f.ty, single, jwks)?
             ),
             "userPresent" => format!(
-                "switch (start.keys[KeyRole.userPresent]) {{ final jwk? => {}(jwk), null => null }}",
+                "switch (start.keys[fkey.KeyRole.userPresent]) {{ final jwk? => {}(jwk), null => null }}",
                 jwk_helper(legs, &f.ty, single, jwks)?
             ),
             _ => text_from("start.fields", f),
         };
         args.push(entry(f, expr));
     }
-    let mut challenges = vec!["KeyRole.ambient: answer.ambient".to_owned()];
+    let mut challenges = vec!["fkey.KeyRole.ambient: answer.ambient".to_owned()];
     if field(output, "userPresent").is_some() {
-        challenges.push("KeyRole.userPresent: ?answer.userPresent".to_owned());
+        challenges.push("fkey.KeyRole.userPresent: ?answer.userPresent".to_owned());
     }
     let data = output
         .fields
@@ -79,17 +79,18 @@ pub(super) fn confirm(legs: &Legs<'_>) -> Result<ConfirmEnrolmentView, DartGener
     let mut args = Vec::new();
     for f in &input.fields {
         let expr = match f.name.as_str() {
-            "ambient" => "challengeSignatures[KeyRole.ambient]!".to_owned(),
-            "userPresent" => "challengeSignatures[KeyRole.userPresent]".to_owned(),
+            "ambient" => "challengeSignatures[fkey.KeyRole.ambient]!".to_owned(),
+            "userPresent" => "challengeSignatures[fkey.KeyRole.userPresent]".to_owned(),
             name if parsed.proof.as_deref() == Some(name) => text_of("proof", f),
             _ => text_from("challenge.data", f),
         };
         args.push(entry(f, expr));
     }
-    let mut attestations = vec!["KeyRole.ambient: Attestation.parse(answer.ambient)".to_owned()];
+    let mut attestations =
+        vec!["fkey.KeyRole.ambient: fsign.Attestation.parse(answer.ambient)".to_owned()];
     if field(output, "userPresent").is_some() {
         attestations.push(
-            "if (answer.userPresent case final jws?) KeyRole.userPresent: Attestation.parse(jws)"
+            "if (answer.userPresent case final jws?) fkey.KeyRole.userPresent: fsign.Attestation.parse(jws)"
                 .to_owned(),
         );
     }

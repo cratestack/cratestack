@@ -74,7 +74,7 @@ final client = DeviceAuthRestClientCratestackClient(
 - the answer: every status is a response, which the adapter maps to the typed error. A `TransportStatusError` thrown by a decorator is treated as the answer it carries.
 - a call that got no answer: `TransportAborted`, `TransportUnsent`, `TransportTimedOut` and `TransportBroken` map one to one onto `CratestackTransportAborted`, `Unsent`, `TimedOut` and `Broken`. `TransportPortal` and `TransportUntrusted` become `CratestackTransportBroken`; its `cause` is the original failure, so check `error.cause is TransportPortal` to tell them apart. Any other error a decorator throws (such as `AuthRejected`) reaches the caller unchanged.
 
-fespalier packages are git dependencies by design, so the pinned ref must be reachable for this package to resolve. `--fespalier-ref` changes it; where it is not reachable yet (an unreleased fespalier), point `fespalier_transport` at a local checkout with a `pubspec_overrides.yaml`.
+fespalier packages are git dependencies by design, so the pinned ref must be reachable for this package to resolve. `--fespalier-ref` changes it; where it is not reachable yet (an unreleased fespalier), point `fespalier_transport` at a local checkout with a `pubspec_overrides.yaml`. With the device ceremonies the ref must be a release tag (`vMAJOR.MINOR.PATCH`), because `fespalier_sign_keypair` pins its sibling packages at a tag.
 
 ### Device ceremonies
 

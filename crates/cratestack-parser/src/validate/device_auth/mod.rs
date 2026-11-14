@@ -14,6 +14,7 @@
 //! public (`revoke`, which the device signs, must not be), and each leg's
 //! argument and return type have the fields its role maps.
 
+mod anonymous;
 mod enrolment;
 mod legs;
 mod renewal;

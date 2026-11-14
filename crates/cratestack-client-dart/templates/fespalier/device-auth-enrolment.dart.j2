@@ -13,11 +13,11 @@
   /// challenge per key and the rest of the answer in
   /// [EnrolmentChallenge.data].
   @override
-  Future<EnrolmentChallenge> beginEnrolment(EnrolmentStart start) async {
+  Future<fsign.EnrolmentChallenge> beginEnrolment(fsign.EnrolmentStart start) async {
     final answer = await _leg(
 {{ call(begin_enrolment.leg) }}
     );
-    return EnrolmentChallenge(
+    return fsign.EnrolmentChallenge(
       challenges: {
 {% for element in begin_enrolment.challenges %}
         {{ element }},
@@ -40,16 +40,16 @@
 {% endif %}
   /// A 403 is an `AuthRejected`.
   @override
-  Future<DeviceEnrolment> confirmEnrolment(
-    EnrolmentChallenge challenge,
-    Map<KeyRole, String> challengeSignatures,
+  Future<fsign.DeviceEnrolment> confirmEnrolment(
+    fsign.EnrolmentChallenge challenge,
+    Map<fkey.KeyRole, String> challengeSignatures,
     Object? proof,
   ) async {
     final answer = await _leg(
 {{ call(confirm_enrolment.leg) }}
       rejectedOn403: true,
     );
-    return DeviceEnrolment(
+    return fsign.DeviceEnrolment(
       deviceId: answer.deviceId,
       attestations: {
 {% for element in confirm_enrolment.attestations %}
@@ -57,7 +57,7 @@
 {% endfor %}
       },
       user: userOf?.call(answer) ??
-          AuthUser(
+          fauth.AuthUser(
             id: answer.userId,
 {% if confirm_enrolment.name_expr %}
             name: {{ confirm_enrolment.name_expr }},

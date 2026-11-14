@@ -3,12 +3,12 @@
   /// Leg one of a renewal: a challenge for the key of [role] of [deviceId].
   /// A 403 is an `AuthRejected`: the device is dead.
   @override
-  Future<RoleChallenge> beginRenewal(String deviceId, KeyRole role) async {
+  Future<fsign.RoleChallenge> beginRenewal(String deviceId, fkey.KeyRole role) async {
     final answer = await _leg(
 {{ call(begin_renewal.leg) }}
       rejectedOn403: true,
     );
-    return RoleChallenge(
+    return fsign.RoleChallenge(
       role: role,
       challenge: answer.challenge,
       data: {
@@ -22,15 +22,15 @@
   /// Leg two of a renewal: the [signature] of the challenge, answered with a
   /// new attestation for the same key. A 403 is an `AuthRejected`.
   @override
-  Future<Attestation> confirmRenewal(
-    RoleChallenge challenge,
+  Future<fsign.Attestation> confirmRenewal(
+    fsign.RoleChallenge challenge,
     String signature,
   ) async {
     final answer = await _leg(
 {{ call(confirm_renewal) }}
       rejectedOn403: true,
     );
-    return Attestation.parse(answer.attestation);
+    return fsign.Attestation.parse(answer.attestation);
   }
 
   /// Tells the server this device is gone, at sign-out. This call is signed by
@@ -39,7 +39,7 @@
   /// asks for the user-present key when the device has one, and that prompts.
   /// A refused prompt or an unreachable server throws, and the sign-out goes on.
   @override
-  Future<void> revoke(DeviceCredential credential, DeviceSigner signer) async {
+  Future<void> revoke(fsign.DeviceCredential credential, fsign.DeviceSigner signer) async {
     final signed = _proceduresOver(_SignedBy(transport, credential, signer));
     await _leg(
 {{ call(revoke, "signed") }}

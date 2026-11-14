@@ -72,9 +72,24 @@ pub(super) fn confirm(
                 "`proof: \"{proof}\"` is a key's signature, not the one-time code"
             )));
         }
-        if shapes::field(input, proof).is_none() {
+        let Some(field) = shapes::field(input, proof) else {
             return Err(leg.fail(format!(
                 "`proof: \"{proof}\"` names no field of its argument type `{}`",
+                input.name
+            )));
+        };
+        if !shapes::matches(schema, field, Want::Text)
+            && !shapes::matches(schema, field, Want::OptionalText)
+        {
+            return Err(leg.fail(format!(
+                "`proof: \"{proof}\"` is `{}{}` in its argument type `{}`: the one-time code \
+                 is sent as text, so it must be `String` or `String?`",
+                field.ty.name,
+                match field.ty.arity {
+                    cratestack_core::TypeArity::Required => "",
+                    cratestack_core::TypeArity::Optional => "?",
+                    cratestack_core::TypeArity::List => "[]",
+                },
                 input.name
             )));
         }

@@ -93,7 +93,9 @@ pub(super) fn roles_are_complete(legs: &[Leg<'_>], errors: &mut Vec<SchemaError>
 }
 
 /// The policy a leg needs: public (exactly `@allow(true)`) for every leg a
-/// session-less device calls, and anything but that for `revoke`.
+/// session-less device calls, and anything that does not admit a caller with
+/// no session for `revoke` (decided on the policy's meaning, see
+/// [`super::anonymous`]).
 pub(super) fn policy_matches_role(leg: &Leg<'_>, errors: &mut Vec<SchemaError>) {
     let policy: Vec<&str> = leg
         .procedure
@@ -124,11 +126,13 @@ pub(super) fn policy_matches_role(leg: &Leg<'_>, errors: &mut Vec<SchemaError>) 
                  exactly `@allow(true)`, with no `@deny`, `@authn` or `@authorize` ({found})"
             )));
         }
-    } else if policy.iter().any(public) {
+    } else if super::anonymous::admits_anonymous(leg.procedure) {
         errors.push(leg.fail(
-            "`revoke` must not be public: anyone could revoke any device by its id. The device \
-             signs this call, so give it a policy that needs the signed session, such as \
-             `@allow(auth() != null)`",
+            "`revoke` must not be public: anyone could revoke any device by its id, and its \
+             policy admits a caller with no session. The device signs this call, so give it \
+             a policy that needs the signed session, such as `@allow(auth() != null)` (a \
+             procedure with no `@allow` is denied to everyone, which is not public but means \
+             no device can be revoked either)",
         ));
     }
 }

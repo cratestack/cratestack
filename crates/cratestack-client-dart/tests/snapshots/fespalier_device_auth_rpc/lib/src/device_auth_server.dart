@@ -22,11 +22,14 @@
 // other failure is thrown as it is. The `fespalier_*` packages it imports are
 // git dependencies pinned in this package's pubspec at `v0.21.0`.
 
-import 'dart:async';
+// Every fespalier name is imported under a prefix, so a schema type that
+// shares a name with one (`RoleChallenge`, `AuthUser`, ...) is not ambiguous.
+import 'dart:async' as async;
 
-import 'package:fespalier_auth/fespalier_auth.dart' show AuthRejected, AuthUser;
-import 'package:fespalier_keypair/fespalier_keypair.dart' show KeyRole;
-import 'package:fespalier_sign_keypair/fespalier_sign_keypair.dart'
+import 'package:fespalier_auth/fespalier_auth.dart' as fauth
+    show AuthRejected, AuthUser;
+import 'package:fespalier_keypair/fespalier_keypair.dart' as fkey show KeyRole;
+import 'package:fespalier_sign_keypair/fespalier_sign_keypair.dart' as fsign
     show
         Attestation,
         DeviceAuthServer,
@@ -36,7 +39,7 @@ import 'package:fespalier_sign_keypair/fespalier_sign_keypair.dart'
         EnrolmentChallenge,
         EnrolmentStart,
         RoleChallenge;
-import 'package:fespalier_transport/fespalier_transport.dart'
+import 'package:fespalier_transport/fespalier_transport.dart' as ftransport
     show HttpTransport, TransportRequest, TransportResponse, TransportZone;
 
 import '../device_auth_rpc_client.dart';
@@ -46,7 +49,7 @@ import '../device_auth_rpc_client.dart';
 /// Built over [transport]: `AuthConfig.transport`, the chain with no session
 /// on it. If the legs go through `authTransport` instead, list
 /// [unsignedPaths] in `DeviceAuthBackend.unsignedPaths`.
-final class DeviceAuthRpcClientDeviceAuthServer implements DeviceAuthServer {
+final class DeviceAuthRpcClientDeviceAuthServer implements fsign.DeviceAuthServer {
   /// The device endpoints of the server at [baseUri], reached through
   /// [transport] (no session).
   DeviceAuthRpcClientDeviceAuthServer(
@@ -57,7 +60,7 @@ final class DeviceAuthRpcClientDeviceAuthServer implements DeviceAuthServer {
   }) : _baseUri = baseUri;
 
   /// What the legs go through: `AuthConfig.transport`.
-  final HttpTransport transport;
+  final ftransport.HttpTransport transport;
 
   /// Turns an error answer into what a form shows under its field (a wrong
   /// number or code is a `422`): pass `errors.fieldErrorsOf` of
@@ -69,12 +72,12 @@ final class DeviceAuthRpcClientDeviceAuthServer implements DeviceAuthServer {
   /// Builds the signed-in user from the answer of `confirmEnrolment`, in place of the
   /// default: `userId` is the id, `name` and `email` are those fields when the
   /// answer has them, and every other field is in `claims`.
-  final AuthUser Function(EnrolledDevice answer)? userOf;
+  final fauth.AuthUser Function(EnrolledDevice answer)? userOf;
 
   final Uri _baseUri;
   late final ProceduresApi _procedures = _proceduresOver(transport);
 
-  ProceduresApi _proceduresOver(HttpTransport over) => DeviceAuthRpcClientCratestackClient(
+  ProceduresApi _proceduresOver(ftransport.HttpTransport over) => DeviceAuthRpcClientCratestackClient(
     CratestackRpcHttpAdapter(
       CratestackFespalierTransport(over),
       baseUri: _baseUri,
@@ -110,23 +113,23 @@ final class DeviceAuthRpcClientDeviceAuthServer implements DeviceAuthServer {
   /// challenge per key and the rest of the answer in
   /// [EnrolmentChallenge.data].
   @override
-  Future<EnrolmentChallenge> beginEnrolment(EnrolmentStart start) async {
+  Future<fsign.EnrolmentChallenge> beginEnrolment(fsign.EnrolmentStart start) async {
     final answer = await _leg(
       () => _procedures.beginEnrolment(
         BeginEnrolmentProcedureArgs(
           args: BeginEnrolmentArgs(
             phone: '${start.fields['phone'] ?? ''}',
             otp: '${start.fields['otp'] ?? ''}',
-            ambient: _jwk(start.keys[KeyRole.ambient]!),
-            userPresent: switch (start.keys[KeyRole.userPresent]) { final jwk? => _jwk(jwk), null => null },
+            ambient: _jwk(start.keys[fkey.KeyRole.ambient]!),
+            userPresent: switch (start.keys[fkey.KeyRole.userPresent]) { final jwk? => _jwk(jwk), null => null },
           ),
         ),
       ),
     );
-    return EnrolmentChallenge(
+    return fsign.EnrolmentChallenge(
       challenges: {
-        KeyRole.ambient: answer.ambient,
-        KeyRole.userPresent: ?answer.userPresent,
+        fkey.KeyRole.ambient: answer.ambient,
+        fkey.KeyRole.userPresent: ?answer.userPresent,
       },
       data: {
         'enrolmentId': answer.enrolmentId,
@@ -139,9 +142,9 @@ final class DeviceAuthRpcClientDeviceAuthServer implements DeviceAuthServer {
   /// [proof] is not read: the one-time code went with leg one.
   /// A 403 is an `AuthRejected`.
   @override
-  Future<DeviceEnrolment> confirmEnrolment(
-    EnrolmentChallenge challenge,
-    Map<KeyRole, String> challengeSignatures,
+  Future<fsign.DeviceEnrolment> confirmEnrolment(
+    fsign.EnrolmentChallenge challenge,
+    Map<fkey.KeyRole, String> challengeSignatures,
     Object? proof,
   ) async {
     final answer = await _leg(
@@ -149,21 +152,21 @@ final class DeviceAuthRpcClientDeviceAuthServer implements DeviceAuthServer {
         ConfirmEnrolmentProcedureArgs(
           args: ConfirmEnrolmentArgs(
             enrolmentId: '${challenge.data['enrolmentId'] ?? ''}',
-            ambient: challengeSignatures[KeyRole.ambient]!,
-            userPresent: challengeSignatures[KeyRole.userPresent],
+            ambient: challengeSignatures[fkey.KeyRole.ambient]!,
+            userPresent: challengeSignatures[fkey.KeyRole.userPresent],
           ),
         ),
       ),
       rejectedOn403: true,
     );
-    return DeviceEnrolment(
+    return fsign.DeviceEnrolment(
       deviceId: answer.deviceId,
       attestations: {
-        KeyRole.ambient: Attestation.parse(answer.ambient),
-        if (answer.userPresent case final jws?) KeyRole.userPresent: Attestation.parse(jws),
+        fkey.KeyRole.ambient: fsign.Attestation.parse(answer.ambient),
+        if (answer.userPresent case final jws?) fkey.KeyRole.userPresent: fsign.Attestation.parse(jws),
       },
       user: userOf?.call(answer) ??
-          AuthUser(
+          fauth.AuthUser(
             id: answer.userId,
             claims: {
               'phone': answer.phone,
@@ -175,7 +178,7 @@ final class DeviceAuthRpcClientDeviceAuthServer implements DeviceAuthServer {
   /// Leg one of a renewal: a challenge for the key of [role] of [deviceId].
   /// A 403 is an `AuthRejected`: the device is dead.
   @override
-  Future<RoleChallenge> beginRenewal(String deviceId, KeyRole role) async {
+  Future<fsign.RoleChallenge> beginRenewal(String deviceId, fkey.KeyRole role) async {
     final answer = await _leg(
       () => _procedures.beginRenewal(
         BeginRenewalProcedureArgs(
@@ -187,7 +190,7 @@ final class DeviceAuthRpcClientDeviceAuthServer implements DeviceAuthServer {
       ),
       rejectedOn403: true,
     );
-    return RoleChallenge(
+    return fsign.RoleChallenge(
       role: role,
       challenge: answer.challenge,
       data: {
@@ -199,8 +202,8 @@ final class DeviceAuthRpcClientDeviceAuthServer implements DeviceAuthServer {
   /// Leg two of a renewal: the [signature] of the challenge, answered with a
   /// new attestation for the same key. A 403 is an `AuthRejected`.
   @override
-  Future<Attestation> confirmRenewal(
-    RoleChallenge challenge,
+  Future<fsign.Attestation> confirmRenewal(
+    fsign.RoleChallenge challenge,
     String signature,
   ) async {
     final answer = await _leg(
@@ -214,7 +217,7 @@ final class DeviceAuthRpcClientDeviceAuthServer implements DeviceAuthServer {
       ),
       rejectedOn403: true,
     );
-    return Attestation.parse(answer.attestation);
+    return fsign.Attestation.parse(answer.attestation);
   }
 
   /// Tells the server this device is gone, at sign-out. This call is signed by
@@ -223,7 +226,7 @@ final class DeviceAuthRpcClientDeviceAuthServer implements DeviceAuthServer {
   /// asks for the user-present key when the device has one, and that prompts.
   /// A refused prompt or an unreachable server throws, and the sign-out goes on.
   @override
-  Future<void> revoke(DeviceCredential credential, DeviceSigner signer) async {
+  Future<void> revoke(fsign.DeviceCredential credential, fsign.DeviceSigner signer) async {
     final signed = _proceduresOver(_SignedBy(transport, credential, signer));
     await _leg(
       () => signed.revokeDevice(
@@ -253,12 +256,12 @@ final class DeviceAuthRpcClientDeviceAuthServer implements DeviceAuthServer {
     Future<T> Function() call, {
     bool rejectedOn403 = false,
   }) async {
-    final neverAborted = Completer<void>().future;
+    final neverAborted = async.Completer<void>().future;
     try {
-      return await TransportZone.run(neverAborted, call);
+      return await ftransport.TransportZone.run(neverAborted, call);
     } on CratestackRpcException catch (error) {
       if (rejectedOn403 && error.status == 403) {
-        throw const AuthRejected();
+        throw const fauth.AuthRejected();
       }
       final mapped = fieldErrors?.call(error);
       if (mapped != null) throw mapped;
@@ -277,15 +280,15 @@ final class DeviceAuthRpcClientDeviceAuthServer implements DeviceAuthServer {
 
 /// A transport that signs every request with [signer] for [credential] before
 /// it sends it on: how `revoke` is signed by the device.
-final class _SignedBy implements HttpTransport {
+final class _SignedBy implements ftransport.HttpTransport {
   const _SignedBy(this.inner, this.credential, this.signer);
 
-  final HttpTransport inner;
-  final DeviceCredential credential;
-  final DeviceSigner signer;
+  final ftransport.HttpTransport inner;
+  final fsign.DeviceCredential credential;
+  final fsign.DeviceSigner signer;
 
   @override
-  Future<TransportResponse> send(TransportRequest request) async {
+  Future<ftransport.TransportResponse> send(ftransport.TransportRequest request) async {
     final signature = await signer.signFor(credential, request);
     return inner.send(
       request.copyWith(headers: {...request.headers, ...signature}),
