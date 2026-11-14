@@ -14,8 +14,10 @@
 //! ```
 //!
 //! `--mode sign1` (default) trusts the published Ed25519 test key
-//! `ed25519` of `crates/cratestack-cose/tests/vectors/keys.json` and signs
-//! with `ed25519_other`; `--mode mac0` shares the vectors' HMAC secret.
+//! `ed25519` and the P-256 test key `p256` of
+//! `crates/cratestack-cose/tests/vectors/keys.json` (the latter for the
+//! Dart keystore signer's live ESP256 round trip, cratestack#1151) and
+//! signs with `ed25519_other`; `--mode mac0` shares the vectors' HMAC secret.
 //! The audience is `roundtrip`. The keys are published in this repository:
 //! **never use them anywhere else.** The `contract` lines give the client
 //! the op digests a generated client would bake in; `listening` comes last.
@@ -24,7 +26,8 @@ use std::sync::Arc;
 
 use cratestack::InMemoryNonceStore;
 use cratestack::cose::{
-    CoseAlg, CoseEnvelope, CoseMode, CoseSigner, Ed25519Signer, HmacSigner, StaticVerifierResolver,
+    CoseAlg, CoseEnvelope, CoseMode, CoseSigner, Ed25519Signer, HmacSigner, P256Signer,
+    StaticVerifierResolver,
 };
 
 const AUDIENCE: &str = "roundtrip";
@@ -117,13 +120,23 @@ fn seed(start: u8) -> [u8; 32] {
     std::array::from_fn(|index| start + index as u8)
 }
 
+/// The published `p256` test key of `keys.json`.
+fn p256_test_key() -> P256Signer {
+    const SCALAR: &str = "c9afa9d845ba75166b5c215767b1d6934e50c3db36e89b127b8a622b120f6721";
+    let scalar: [u8; 32] =
+        std::array::from_fn(|i| u8::from_str_radix(&SCALAR[2 * i..2 * i + 2], 16).expect("hex"));
+    P256Signer::from_scalar(&scalar).expect("scalar")
+}
+
 /// The server's envelope for `mode`, with a nonce store of its own.
 fn server_envelope(mode: &str) -> CoseEnvelope {
     let (mode, signer, resolver): (_, Arc<dyn CoseSigner>, _) = match mode {
         "sign1" => (
             CoseMode::Sign1,
             Arc::new(Ed25519Signer::from_seed(&seed(0x80))),
-            StaticVerifierResolver::new().with_key(Ed25519Signer::from_seed(&seed(0)).verify_key()),
+            StaticVerifierResolver::new()
+                .with_key(Ed25519Signer::from_seed(&seed(0)).verify_key())
+                .with_key(p256_test_key().verify_key()),
         ),
         "mac0" => {
             let hmac = || HmacSigner::new(CoseAlg::Hmac256_64, seed(0x40).to_vec()).expect("key");
