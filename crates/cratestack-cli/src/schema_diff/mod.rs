@@ -56,6 +56,8 @@ mod tests_enums;
 mod tests_models;
 #[cfg(test)]
 mod tests_procedures;
+#[cfg(test)]
+mod tests_storage_map;
 
 use cratestack_core::Schema;
 use serde::Serialize;

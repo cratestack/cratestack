@@ -134,3 +134,34 @@ fn identifiers_follow_the_grammar() {
         assert_eq!(validate_sql_identifier(prefix, Column), Ok(()), "{prefix}");
     }
 }
+
+/// The mapping is storage-only: a mapped model has the REST routes, op keys and
+/// verbs of the same model without it (cratestack#1375).
+#[test]
+fn a_mapped_model_has_the_routes_and_op_keys_of_an_unmapped_one() {
+    use crate::op_list::{ModelVerb, model_list_route, model_op_key, model_verbs};
+
+    let plain = model("Bank", &["@@paged"], vec![field("code", &[])]);
+    let mapped = model(
+        "Bank",
+        &["@@paged", "@@map(\"map_bank\")"],
+        vec![field("code", &["@map(\"bank_code\")"])],
+    );
+    assert_eq!(mapped.sql_table_name(), "map_bank");
+    assert_eq!(plain.sql_table_name(), "banks");
+    assert_eq!(model_list_route(&mapped.name), "/banks");
+    assert_eq!(model_verbs(&mapped), model_verbs(&plain));
+    for rpc in [false, true] {
+        for verb in model_verbs(&mapped) {
+            assert_eq!(
+                model_op_key(&mapped.name, verb, rpc),
+                model_op_key(&plain.name, verb, rpc),
+                "{verb:?} rpc={rpc}"
+            );
+        }
+    }
+    assert_eq!(
+        model_op_key("Bank", ModelVerb::List, true).as_deref(),
+        Some("model.Bank.list")
+    );
+}

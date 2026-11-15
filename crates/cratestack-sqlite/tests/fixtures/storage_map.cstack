@@ -1,0 +1,25 @@
+// `@@map` / `@map` through the embedded (rusqlite) backend (cratestack#1375).
+// Driven by `storage_map.rs`. Embedded has no policy and no optimistic locking.
+
+datasource db {
+  provider = "sqlite"
+  url = env("DATABASE_URL")
+}
+
+model LiteBank {
+  id Int @id @map("bank_id")
+  code String @unique @map("bank_code")
+  displayName String @map("display_name")
+  region String
+
+  @@map("lite_bank")
+}
+
+model LiteDeposit {
+  id Int @id
+  bankId Int @map("bank_ref")
+  amount Int @map("amount_minor")
+  bank LiteBank @relation(fields:[bankId],references:[id])
+
+  @@map("lite_deposit")
+}
