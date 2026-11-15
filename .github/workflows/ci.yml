@@ -1828,7 +1828,9 @@ jobs:
         # `--rust-input crate::cbor,crate::cose` in `cbor-vendor-glue`: a
         # dropped `crate::cose` would still generate the codec glue, still
         # compile, and ship a Dart package whose `cose.dart` has nothing to
-        # call. Both halves are checked, and so is what the generated Dart
+        # call (nor, since cratestack#1151, a keystore signer: `esp256External`,
+        # whose Dart-function parameter is the part of the bridge codegen is
+        # least likely to keep accepting). Both halves are checked, and so is what the generated Dart
         # may not import: the package declares neither `freezed_annotation`
         # (an enum with fields would bring it, which is why the bridge's
         # error is a struct) nor `collection` (a `[u8; 32]` would).
@@ -1836,10 +1838,15 @@ jobs:
           set -euo pipefail
           dart_glue=dart-packages/cratestack_cbor/lib/src/native/rust
           rust_glue=crates/cratestack-client-flutter/src/frb_generated.rs
-          for symbol in FlutterClientEnvelope FlutterCoseError FlutterCallBinding coseContractHeaderValue FlutterCompactKeys; do
+          for symbol in FlutterClientEnvelope FlutterCoseError FlutterCallBinding coseContractHeaderValue FlutterCompactKeys FlutterSignOutcome FlutterSignOutcomeKind esp256External; do
             grep -rq "$symbol" "$dart_glue" || { echo "::error::$symbol missing from the generated Dart glue"; exit 1; }
           done
           grep -q 'cose_contract_header_value' "$rust_glue" || { echo "::error::the cose bridge is missing from the generated Rust glue"; exit 1; }
+          # The keystore callback signer (cratestack#1151): the constructor
+          # that takes a Dart function. Codegen must accept the `DartFn`
+          # parameter and its struct-valued return; if it stops, the Dart
+          # `ExternalSigner` has nothing to call.
+          grep -q 'esp256_external' "$rust_glue" || { echo "::error::the keystore signer (esp256_external) is missing from the generated Rust glue"; exit 1; }
           # Compact wire keys live under `crate::cbor` (`FlutterCompactKeys`,
           # `src/cbor/compact.rs`), so the codec's own input covers them; this
           # catches a bridge that stopped generating without a build error.

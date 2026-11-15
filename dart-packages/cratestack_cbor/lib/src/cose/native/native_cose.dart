@@ -11,8 +11,10 @@ import '../../native/rust/cose/envelope.dart' as rust;
 import '../../native/rust/cose/error.dart' as rust_error;
 import '../../native/rust/cose/types.dart' as rust_types;
 import '../cose_api.dart';
-import '../errors.dart';
+import '../external_signer.dart';
+import '../signers.dart';
 import '../types.dart';
+import 'native_mapping.dart';
 
 /// Starts the shared runtime (the codec's, once), then builds the handle.
 Future<ClientEnvelope> createEnvelope({
@@ -24,7 +26,7 @@ Future<ClientEnvelope> createEnvelope({
   await createCborCodec();
   final keys = [
     for (final key in serverKeys)
-      rust_types.FlutterServerKey(alg: _alg(key.alg), bytes: key.bytes),
+      rust_types.FlutterServerKey(alg: toRustAlg(key.alg), bytes: key.bytes),
   ];
   final options = pin == null
       ? null
@@ -32,10 +34,12 @@ Future<ClientEnvelope> createEnvelope({
           fixedIat: pin.iat,
           fixedCti: pin.cti,
         );
-  return _guard<ClientEnvelope>(() {
-    final handle = switch (signer) {
+  return _guard<ClientEnvelope>(() async {
+    // The keystore constructor is async (it holds a Dart callback); the
+    // others are not.
+    final FutureOr<rust.FlutterClientEnvelope> handle = switch (signer) {
       HmacSigner() => rust.FlutterClientEnvelope.hmac(
-          alg: _alg(signer.alg),
+          alg: toRustAlg(signer.alg),
           secret: signer.secret,
           serverKeys: keys,
           audience: audience,
@@ -47,8 +51,17 @@ Future<ClientEnvelope> createEnvelope({
           audience: audience,
           options: options,
         ),
+      ExternalSigner() => rust.FlutterClientEnvelope.esp256External(
+          publicKey: signer.publicKey,
+          // `invokeSigner` never throws: an error out of a `DartFn` would
+          // panic the Rust side, so every end is a value.
+          sign: (tbs) async => toRustOutcome(await invokeSigner(signer, tbs)),
+          serverKeys: keys,
+          audience: audience,
+          options: options,
+        ),
     };
-    return _NativeEnvelope(handle);
+    return _NativeEnvelope(await handle);
   });
 }
 
@@ -62,7 +75,7 @@ String contractHeaderValue(Uint8List contractSha) {
   try {
     return rust_cose.coseContractHeaderValue(contractSha: contractSha);
   } on rust_error.FlutterCoseError catch (error) {
-    throw _exception(error);
+    throw coseException(error);
   }
 }
 
@@ -88,7 +101,7 @@ final class _NativeEnvelope implements ClientEnvelope {
       _guard<Uint8List>(
         () => _handle.sealRequest(
           payload: payload,
-          binding: _binding(binding),
+          binding: toRustBinding(binding),
         ),
       );
 
@@ -97,11 +110,11 @@ final class _NativeEnvelope implements ClientEnvelope {
     try {
       return {
         for (final header
-            in _handle.selectorHeaders(binding: _binding(binding)))
+            in _handle.selectorHeaders(binding: toRustBinding(binding)))
           header.name: header.value,
       };
     } on rust_error.FlutterCoseError catch (error) {
-      throw _exception(error);
+      throw coseException(error);
     }
   }
 
@@ -116,7 +129,7 @@ final class _NativeEnvelope implements ClientEnvelope {
       _guard<Opened>(() async {
         final opened = await _handle.openResponse(
           body: body,
-          binding: _binding(binding),
+          binding: toRustBinding(binding),
           sealedRequest: sealedRequest,
           status: status,
           responsePayloadType: responsePayloadType,
@@ -125,56 +138,17 @@ final class _NativeEnvelope implements ClientEnvelope {
           payload: opened.payload,
           payloadType: opened.payloadType,
           kid: opened.kid,
-          alg: _algFrom(opened.alg),
+          alg: fromRustAlg(opened.alg),
           thumbprint: Uint8List.fromList(opened.thumbprint),
         );
       });
 }
-
-rust_types.FlutterCallBinding _binding(CallBinding binding) =>
-    rust_types.FlutterCallBinding(
-      method: binding.method,
-      route: binding.route,
-      pathParams: binding.pathParams,
-      query: binding.query,
-      contractSha: binding.contractSha,
-      idempotencyKey: binding.idempotencyKey,
-      ifMatch: binding.ifMatch,
-      payloadType: binding.payloadType,
-      payloadAccept: binding.payloadAccept,
-    );
-
-rust_types.FlutterCoseAlg _alg(CoseAlg alg) => switch (alg) {
-      CoseAlg.ed25519 => rust_types.FlutterCoseAlg.ed25519,
-      CoseAlg.esp256 => rust_types.FlutterCoseAlg.esp256,
-      CoseAlg.hmac256x64 => rust_types.FlutterCoseAlg.hmac25664,
-      CoseAlg.hmac256x256 => rust_types.FlutterCoseAlg.hmac256256,
-    };
-
-CoseAlg _algFrom(rust_types.FlutterCoseAlg alg) => switch (alg) {
-      rust_types.FlutterCoseAlg.ed25519 => CoseAlg.ed25519,
-      rust_types.FlutterCoseAlg.esp256 => CoseAlg.esp256,
-      rust_types.FlutterCoseAlg.hmac25664 => CoseAlg.hmac256x64,
-      rust_types.FlutterCoseAlg.hmac256256 => CoseAlg.hmac256x256,
-    };
 
 /// Runs [body], and turns the bridge's error into a [CoseException].
 Future<T> _guard<T>(FutureOr<T> Function() body) async {
   try {
     return await body();
   } on rust_error.FlutterCoseError catch (error) {
-    throw _exception(error);
+    throw coseException(error);
   }
 }
-
-CoseException _exception(rust_error.FlutterCoseError error) =>
-    switch (error.kind) {
-      rust_error.FlutterCoseErrorKind.rejected => const CoseRejected(),
-      rust_error.FlutterCoseErrorKind.misuse => CoseMisuse(error.message),
-      rust_error.FlutterCoseErrorKind.signerCancelled =>
-        const CoseSignerCancelled(),
-      rust_error.FlutterCoseErrorKind.signerTimedOut =>
-        const CoseSignerTimedOut(),
-      rust_error.FlutterCoseErrorKind.signerFailed =>
-        CoseSignerFailed(error.message),
-    };

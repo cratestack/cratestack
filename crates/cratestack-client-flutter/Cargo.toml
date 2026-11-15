@@ -69,7 +69,8 @@ frb-glue = ["dep:flutter_rust_bridge", "cose"]
 # default so a default build stays free of `cratestack-cose`'s crypto
 # (CI's "COSE crates absent" step); `frb-glue` implies it, because the
 # vendored `cratestack_cbor` library is built from that feature and must
-# carry the glue Dart calls.
+# carry the glue Dart calls. It also carries the keystore callback signer
+# (`esp256_external`, cratestack#1151); that adds no dependency.
 cose = ["dep:cratestack-cose", "dep:bytes", "dep:zeroize"]
 # The Flutter bridge surface exposes `FlutterRuntimeCodec::Json` as a
 # selectable transport, so the JSON codec has to be linked in or

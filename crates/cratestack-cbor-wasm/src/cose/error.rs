@@ -12,6 +12,15 @@ pub(super) const REJECTED: &str = "rejected";
 /// depends on local state only, never on the received bytes.
 pub(super) const MISUSE: &str = "misuse";
 
+/// `code` when the keystore's prompt was dismissed (Dart's
+/// `CoseSignerCancelled`). Only the Dart web backend's callback produces it;
+/// the message is empty.
+pub(super) const SIGNER_CANCELLED: &str = "signer_cancelled";
+/// `code` when the keystore did not answer in time.
+pub(super) const SIGNER_TIMED_OUT: &str = "signer_timed_out";
+/// `code` when the keystore failed; the message is the callback's.
+pub(super) const SIGNER_FAILED: &str = "signer_failed";
+
 /// The one mapping from the Rust errors, so no call site decides what a
 /// caller sees.
 pub(super) fn from_error(error: CratestackError) -> JsValue {
@@ -29,7 +38,7 @@ pub(super) fn misuse(message: &str) -> JsValue {
     object(MISUSE, message)
 }
 
-fn object(code: &str, message: &str) -> JsValue {
+pub(super) fn object(code: &str, message: &str) -> JsValue {
     let error = Object::new();
     // Setting a property on a fresh plain object cannot fail.
     let _ = Reflect::set(&error, &"code".into(), &code.into());

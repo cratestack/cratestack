@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+### Keystore callback signer for the Dart COSE client; SPKI P-256 keys (cratestack#1151)
+
+Additive. Closes the keystore half of #1151: `package:cratestack_cbor/cose.dart` gains `ExternalSigner.esp256(publicKey:, sign:, timeout:)` (see the `cratestack_cbor` CHANGELOG), so a P-256 key in the Android Keystore, the iOS Secure Enclave or WebCrypto can sign a `COSE_Sign1` request without leaving it.
+
+- **`cratestack-cose`.** `CoseVerifyKey::p256_spki(der)` and `CoseVerifyKey::p256_public(bytes)` (a SEC1 point, uncompressed or compressed, or a `SubjectPublicKeyInfo`). The SPKI is parsed strictly, in Rust: algorithm id-ecPublicKey, curve prime256v1, an uncompressed on-curve point, definite minimal DER, nothing after it; anything else is `Validation`. `ExternalSigner::esp256` is unchanged (SEC1 only).
+- **`cratestack-client-flutter` (`cose`).** `FlutterClientEnvelope::esp256_external(public_key, sign, ..)`, with the callback a Dart function returning a `FlutterSignOutcome` value (a throw would panic the glue). A per-call slot carries the cancelled, timed out and failed kinds out of the seal, because `cratestack-cose` wraps signer errors as an opaque `Internal`; they reach Dart as `FlutterCoseErrorKind::SignerCancelled`/`SignerTimedOut`/`SignerFailed` (previously nothing produced them). DER or raw signatures, low-`s` and verify-before-send stay in `ExternalSigner`. The default build of the crate stays free of `cratestack-cose`.
+- **`cratestack-cbor-wasm` (`cose`).** The callback of `ClientEnvelope.external` may resolve to `{ outcome: "cancelled" | "timedOut" | "failed", message? }` instead of bytes; the seal rejects with `signer_cancelled`, `signer_timed_out` or `signer_failed`. Backward compatible: a callback that returns bytes, throws, or resolves to anything else behaves as before. `publicKey` for `esp256` also accepts a P-256 SPKI. Asymmetry: the signer key accepts SPKI, but ESP256 server keys (here, in `cratestack-client-flutter` and in the Dart `CoseServerKey.p256Sec1`) remain SEC1 only. `@cratestack/cbor-web` and `-node` do not expose the new codes yet (follow-up); the codec-only artifact is unchanged.
+- **Example server.** `cose_roundtrip_server --mode sign1` also trusts the published `p256` test key, for the Dart live ESP256 round trip.
+- **CI.** The frb-glue job and the release gate also assert `FlutterSignOutcome`, `esp256External` and the wasm `ClientEnvelope.external` are present. `cbor-verify-package` runs the new Dart tests (the four ESP256 vectors, the outcome kinds, the live round trip) and the wasm outcome tests.
+
+**Transport parity.** No REST or RPC request surface changes: this is the client's signing path, identical on both. MCP is exempt (ADR 0002 D5).
+
 ## 0.19.7 (2026-11-14)
 
 ### `@device_auth` procedure marker; `generate-dart --preset fespalier` emits a `DeviceAuthServer` (cratestack#1303)

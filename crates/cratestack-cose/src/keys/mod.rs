@@ -7,6 +7,7 @@ mod hmac;
 mod key_provider;
 mod registry_resolver;
 mod signers;
+mod spki;
 mod static_resolver;
 mod traits;
 mod verify;

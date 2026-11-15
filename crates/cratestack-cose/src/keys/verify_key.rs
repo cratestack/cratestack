@@ -66,6 +66,28 @@ impl CoseVerifyKey {
             .map_err(|_| CratestackError::Validation("invalid P-256 public key".to_owned()))
     }
 
+    /// A P-256 (`-9`) public key from a `SubjectPublicKeyInfo` (DER), the
+    /// form Android's `PublicKey.getEncoded()` returns. Parsed strictly: the
+    /// algorithm must be id-ecPublicKey, the curve prime256v1, the point
+    /// uncompressed and on the curve, and nothing may follow. The result is
+    /// the same key [`p256_sec1`](Self::p256_sec1) gives for that point.
+    /// Fails with `CratestackError::Validation` otherwise.
+    pub fn p256_spki(der: &[u8]) -> Result<Self, CratestackError> {
+        super::spki::p256_point(der)
+            .ok_or_else(|| CratestackError::Validation("invalid P-256 public key".to_owned()))
+            .and_then(Self::p256_sec1)
+    }
+
+    /// A P-256 public key in either spelling: a `SubjectPublicKeyInfo`
+    /// (it starts with the DER `SEQUENCE` tag, which no SEC1 point does) or
+    /// a SEC1 point.
+    pub fn p256_public(bytes: &[u8]) -> Result<Self, CratestackError> {
+        match bytes.first() {
+            Some(0x30) => Self::p256_spki(bytes),
+            _ => Self::p256_sec1(bytes),
+        }
+    }
+
     /// An HMAC secret for exactly `alg` ([`CoseAlg::Hmac256_64`] or
     /// [`CoseAlg::Hmac256_256`]). Fails with `CratestackError::Validation`
     /// for another algorithm or a secret below 32 bytes (see

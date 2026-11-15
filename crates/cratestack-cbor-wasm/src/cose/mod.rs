@@ -15,13 +15,17 @@
 //! may be), and the future runs on the browser's microtask queue through
 //! `future_to_promise` over a clone of the envelope, which is an `Arc`.
 //! Errors are plain `{ code, message }` objects, `code` being `"rejected"`
-//! (every failed verification, with an empty message) or `"misuse"`.
+//! (every failed verification, with an empty message) or `"misuse"`. A
+//! keystore signer whose callback resolves to a tagged outcome (the Dart
+//! package's) adds `"signer_cancelled"`, `"signer_timed_out"` and
+//! `"signer_failed"` (cratestack#1151).
 
 mod convert;
 mod envelope;
 mod error;
 mod external;
 mod opened;
+mod outcome;
 
 #[cfg(test)]
 mod tests;

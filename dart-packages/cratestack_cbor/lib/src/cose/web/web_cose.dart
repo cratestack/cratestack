@@ -11,53 +11,11 @@ import '../../web/web_cbor_codec.dart'
     show createCborCodec, isCborRuntimeInitialized;
 import '../cose_api.dart';
 import '../errors.dart';
+import '../external_signer.dart';
+import '../signers.dart';
 import '../types.dart';
-
-@JS('window.__cratestackCborWasmBridge.ClientEnvelope')
-extension type _JsEnvelope._(JSObject _) implements JSObject {
-  external static _JsEnvelope hmac(
-    String alg,
-    JSUint8Array secret,
-    JSArray<JSObject> serverKeys,
-    String audience,
-    JSAny? options,
-  );
-
-  external static _JsEnvelope ed25519Seed(
-    JSUint8Array seed,
-    JSArray<JSObject> serverKeys,
-    String audience,
-    JSAny? options,
-  );
-
-  external String get mode;
-  external String get mediaType;
-  external JSUint8Array get kid;
-
-  external JSPromise<JSUint8Array> sealRequest(
-    JSUint8Array payload,
-    JSObject binding,
-  );
-
-  external JSPromise<JSObject> openResponse(
-    JSUint8Array body,
-    JSObject binding,
-    JSUint8Array sealedRequest,
-    int status,
-    String? responsePayloadType,
-  );
-
-  external JSObject selectorHeaders(JSObject binding);
-}
-
-@JS('window.__cratestackCborWasmBridge.ClientEnvelope')
-external JSAny? get _clientEnvelopeExport;
-
-@JS('Object.keys')
-external JSArray<JSString> _keys(JSObject object);
-
-@JS('window.__cratestackCborWasmBridge.contractHeaderValue')
-external String _contractHeaderValue(JSUint8Array contractSha);
+import 'web_interop.dart';
+import 'web_mapping.dart';
 
 /// Loads the wasm module (the codec's, once), then builds the handle.
 Future<ClientEnvelope> createEnvelope({
@@ -68,19 +26,31 @@ Future<ClientEnvelope> createEnvelope({
 }) async {
   await createCborCodec();
   _requireCoseBuild();
-  final keys = [for (final key in serverKeys) _serverKey(key)].toJS;
-  final options = pin == null ? null : _options(pin);
+  final keys = [for (final key in serverKeys) jsServerKey(key)].toJS;
+  final options = pin == null ? null : jsOptions(pin);
   try {
     final handle = switch (signer) {
-      HmacSigner() => _JsEnvelope.hmac(
-          _alg(signer.alg),
+      HmacSigner() => JsEnvelope.hmac(
+          jsAlg(signer.alg),
           signer.secret.toJS,
           keys,
           audience,
           options,
         ),
-      Ed25519Signer() => _JsEnvelope.ed25519Seed(
+      Ed25519Signer() => JsEnvelope.ed25519Seed(
           signer.seed.toJS,
+          keys,
+          audience,
+          options,
+        ),
+      ExternalSigner() => JsEnvelope.externalSigner(
+          'esp256',
+          signer.publicKey.toJS,
+          // Resolves to a value for every end (never rejects), so the wasm
+          // side reads one shape on both backends.
+          ((JSUint8Array tbs) =>
+                  invokeSigner(signer, tbs.toDart).then(jsOutcome).toJS)
+              .toJS,
           keys,
           audience,
           options,
@@ -88,7 +58,7 @@ Future<ClientEnvelope> createEnvelope({
     };
     return _WebEnvelope(handle);
   } catch (error) {
-    throw _exception(error);
+    throw coseException(error);
   }
 }
 
@@ -96,7 +66,7 @@ Future<ClientEnvelope> createEnvelope({
 /// copy hosted by the app): then `ClientEnvelope` is not exported at all, and
 /// calling into it would be an obscure `undefined` error.
 void _requireCoseBuild() {
-  if (_clientEnvelopeExport.isUndefinedOrNull) {
+  if (clientEnvelopeExport.isUndefinedOrNull) {
     throw const CoseMisuse(
       'the loaded cratestack-cbor-wasm was built without the `cose` feature '
       '(no ClientEnvelope export): use the wasm vendored by cratestack_cbor, '
@@ -114,16 +84,16 @@ String contractHeaderValue(Uint8List contractSha) {
   }
   _requireCoseBuild();
   try {
-    return _contractHeaderValue(Uint8List.fromList(contractSha).toJS);
+    return jsContractHeaderValue(Uint8List.fromList(contractSha).toJS);
   } catch (error) {
-    throw _exception(error);
+    throw coseException(error);
   }
 }
 
 final class _WebEnvelope implements ClientEnvelope {
   _WebEnvelope(this._handle);
 
-  final _JsEnvelope _handle;
+  final JsEnvelope _handle;
 
   @override
   CoseMode get mode => _handle.mode == 'sign1' ? CoseMode.sign1 : CoseMode.mac0;
@@ -138,23 +108,23 @@ final class _WebEnvelope implements ClientEnvelope {
   Future<Uint8List> sealRequest(Uint8List payload, CallBinding binding) async {
     try {
       final sealed =
-          await _handle.sealRequest(payload.toJS, _binding(binding)).toDart;
+          await _handle.sealRequest(payload.toJS, jsBinding(binding)).toDart;
       return sealed.toDart;
     } catch (error) {
-      throw _exception(error);
+      throw coseException(error);
     }
   }
 
   @override
   Map<String, String> selectorHeaders(CallBinding binding) {
     try {
-      final headers = _handle.selectorHeaders(_binding(binding));
+      final headers = _handle.selectorHeaders(jsBinding(binding));
       return {
-        for (final name in _keys(headers).toDart)
+        for (final name in jsKeys(headers).toDart)
           name.toDart: (headers.getProperty(name) as JSString).toDart,
       };
     } catch (error) {
-      throw _exception(error);
+      throw coseException(error);
     }
   }
 
@@ -170,7 +140,7 @@ final class _WebEnvelope implements ClientEnvelope {
       final opened = await _handle
           .openResponse(
             body.toJS,
-            _binding(binding),
+            jsBinding(binding),
             sealedRequest.toJS,
             status,
             responsePayloadType,
@@ -181,72 +151,12 @@ final class _WebEnvelope implements ClientEnvelope {
         payloadType:
             (opened.getProperty('payloadType'.toJS) as JSString).toDart,
         kid: (opened.getProperty('kid'.toJS) as JSUint8Array).toDart,
-        alg: _algFrom((opened.getProperty('alg'.toJS) as JSString).toDart),
+        alg: algFromJs((opened.getProperty('alg'.toJS) as JSString).toDart),
         thumbprint:
             (opened.getProperty('thumbprint'.toJS) as JSUint8Array).toDart,
       );
     } catch (error) {
-      throw _exception(error);
+      throw coseException(error);
     }
   }
-}
-
-JSObject _object(Map<String, JSAny?> fields) {
-  final object = JSObject();
-  fields.forEach((name, value) => object.setProperty(name.toJS, value));
-  return object;
-}
-
-JSObject _serverKey(CoseServerKey key) =>
-    _object({'alg': _alg(key.alg).toJS, 'bytes': key.bytes.toJS});
-
-JSObject _options(SealPin pin) =>
-    _object({'fixedIat': pin.iat.toJS, 'fixedCti': pin.cti.toJS});
-
-JSObject _binding(CallBinding binding) => _object({
-      'method': binding.method.toJS,
-      'route': binding.route.toJS,
-      'pathParams': [for (final param in binding.pathParams) param.toJS].toJS,
-      'query': binding.query?.toJS,
-      'contractSha': binding.contractSha.toJS,
-      'idempotencyKey': binding.idempotencyKey?.toJS,
-      'ifMatch': binding.ifMatch?.toJS,
-      'payloadType': binding.payloadType?.toJS,
-      'payloadAccept': binding.payloadAccept == null
-          ? null
-          : [for (final type in binding.payloadAccept!) type.toJS].toJS,
-    });
-
-String _alg(CoseAlg alg) => switch (alg) {
-      CoseAlg.ed25519 => 'ed25519',
-      CoseAlg.esp256 => 'esp256',
-      CoseAlg.hmac256x64 => 'hmac256-64',
-      CoseAlg.hmac256x256 => 'hmac256-256',
-    };
-
-CoseAlg _algFrom(String alg) => switch (alg) {
-      'ed25519' => CoseAlg.ed25519,
-      'esp256' => CoseAlg.esp256,
-      'hmac256-64' => CoseAlg.hmac256x64,
-      _ => CoseAlg.hmac256x256,
-    };
-
-/// The bridge throws and rejects with a plain `{ code, message }` object.
-CoseException _exception(Object error) {
-  if (error is CoseException) return error;
-  // A JS object thrown or rejected by the bridge reaches Dart as itself in
-  // dart2js and dart2wasm alike (both run in the test suite).
-  // ignore: invalid_runtime_check_with_js_interop_types
-  if (error is JSObject) {
-    final code = error.getProperty('code'.toJS);
-    final message = error.getProperty('message'.toJS);
-    if (code.isA<JSString>()) {
-      final text = message.isA<JSString>() ? (message as JSString).toDart : '';
-      return switch ((code as JSString).toDart) {
-        'rejected' => const CoseRejected(),
-        _ => CoseMisuse(text),
-      };
-    }
-  }
-  return CoseMisuse('unexpected error from the web backend: $error');
 }

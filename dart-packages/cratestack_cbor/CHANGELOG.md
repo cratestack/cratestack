@@ -1,5 +1,31 @@
 ## Unreleased
 
+- Keystore callback signer for the COSE transport (cratestack#1151):
+  `ExternalSigner.esp256(publicKey:, sign:, timeout:)` signs a `COSE_Sign1`
+  (ESP256) with a P-256 key that never enters the process (Android Keystore,
+  iOS Secure Enclave, WebCrypto). `sign` gets the complete to-be-signed bytes
+  and returns a `SignOutcome` (`signature`, `cancelled`, `timedOut` or
+  `failed(message)`); DER or raw `r || s` are accepted, and low-`s`
+  normalisation and a verify-before-send check are done in Rust. `publicKey` is
+  a SEC1 point (uncompressed or compressed) or a P-256
+  `SubjectPublicKeyInfo` (the kid is derived from it); server keys
+  (`CoseServerKey.p256Sec1`) remain SEC1 only.
+  `timeout` is required and has no default; exceeding it is
+  `CoseSignerTimedOut` and does not cancel the platform prompt. The three
+  signer exceptions `CoseSignerCancelled`, `CoseSignerTimedOut` and
+  `CoseSignerFailed`, reserved since 0.15.4, are now produced; a signature
+  that is not a valid one by the key is `CoseMisuse`. Native and web.
+  - **Sealed class.** `CoseSigner` gains a third subtype, so an exhaustive
+    `switch` over it in your code needs an `ExternalSigner()` arm. Nothing else
+    changes for existing signers.
+  - **Regenerate the glue.** The flutter_rust_bridge glue gains
+    `FlutterSignOutcome` and `FlutterClientEnvelope.esp256External`; the
+    vendored wasm gains tagged signer outcomes on `ClientEnvelope.external`.
+  - Tests: the four ESP256 request vectors now run through the Dart API (all
+    17 request vectors seal byte for byte), the outcome kinds, and a live round
+    trip with a software P-256 key. `pointycastle` is a **dev** dependency for
+    that one test; the library has no crypto dependency.
+
 ## 0.19.7 (2026-11-14)
 
 - No functional changes. Version kept in lockstep with the CrateStack
