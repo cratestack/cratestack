@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.19.8 (2026-11-15)
+
 ### Keystore callback signer for the Dart COSE client; SPKI P-256 keys (cratestack#1151)
 
 Additive. Closes the keystore half of #1151: `package:cratestack_cbor/cose.dart` gains `ExternalSigner.esp256(publicKey:, sign:, timeout:)` (see the `cratestack_cbor` CHANGELOG), so a P-256 key in the Android Keystore, the iOS Secure Enclave or WebCrypto can sign a `COSE_Sign1` request without leaving it.
