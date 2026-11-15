@@ -88,6 +88,7 @@ pub(super) const MODEL_FIELD_ATTRIBUTES: &[Known] = &[
     ("@range", Arguments::Required),
     ("@regex", Arguments::Required),
     ("@rename", Arguments::Required),
+    ("@map", Arguments::Required),
 ];
 
 pub(super) const VIEW_FIELD_ATTRIBUTES: &[Known] = &[
@@ -113,6 +114,7 @@ pub(super) const MIXIN_FIELD_ATTRIBUTES: &[Known] = &[
     ("@range", Arguments::Required),
     ("@regex", Arguments::Required),
     ("@rename", Arguments::Required),
+    ("@map", Arguments::Required),
 ];
 
 pub(super) const TYPE_FIELD_ATTRIBUTES: &[Known] = &[

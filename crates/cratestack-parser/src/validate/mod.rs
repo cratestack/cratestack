@@ -47,6 +47,8 @@ mod route_collisions;
 mod server_only_placement;
 mod snake_case_collisions;
 mod spatial_type;
+mod storage_map;
+mod storage_map_collisions;
 mod stream_attribute;
 mod subscriptions;
 mod type_field_attributes;

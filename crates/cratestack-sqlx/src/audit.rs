@@ -86,6 +86,16 @@ pub(crate) fn actor_from_context(ctx: &CratestackContext) -> AuditActor {
     }
 }
 
+fn field_names<M, PK>(
+    descriptor: &'static ModelDescriptor<M, PK>,
+    columns: &'static [&'static str],
+) -> Vec<&'static str> {
+    columns
+        .iter()
+        .map(|column| descriptor.rust_name_or(column))
+        .collect()
+}
+
 /// Build an `AuditEvent` for a mutation just performed in a tx. The
 /// caller passes the JSON snapshot(s) on hand (`before` for
 /// updates/deletes, `after` for creates/updates) so this helper stays
@@ -100,24 +110,19 @@ pub(crate) fn build_audit_event<M, PK>(
     let primary_key = after
         .as_ref()
         .or(before.as_ref())
-        .map(|snapshot| primary_key_from_snapshot(snapshot, descriptor.primary_key))
+        .map(|snapshot| {
+            primary_key_from_snapshot(snapshot, descriptor.rust_name_or(descriptor.primary_key))
+        })
         .unwrap_or(serde_json::Value::Null);
-    let before = before.map(|mut snapshot| {
-        redact_snapshot(
-            &mut snapshot,
-            descriptor.pii_columns,
-            descriptor.sensitive_columns,
-        );
+    // The snapshot is keyed by field name; the descriptor holds SQL names.
+    let pii = field_names(descriptor, descriptor.pii_columns);
+    let sensitive = field_names(descriptor, descriptor.sensitive_columns);
+    let redact = |mut snapshot: serde_json::Value| {
+        redact_snapshot(&mut snapshot, &pii, &sensitive);
         snapshot
-    });
-    let after = after.map(|mut snapshot| {
-        redact_snapshot(
-            &mut snapshot,
-            descriptor.pii_columns,
-            descriptor.sensitive_columns,
-        );
-        snapshot
-    });
+    };
+    let before = before.map(redact);
+    let after = after.map(redact);
     AuditEvent {
         event_id: uuid::Uuid::new_v4(),
         // descriptor.schema_name historically holds the Rust ident;

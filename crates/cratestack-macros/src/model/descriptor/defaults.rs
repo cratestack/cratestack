@@ -5,7 +5,7 @@
 use cratestack_core::{Model, TypeArity, TypeDecl};
 use quote::quote;
 
-use crate::shared::{auth_default_field, model_name_set, scalar_model_fields, to_snake_case};
+use crate::shared::{auth_default_field, model_name_set, scalar_model_fields};
 
 pub(super) fn collect_create_defaults(
     model: &Model,
@@ -17,7 +17,7 @@ pub(super) fn collect_create_defaults(
         .into_iter()
         .filter_map(|field| {
             let auth_field = auth_default_field(field)?;
-            let column = to_snake_case(&field.name);
+            let column = field.sql_column_name();
             let auth_field_decl =
                 crate::policy::find_auth_field(auth, types, auth_field).map_err(|_| {
                     format!(

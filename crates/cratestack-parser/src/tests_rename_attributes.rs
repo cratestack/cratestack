@@ -4,6 +4,10 @@
 
 use crate::parse_schema;
 
+// `@@map` / `@map` (cratestack#1375): the sibling markers, tested alongside.
+#[path = "tests_storage_map.rs"]
+mod storage_map;
+
 const HEAD: &str =
     "datasource db {\n  provider = \"postgresql\"\n  url = env(\"DATABASE_URL\")\n}\n\n";
 

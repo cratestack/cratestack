@@ -79,4 +79,74 @@ pub enum MigrateError {
         "enum `{enum_name}`: {reason}. Ordinals are permanent: stored rows keep the meaning their number had when written."
     )]
     EnumOrdinalHistory { enum_name: String, reason: String },
+
+    /// A model's table is stored under another name (its `@@map` was added,
+    /// changed or removed) without a `@@rename`. Matching is by name, so this
+    /// would otherwise drop the table and create an empty one (cratestack#1375).
+    #[error(
+        "model `{model}`: its table changed from `{from}` to `{to}` (`@@map`), and a changed \
+         name would drop `{from}` and create an empty `{to}`. To rename the table, add \
+         `@@rename(from = \"{from}\")` to the model; to keep it, restore the old `@@map`. To \
+         adopt a database that already has `{to}`, run `cratestack migrate baseline` after \
+         writing the `@@map`."
+    )]
+    TableStorageNameChanged {
+        model: String,
+        from: String,
+        to: String,
+    },
+
+    /// A field's column is stored under another name (its `@map` was added,
+    /// changed or removed) without a `@rename`; same reasoning as
+    /// [`Self::TableStorageNameChanged`].
+    #[error(
+        "table `{table}` (model `{model}`): field `{field}` is stored in column `{to}`, not \
+         `{from}` (`@map`), and a changed name would drop `{from}` and add an empty `{to}`. To \
+         rename the column, add `@rename(from = \"{from}\")` to `{field}`; to keep it, restore \
+         the old `@map`. To adopt a database that already has `{to}`, run `cratestack migrate \
+         baseline` after writing the `@map`."
+    )]
+    ColumnStorageNameChanged {
+        table: String,
+        model: String,
+        field: String,
+        from: String,
+        to: String,
+    },
+
+    /// A mapped model's table is new, while a table the previous snapshot
+    /// holds without saying which model it stores is gone. The snapshot came
+    /// from `migrate baseline` (or predates `model`), so the diff cannot tell
+    /// a changed `@@map` from an unrelated drop and create (cratestack#1375).
+    #[error(
+        "model `{model}` is stored in table `{to}` (`@@map`), which the previous snapshot does \
+         not have, and a table the snapshot has is gone from the schema. That snapshot does \
+         not record which model each table stores, so this cannot be told from a `@@map` \
+         change, and a changed name would drop the old table and create an empty `{to}`. If it \
+         is one of the tables that is gone, add {renames} to the model; to keep it, \
+         restore the old `@@map`; to drop and create deliberately, do it in two migrations."
+    )]
+    TableStorageNameUnrecorded {
+        model: String,
+        to: String,
+        renames: String,
+    },
+
+    /// The column counterpart of [`Self::TableStorageNameUnrecorded`].
+    #[error(
+        "table `{table}` (model `{model}`): field `{field}` is stored in column `{to}` (`@map`), \
+         which the previous snapshot does not have, and a column the snapshot has is gone from \
+         the schema. That snapshot does not record which field each column stores, so this \
+         cannot be told from a `@map` change, and a changed name would drop the old column and \
+         add an empty `{to}`. If it is a column that is gone, add {renames} to \
+         `{field}`; to keep it, restore the old `@map`; to drop and add deliberately, do it in \
+         two migrations."
+    )]
+    ColumnStorageNameUnrecorded {
+        table: String,
+        model: String,
+        field: String,
+        to: String,
+        renames: String,
+    },
 }

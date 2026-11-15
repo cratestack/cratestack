@@ -8,7 +8,7 @@ use cratestack_core::{Field, Model, TypeArity};
 use quote::quote;
 
 use super::row_pg_enum::pg_enum_decode_expr;
-use crate::shared::{ident, scalar_model_fields, to_snake_case};
+use crate::shared::{ident, scalar_model_fields};
 
 /// Emit `impl sqlx::FromRow<'_, sqlx::postgres::PgRow> for Model` only.
 /// **Server-side composer use only — must not appear in embedded output.**
@@ -54,14 +54,14 @@ pub(crate) fn generate_pg_from_row_impl(
 /// Partial-decode variant of [`row_field_tokens`]. Emits the same
 /// per-field decode expression but gated on whether the column was
 /// requested via `.select(...)`. The `selected` slice carries the
-/// SQL column names (snake_case) so we match against
-/// `to_snake_case(&field.name)` rather than the Rust-side field name.
+/// SQL column names so we match against `Field::sql_column_name` (the `@map`
+/// name, else snake_case) rather than the Rust-side field name.
 fn partial_row_field_tokens(
     field: &Field,
     enum_names: &BTreeSet<&str>,
 ) -> proc_macro2::TokenStream {
     let field_ident = ident(&field.name);
-    let sql_name = to_snake_case(&field.name);
+    let sql_name = field.sql_column_name();
     let decode_expr = row_field_decode_expr(field, enum_names);
     quote! {
         #field_ident: if selected.iter().any(|c| *c == #sql_name) {

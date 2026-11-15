@@ -68,6 +68,8 @@ mod tests {
             indexes: Vec::new(),
             checks: Vec::new(),
             foreign_keys: Vec::new(),
+            model: None,
+            field_columns: Default::default(),
         }
     }
 

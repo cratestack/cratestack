@@ -31,6 +31,7 @@ mod rename_error;
 mod semantic_tokens;
 mod server;
 mod state;
+mod storage_completion;
 mod symbol_build;
 mod symbol_target;
 mod text;
@@ -48,6 +49,8 @@ mod tests_attribute_run_diagnostics;
 mod tests_block_diagnostics;
 #[cfg(test)]
 mod tests_completion;
+#[cfg(test)]
+mod tests_completion_map;
 #[cfg(test)]
 mod tests_device_auth;
 #[cfg(test)]

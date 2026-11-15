@@ -63,7 +63,7 @@ fn generate_field_module_with_kind(
     let field_fns = scalar_model_fields(model, model_names).into_iter().map(|field| {
         let function_ident = ident(&field.name);
         let field_type = rust_type_tokens(&field.ty);
-        let column = to_snake_case(&field.name);
+        let column = field.sql_column_name();
         quote! {
             #[allow(non_snake_case)]
             pub fn #function_ident() -> ::cratestack::FieldRef<super::models::#model_ident, #field_type> {

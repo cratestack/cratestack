@@ -5,7 +5,7 @@ use std::collections::BTreeSet;
 use cratestack_core::{Field, TypeArity, TypeRef};
 use quote::quote;
 
-use super::{ident, to_snake_case};
+use super::ident;
 
 #[cfg(test)]
 mod tests;
@@ -15,7 +15,7 @@ pub(crate) fn create_sql_value(
     enum_names: &BTreeSet<&str>,
 ) -> proc_macro2::TokenStream {
     let field_ident = ident(&field.name);
-    let column = to_snake_case(&field.name);
+    let column = field.sql_column_name();
     let value = sql_value_tokens(quote! { self.#field_ident.clone() }, &field.ty, enum_names);
 
     quote! {
@@ -31,7 +31,7 @@ pub(crate) fn update_sql_value(
     enum_names: &BTreeSet<&str>,
 ) -> proc_macro2::TokenStream {
     let field_ident = ident(&field.name);
-    let column = to_snake_case(&field.name);
+    let column = field.sql_column_name();
     let some_value = sql_value_tokens(quote! { value }, &field.ty, enum_names);
 
     quote! {

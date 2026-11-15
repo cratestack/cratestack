@@ -6,7 +6,7 @@
 
 use super::{FieldHost, field_attribute_names, parse_schema};
 
-pub(crate) const UNION: [&str; 19] = [
+pub(crate) const UNION: [&str; 20] = [
     "@id",
     "@unique",
     "@default",
@@ -25,6 +25,7 @@ pub(crate) const UNION: [&str; 19] = [
     "@range",
     "@regex",
     "@rename",
+    "@map",
     "@from",
 ];
 
@@ -115,6 +116,9 @@ fn a_name_of_another_kind_is_refused() {
         (FieldHost::View, "@rename"),
         (FieldHost::Type, "@rename"),
         (FieldHost::Auth, "@rename"),
+        (FieldHost::View, "@map"),
+        (FieldHost::Type, "@map"),
+        (FieldHost::Auth, "@map"),
     ];
     for host in FieldHost::ALL {
         for name in UNION {
@@ -127,6 +131,7 @@ fn a_name_of_another_kind_is_refused() {
                 "@length" | "@range" => format!("{name}(min: 1)"),
                 "@regex" => "@regex(\"a\")".to_owned(),
                 "@rename" => "@rename(from = \"old\")".to_owned(),
+                "@map" => "@map(\"x\")".to_owned(),
                 "@from" => "@from(A.id)".to_owned(),
                 other => other.to_owned(),
             };

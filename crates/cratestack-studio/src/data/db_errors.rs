@@ -9,7 +9,6 @@
 //! as `DATABASE_ERROR`.
 
 use cratestack_core::Model;
-use cratestack_migrate::column_name;
 
 use crate::validators::{FieldError, ValidationCode};
 
@@ -162,7 +161,7 @@ fn field_for_column(model: &Model, column: &str) -> Option<String> {
     model
         .fields
         .iter()
-        .find(|f| column_name(&f.name) == column)
+        .find(|f| f.sql_column_name() == column)
         .map(|f| f.name.clone())
 }
 

@@ -24,6 +24,7 @@ fn every_listed_name_is_accepted_on_its_kind() {
                 "@range" => ("Int", "@range(min: 0, max: 5)"),
                 "@regex" => ("String", "@regex(\"^a$\")"),
                 "@rename" => ("String", "@rename(from = \"old\")"),
+                "@map" => ("String", "@map(\"stored_name\")"),
                 "@from" => ("Int", "@from(A.id)"),
                 other => ("String", other),
             };
@@ -91,7 +92,12 @@ fn the_lists_agree_with_the_placement_checks() {
         .filter(|host| names(*host).contains("@rename"))
         .collect();
     assert_eq!(rename, [FieldHost::Model, FieldHost::Mixin]);
-    // The union is the 19 names the readers use; a new one is a decision.
+    let map: Vec<_> = FieldHost::ALL
+        .into_iter()
+        .filter(|host| names(*host).contains("@map"))
+        .collect();
+    assert_eq!(map, [FieldHost::Model, FieldHost::Mixin]);
+    // The union is the names the readers use; a new one is a decision.
     let union: BTreeSet<_> = FieldHost::ALL.into_iter().flat_map(names).collect();
     assert_eq!(union, BTreeSet::from(UNION));
     assert!(names(FieldHost::Auth).is_empty());

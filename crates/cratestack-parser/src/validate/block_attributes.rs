@@ -31,6 +31,7 @@
 //! | model | `@@index` | required (same) | `cratestack-core/src/schema/index_attribute.rs:66`, `cratestack-migrate/src/convert/indexes.rs:36` |
 //! | model | `@@internal` | required | `cratestack-core/src/schema/internal_attribute.rs:138` |
 //! | model | `@@rename` | required, exactly `from = "<old_table>"`, at most once (`super::rename_attributes`) | `cratestack-migrate/src/convert/renames.rs:12` (migrations only), through `cratestack-core/src/schema/rename_attribute.rs` |
+//! | model | `@@map` | required, one double-quoted SQL table name, at most once (`super::storage_map`) | `cratestack-core/src/schema/storage_names.rs` (`Model::sql_table_name`) |
 //! | view | `@@server_sql` | required | `cratestack-core/src/schema/view.rs:56` |
 //! | view | `@@embedded_sql` | required | `cratestack-core/src/schema/view.rs:65` |
 //! | view | `@@sql` | required | `cratestack-core/src/schema/view.rs:57` |
@@ -69,6 +70,7 @@ const MODEL_BLOCK_ATTRIBUTES: &[Known] = &[
     ("@@index", Arguments::Required),
     ("@@internal", Arguments::Required),
     ("@@rename", Arguments::Required),
+    ("@@map", Arguments::Required),
 ];
 
 const VIEW_BLOCK_ATTRIBUTES: &[Known] = &[

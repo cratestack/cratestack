@@ -1,0 +1,26 @@
+// RPC twin of storage_map.cstack (cratestack#1375): the op ids stay
+// `model.MapRpcBank.*` whatever the table is called.
+transport rpc
+
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+auth Operator {
+  id Int
+}
+
+model MapRpcBank {
+  id Int @id @map("bank_id")
+  code String @unique @map("bank_code")
+  displayName String @map("display_name")
+  region String
+
+  @@map("map_rpc_bank")
+  @@paged
+  @@allow("read", auth() != null)
+  @@allow("create", auth() != null)
+  @@allow("update", auth() != null)
+  @@allow("delete", auth() != null)
+}

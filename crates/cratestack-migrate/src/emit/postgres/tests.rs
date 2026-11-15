@@ -19,6 +19,7 @@ mod primary_key;
 mod relation_actions;
 mod relations;
 mod renames;
+mod storage_map;
 mod uniques;
 mod views;
 

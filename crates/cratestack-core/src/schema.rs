@@ -28,6 +28,8 @@ pub mod rename_attribute;
 pub mod selection;
 pub mod spatial;
 mod sql_body;
+pub mod sql_reserved_words;
+pub mod storage_names;
 pub mod topic;
 mod type_ref_cursor;
 pub mod view;
@@ -67,6 +69,10 @@ pub use query::{QUERY_SQL_ATTRIBUTE, Query, scan_sql_placeholders};
 pub use rename_attribute::{RENAME_ARGUMENT_FORM, parse_rename_from, rename_marker_from};
 pub use selection::SelectionQuery;
 pub use spatial::{canonical_geometry_subtype, geometry_subtype_names};
+pub use storage_names::{
+    MAP_ARGUMENT_FORM, RESERVED_TABLE_PREFIXES, SQL_IDENTIFIER_MAX_BYTES, StorageNameKind,
+    map_marker_name, parse_map_name, validate_sql_identifier,
+};
 pub use topic::Topic;
 pub use view::{View, ViewSource};
 

@@ -107,6 +107,8 @@ pub async fn introspect(pool: &PgPool) -> Result<IntrospectionReport, Introspect
             indexes,
             checks,
             foreign_keys: Vec::new(),
+            model: None,
+            field_columns: Default::default(),
         });
     }
 

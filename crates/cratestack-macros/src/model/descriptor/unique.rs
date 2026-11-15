@@ -17,11 +17,16 @@ pub(super) fn unique_column_names(model: &Model) -> Vec<String> {
         cratestack_core::parse_composite_unique_attribute(&attribute.raw).ok()
     });
     let mut names: Vec<String> = field_level
-        .map(|field| to_snake_case(&field.name))
+        .map(|field| field.sql_column_name())
         .chain(
             composite
                 .flat_map(|parsed| parsed.fields)
-                .map(|field| to_snake_case(&field)),
+                // A composite names fields; the parser checked they exist.
+                .map(|field| {
+                    model
+                        .sql_column_of(&field)
+                        .unwrap_or_else(|| to_snake_case(&field))
+                }),
         )
         .collect();
     names.sort();

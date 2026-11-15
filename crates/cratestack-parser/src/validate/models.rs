@@ -56,6 +56,9 @@ pub(super) fn validate_models_collecting(
 
     record(errors, || validate_model_name_collisions(&schema.models));
     record(errors, || validate_model_route_collisions(&schema.models));
+    record(errors, || {
+        super::storage_map_collisions::validate_table_name_collisions(schema)
+    });
 
     for model in &schema.models {
         record(errors, || {
@@ -65,6 +68,8 @@ pub(super) fn validate_models_collecting(
                 &format!("model `{}`", model.name),
             )?;
             validate_field_column_collisions(&model.fields, "model", &model.name)?;
+            super::storage_map_collisions::validate_stored_column_collisions(model, &model_names)?;
+            super::storage_map_collisions::validate_soft_delete_column(model)?;
             validate_no_build_setter_collision(
                 model
                     .fields
@@ -160,6 +165,7 @@ pub(super) fn validate_models_collecting(
                 server_only::validate_model_field(schema, model, field, &model_names)?;
                 validate_default(schema, &model.name, field)?;
                 validate_field_attributes(FieldHost::Model, &model.name, field)?;
+                super::storage_map::validate_map_not_on_relation(&model.name, field, &model_names)?;
                 validate_db_enforce(&model.name, field)?;
                 validate_key_and_relation_attributes("model", &model.name, field)?;
                 validate_field_list_arity_support(

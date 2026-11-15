@@ -11,7 +11,6 @@ use std::sync::Arc;
 
 use axum::Json;
 use axum::extract::{Path, State};
-use cratestack_migrate::column_name;
 use serde::Serialize;
 
 use crate::api::ApiError;
@@ -89,7 +88,7 @@ pub async fn target_drift(
                 !matches!(f.ty.arity, cratestack_core::TypeArity::List)
                     && !target.schema.models.iter().any(|m| m.name == f.ty.name)
             })
-            .map(|f| column_name(&f.name))
+            .map(|f| f.sql_column_name())
             .collect();
 
         let live = target.source.inspect_columns(&name).await;

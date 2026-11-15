@@ -8,7 +8,6 @@ use cratestack_core::schema::default_markers::default_inner;
 use cratestack_core::{EnumDecl, Field, TypeArity};
 
 use crate::ir::{Column, ColumnArity, ColumnDefault, ColumnType};
-use crate::naming::column_name;
 
 pub(super) fn field_to_column(
     field: &Field,
@@ -57,7 +56,7 @@ pub(super) fn field_to_column(
     });
 
     Column {
-        name: column_name(&field.name),
+        name: field.sql_column_name(),
         ty,
         arity,
         default,

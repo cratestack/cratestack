@@ -16,7 +16,7 @@ use chrono::Utc;
 use cratestack_core::Schema;
 use cratestack_migrate::introspect::postgres::introspect;
 use cratestack_migrate::{
-    Snapshot, diff_projections, project, projections_checksum, write_snapshot,
+    Snapshot, diff_for_drift, project, projections_checksum, stamp_storage_names, write_snapshot,
 };
 use cratestack_sqlx::{Migration, apply_pending};
 use sqlx_core::pool::PoolOptions;
@@ -89,7 +89,7 @@ async fn run_baseline(
         .context("failed to introspect the live database")?;
 
     let authored = project(next_schema);
-    let ops = diff_projections(&report.projections, &authored)
+    let ops = diff_for_drift(&report.projections, &authored)
         .context("diffing the introspected database against the authored schema")?;
 
     println!("{}", drift_report::render(&ops, &report.unmapped_columns));
@@ -103,7 +103,12 @@ async fn run_baseline(
         );
     }
 
-    let snapshot = Snapshot::from_projections(report.projections.clone());
+    // The snapshot says which model and field each matching table and column
+    // stores, so a later `@@map` / `@map` change is a refusal, not a drop and
+    // create. The checksum below is of the introspected shape, unstamped.
+    let mut stamped = report.projections.clone();
+    stamp_storage_names(&mut stamped, &authored);
+    let snapshot = Snapshot::from_projections(stamped);
     write_snapshot(&snapshot, snapshot_path)
         .with_context(|| format!("writing snapshot to {}", snapshot_path.display()))?;
 

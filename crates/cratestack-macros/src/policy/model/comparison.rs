@@ -13,7 +13,6 @@ use super::predicates::{
     wrap_relation_predicate,
 };
 use super::relation_path::{RelationPolicyField, resolve_relation_policy_field};
-use crate::shared::to_snake_case;
 
 #[allow(clippy::too_many_arguments)]
 pub(super) fn parse_model_comparison(
@@ -44,7 +43,7 @@ pub(super) fn parse_model_comparison(
     }
 
     let field_decl = find_model_field(model, field)?;
-    let column = to_snake_case(field);
+    let column = field_decl.sql_column_name();
     if let Some(auth_field) = rhs.strip_prefix("auth().") {
         let auth_field = auth_field.trim();
         ensure_auth_field(auth, types, auth_field)?;
@@ -153,7 +152,7 @@ fn parse_auth_side_model_comparison(
     }
 
     if let Ok(field_decl) = find_model_field(model, rhs) {
-        let column = to_snake_case(rhs);
+        let column = field_decl.sql_column_name();
         ensure_auth_field(auth, types, auth_field)?;
         validate_auth_field_matches_model_field(auth, types, auth_field, field_decl, rhs)?;
         return Ok(if negate {

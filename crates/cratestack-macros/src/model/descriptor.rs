@@ -18,7 +18,7 @@ use crate::policy::{
     audit_model_policies, generate_denies_for_action, generate_denies_for_actions,
     generate_policies_for_action, generate_policies_for_actions,
 };
-use crate::shared::{ident, is_primary_key, pluralize, rust_type_tokens, to_snake_case};
+use crate::shared::{ident, is_primary_key, rust_type_tokens, to_snake_case};
 
 use columns::collect_column_lists;
 use defaults::collect_create_defaults;
@@ -39,14 +39,14 @@ pub(crate) fn generate_model_descriptor(
         "{}_MODEL",
         to_snake_case(&model.name).to_uppercase()
     ));
-    let table_name = pluralize(&to_snake_case(&model.name));
+    let table_name = model.sql_table_name();
     let primary_key = model
         .fields
         .iter()
         .find(|field| is_primary_key(field))
         .expect("validated model must have primary key");
     let primary_key_type = rust_type_tokens(&primary_key.ty);
-    let primary_key_sql = to_snake_case(&primary_key.name);
+    let primary_key_sql = primary_key.sql_column_name();
 
     // GHSA-69g4-xvcm-vm2j: every slot below, so a rule no slot takes is an error.
     let owner = format!("model `{}`", model.name);
@@ -85,7 +85,7 @@ pub(crate) fn generate_model_descriptor(
 
     let version_column_tokens = match version_field(model) {
         Some(field) => {
-            let column = to_snake_case(&field.name);
+            let column = field.sql_column_name();
             quote! { Some(#column) }
         }
         None => quote! { None },

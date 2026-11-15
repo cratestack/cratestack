@@ -23,7 +23,6 @@ use quote::quote;
 use super::literal::parse_policy_literal;
 use super::predicates::{find_model_field, generate_scalar_in_predicate};
 use super::relation_path::resolve_relation_policy_field;
-use crate::shared::to_snake_case;
 
 /// Recognise `lhs in [...]` / `lhs not in [...]`, returning the
 /// left-hand side, the bracket contents, and whether it was negated.
@@ -80,7 +79,7 @@ pub(super) fn parse_model_in_comparison(
     let field_decl = find_model_field(model, lhs)?;
     let values = lower_elements(&elements, field_decl, enums)?;
     Ok(generate_scalar_in_predicate(
-        to_snake_case(lhs).as_str(),
+        field_decl.sql_column_name().as_str(),
         values,
         negate,
     ))

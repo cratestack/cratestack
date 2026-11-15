@@ -12,7 +12,7 @@ use cratestack_core::{EnumDecl, Field, Model, TypeArity};
 use proc_macro2::{Literal, TokenStream};
 use quote::quote;
 
-use crate::shared::{ident, model_name_set, rust_type_tokens, scalar_model_fields, to_snake_case};
+use crate::shared::{ident, model_name_set, rust_type_tokens, scalar_model_fields};
 
 pub(super) fn collect_embedded_defaults(
     model: &Model,
@@ -25,7 +25,7 @@ pub(super) fn collect_embedded_defaults(
         let Some(inner) = default_inner(field) else {
             continue;
         };
-        let column = to_snake_case(&field.name);
+        let column = field.sql_column_name();
         match classify_default(inner) {
             DefaultValue::Literal => {
                 let value = literal_value(model, field, inner, enums)?;

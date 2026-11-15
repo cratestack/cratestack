@@ -27,6 +27,9 @@ mod extensions;
 mod foreign_keys;
 mod indexes;
 mod primary_key;
+mod storage_names;
+pub use storage_names::diff_for_drift;
+mod storage_unrecorded;
 mod tables;
 // `pub(crate)` (not private) so `crate::projection` — the public
 // `Schema → Projections` seam — can reach `views::{ViewProjection,
@@ -69,9 +72,22 @@ pub fn diff(prev: &Schema, next: &Schema) -> Result<Vec<Op>, MigrateError> {
 /// value — not just [`project`] reading a parsed `.cstack` `Schema` —
 /// can be diffed against another `Projections` value here.
 pub fn diff_projections(prev: &Projections, next: &Projections) -> Result<Vec<Op>, MigrateError> {
+    diff_checked(prev, next, true)
+}
+
+fn diff_checked(
+    prev: &Projections,
+    next: &Projections,
+    guard_storage_names: bool,
+) -> Result<Vec<Op>, MigrateError> {
     // An ordinal enum renumbered, or a number reused, refuses the whole
     // diff before any op is computed, like a primary-key change.
     enum_ordinals::check_ordinal_history(prev, next)?;
+    // A changed `@@map` / `@map` must be declared a rename, never read as a
+    // drop and a create (cratestack#1375).
+    if guard_storage_names {
+        storage_names::check_storage_names_stable(prev, next)?;
+    }
     let prev_tables = &prev.tables;
     let next_tables = &next.tables;
 

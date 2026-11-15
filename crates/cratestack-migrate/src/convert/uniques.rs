@@ -9,8 +9,9 @@ use std::collections::HashSet;
 
 use cratestack_core::{Model, parse_composite_unique_attribute};
 
+use super::storage::column_of;
 use crate::ir::{AddIndex, Column};
-use crate::naming::{column_name, index_name_unique};
+use crate::naming::index_name_unique;
 
 /// One `AddIndex` per `@@unique([...])` on the model, in declaration
 /// order.
@@ -41,7 +42,7 @@ pub(super) fn composite_unique_indexes(
         let index_columns: Vec<String> = parsed
             .fields
             .iter()
-            .map(|field| column_name(field))
+            .map(|field| column_of(model, field))
             .collect();
         if !index_columns
             .iter()

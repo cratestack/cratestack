@@ -80,7 +80,8 @@ fn integration_test_table_names_do_not_collide_across_unrelated_fixtures() {
          against the same shared Postgres, so DROP/CREATE/INSERT on a shared \
          table name races nondeterministically across binaries. Rename the \
          underlying model in one of the colliding files — table name is always \
-         pluralize(snake_case(model.name)); there's no @@map-style override — \
+         pluralize(snake_case(model.name)) unless the model carries @@map(\"...\"), \
+         in which case it is that name; rename the model or its @@map — \
          or, if the reuse is deliberate, make both files include_server_schema! \
          the exact same fixture path so this check recognizes it as shared:\n{}",
         collisions.join("\n"),
