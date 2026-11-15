@@ -15,4 +15,4 @@ export type {
 } from "@cratestack/ts-types";
 export { CoseFailure } from "@cratestack/ts-types";
 export type { CoseClientSource, OpContracts } from "./sealed.js";
-export { createSealedFetch, createSealedLink } from "./sealed.js";
+export { createSealedFetch, createSealedLink, SealRequired } from "./sealed.js";
