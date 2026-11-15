@@ -12,6 +12,7 @@ mod isolation;
 mod json;
 mod migrations;
 mod partial_row;
+mod pool_config;
 mod query;
 mod record_policy;
 mod render;
@@ -72,6 +73,7 @@ pub mod topic;
 mod transaction;
 
 pub use partial_row::FromPartialPgRow;
+pub use pool_config::PgPoolConfig;
 
 pub use json::Json;
 /// Re-exported so generated code (and the facade crates) can reach
