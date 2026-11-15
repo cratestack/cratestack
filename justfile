@@ -1883,6 +1883,18 @@ verify-layering:
 verify-lints-optin:
 	./.ci/lints-workspace-check.sh
 
+# Every `cratestack` / `cratestack-*` requirement in `[workspace.dependencies]`
+# and in a published workspace member must be exact (`=x.y.z`), so one
+# consumer build resolves one CrateStack version (cratestack#1390).
+# Manifest-only; `just bump` keeps the `=`.
+check-sibling-pins:
+	./.ci/sibling-pins-check.sh
+
+# Fixture tests for the guard above: every non-exact shape must fail it,
+# workspace inheritance, unpublished members and exact pins must pass it.
+sibling-pins-test:
+	./.ci/sibling-pins-tests.sh
+
 # Multi-file schema rebuild proof (cratestack#919, design §10 and §15) — real
 # `cargo` builds: editing any file of a split schema rebuilds the consuming
 # crate, adding and listing a part rebuilds and exposes the new type, and an
@@ -4456,13 +4468,23 @@ bump NEW:
 	# dormant for most bumps — it only fires when the new workspace version
 	# collides with some dependency's — so scope this narrowly rather than
 	# relying on the collision not recurring.
+	#
+	# Exact sibling pins (cratestack#1390): the workspace entries read
+	# `version = "=X"`, so the optional `=` is captured and re-emitted. Without
+	# it the pattern would not match `"=X"` at all and the pins would silently
+	# stay on the old release. `just check-sibling-pins` checks only the SHAPE
+	# of each pin (`=x.y.z`), not its value, so it would not catch that; the
+	# guard against a stale value is the `cargo metadata` that refreshes
+	# `Cargo.lock` further down in this recipe: a pin left on the old version
+	# no longer matches the bumped sibling, so it fails to resolve ("failed to
+	# select a version for the requirement `=X`").
 	find . -name Cargo.toml \
 	  -not -path './target/*' \
 	  -not -path '*/node_modules/*' \
 	  -print0 | CS_CUR="$current" CS_NEW="{{NEW}}" xargs -0 perl -i -pe '
 	    BEGIN { $cur = quotemeta $ENV{CS_CUR}; $new = $ENV{CS_NEW}; }
 	    if (/^version = "$cur"/ || m{path = "(?:crates/|\.\./cratestack-)}) {
-	      s/version = "$cur"/version = "$new"/g;
+	      s/version = "(=?)$cur"/version = "$1$new"/g;
 	    }'
 	# Keep every package this repo ships under `packages/` in lockstep with
 	# the workspace version: the @cratestack/cli npm wrapper (and the
