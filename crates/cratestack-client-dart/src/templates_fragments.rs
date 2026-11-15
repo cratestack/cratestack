@@ -76,6 +76,10 @@ pub(super) const FRAGMENT_TEMPLATES: &[(&str, &str)] = &[
         include_str!("../templates/http_runtime/subscriptions.dart.j2"),
     ),
     (
+        "http_runtime/sse_reader.dart.j2",
+        include_str!("../templates/http_runtime/sse_reader.dart.j2"),
+    ),
+    (
         "http_runtime/step_up.dart.j2",
         include_str!("../templates/http_runtime/step_up.dart.j2"),
     ),

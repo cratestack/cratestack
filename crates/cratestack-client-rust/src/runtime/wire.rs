@@ -119,6 +119,13 @@ impl From<ClientError> for RuntimeErrorWire {
                 remote_code: None,
                 remote_body: None,
             },
+            error @ ClientError::EventTooLarge { .. } => Self {
+                code: RuntimeErrorCode::InvalidResponse,
+                http_status: None,
+                message: error.to_string(),
+                remote_code: None,
+                remote_body: None,
+            },
             ClientError::BadInput(message) => Self {
                 code: RuntimeErrorCode::BadInput,
                 http_status: None,

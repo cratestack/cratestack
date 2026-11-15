@@ -33,6 +33,22 @@ final class CratestackSubscriptionException implements Exception {
   String toString() => 'CratestackSubscriptionException($code: $message)';
 }
 
+/// The default cap on one SSE event: 1 MiB.
+const int cratestackDefaultMaxEventBytes = 1024 * 1024;
+
+/// One SSE event outgrew the per-event byte cap, so the subscription ended
+/// and its request was cancelled. [limit] is the cap that was exceeded.
+final class CratestackEventTooLargeException
+    extends CratestackSubscriptionException {
+  CratestackEventTooLargeException(this.limit)
+      : super(
+          code: 'event_too_large',
+          message: 'subscription event exceeds the $limit-byte limit',
+        );
+
+  final int limit;
+}
+
 /// One event of an `@@subscribe` model's feed.
 final class CratestackModelEvent<T> {
   const CratestackModelEvent({
@@ -150,6 +166,7 @@ Stream<Object?> cratestackSubscribeSse(
   String? query, {
   Map<String, String>? headers,
   void Function()? onReady,
+  int maxEventBytes = cratestackDefaultMaxEventBytes,
 }) {
   final abort = Completer<void>();
   late final StreamController<Object?> controller;
@@ -164,6 +181,7 @@ Stream<Object?> cratestackSubscribeSse(
           headers,
           onReady,
           abort.future,
+          maxEventBytes,
         )) {
           if (controller.isClosed) {
             return;
@@ -173,6 +191,9 @@ Stream<Object?> cratestackSubscribeSse(
       } on CratestackTransportAborted {
         // The listener cancelled.
       } catch (error, stackTrace) {
+        if (!abort.isCompleted) {
+          abort.complete();
+        }
         if (!controller.isClosed) {
           controller.addError(error, stackTrace);
         }
@@ -190,85 +211,4 @@ Stream<Object?> cratestackSubscribeSse(
   return controller.stream;
 }
 
-Stream<Object?> _cratestackSseItems(
-  CratestackHttpTransport transport,
-  Uri baseUri,
-  String path,
-  String? query,
-  Map<String, String>? headers,
-  void Function()? onReady,
-  Future<void> abort,
-) async* {
-  final response = await transport.send(
-    CratestackHttpRequest(
-      method: 'GET',
-      uri: _resolveUri(baseUri, path, query),
-      headers: _mergeHeaders([
-        <String, String>{
-          'Accept': 'text/event-stream',
-          if (cratestackSchemaSha256 != null)
-            'x-cratestack-schema-sha': cratestackSchemaSha256!,
-        },
-        headers,
-      ]),
-      abort: abort,
-    ),
-  );
-  if (response.status < 200 || response.status >= 300) {
-    final bytes = await response.bytes();
-    Object? body;
-    try {
-      body = jsonDecode(utf8.decode(bytes));
-    } on FormatException {
-      body = null;
-    }
-    final map = body is Map<String, Object?> ? body : const <String, Object?>{};
-    throw CratestackSubscriptionException(
-      code: map['code'] as String? ?? 'unknown',
-      message: map['message'] as String? ?? 'HTTP ${response.status}',
-      details: map['details'],
-      status: response.status,
-    );
-  }
-  var buffer = '';
-  await for (final chunk in response.body.cast<List<int>>().transform(utf8.decoder)) {
-    // Normalized after joining, so a `\r\n` split across two chunks is one.
-    buffer = (buffer + chunk).replaceAll('\r\n', '\n');
-    for (var end = buffer.indexOf('\n\n'); end >= 0; end = buffer.indexOf('\n\n')) {
-      final block = buffer.substring(0, end);
-      buffer = buffer.substring(end + 2);
-      final event = _cratestackSseEvent(block);
-      if (event == null) {
-        continue;
-      }
-      final frame = cratestackAsValueMap(jsonDecode(event.data));
-      switch (event.name) {
-        case 'ready':
-          onReady?.call();
-        case 'message':
-          yield frame['next'];
-        case 'error':
-          final err = cratestackAsValueMap(frame['err']);
-          throw CratestackSubscriptionException(
-            code: err['code'] as String? ?? 'unknown',
-            message: err['message'] as String? ?? '',
-            details: err['details'],
-          );
-      }
-    }
-  }
-}
-
-({String name, String data})? _cratestackSseEvent(String block) {
-  var name = 'message';
-  final data = <String>[];
-  for (final line in block.split('\n')) {
-    if (line.startsWith('event:')) {
-      name = line.substring(6).trim();
-    } else if (line.startsWith('data:')) {
-      final value = line.substring(5);
-      data.add(value.startsWith(' ') ? value.substring(1) : value);
-    }
-  }
-  return data.isEmpty ? null : (name: name, data: data.join('\n'));
-}
+{% include "http_runtime/sse_reader.dart.j2" %}

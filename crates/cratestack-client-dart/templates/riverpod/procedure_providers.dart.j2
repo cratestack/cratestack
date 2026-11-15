@@ -41,7 +41,7 @@ Future<{{ procedure.return_type }}> {{ operation.symbol }}(Ref ref, {{ procedure
 // subscription per distinct `args` (data classes compare by value),
 // cancelled once nothing watches it.
 {% endif %}
-@riverpod
+@Riverpod(retry: cratestackSubscriptionRetry)
 Stream<{{ procedure.return_type }}> {{ subscription_symbols[loop.index0] }}(Ref ref, {{ procedure.args_name }} args) {
   return ref.watch({{ provider_prefix }}ProceduresApiProvider).{{ procedure.method_name }}(args);
 }
