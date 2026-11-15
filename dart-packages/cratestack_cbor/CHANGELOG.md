@@ -1,5 +1,7 @@
 ## Unreleased
 
+## 0.19.8 (2026-11-15)
+
 - Keystore callback signer for the COSE transport (cratestack#1151):
   `ExternalSigner.esp256(publicKey:, sign:, timeout:)` signs a `COSE_Sign1`
   (ESP256) with a P-256 key that never enters the process (Android Keystore,
