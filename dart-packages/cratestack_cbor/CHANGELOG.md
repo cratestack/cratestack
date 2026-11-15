@@ -2,21 +2,8 @@
 
 ## 0.20.0 (2026-11-15)
 
-<!-- TODO: edit this section from the seed below -->
-<!-- seeded from v0.19.8..HEAD at aa0f09c1a38b062be747f1a4701ec0991368a50d -->
-
-This is an auto-generated seed. Please rewrite into narrative prose describing
-the changes in this release, grouped by concern. Refer to existing entries in
-this file for the house prose style. Do not commit with this placeholder text.
-
-### Changes
-
-#### Features
-
-- bump Authkestra to v0.15.1; devsig records pop, OIDC prefers top-level amr/acr/auth_time (#1363)
-- `requireSealed` makes createSealedLink / createSealedFetch fail closed (#1371) (#1373)
-- `--require-version` / `CRATESTACK_REQUIRE_VERSION` refuses a mismatched binary (#1372) (#1374)
-- remove the deprecated HmacEnvelope / SealedEnvelope (#1357) (#1370)
+- No functional changes. Version kept in lockstep with the CrateStack
+  workspace, which every published CrateStack artifact shares.
 
 ## 0.19.8 (2026-11-15)
 
