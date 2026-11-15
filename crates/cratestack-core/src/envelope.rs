@@ -1,169 +1,17 @@
-//! Signed envelope (HMAC-SHA-256).
+//! Key-resolution and nonce-replay-tracking primitives.
 //!
-//! The contract is intentionally close to COSE_Sign1 with HS256: a
-//! content header (kid, alg, timestamp, nonce) is folded into the
-//! signing input alongside the body bytes, and the sealed message is
-//! a CBOR map `{ kid, alg, ts, nonce, body, mac }`. A full COSE_Sign1
-//! implementation with ES256/EdDSA can land later — adding it is
-//! non-breaking thanks to the [`keys::KeyProvider`] trait.
+//! [`KeyProvider`] resolves signing keys by `kid`, and [`NonceStore`] records
+//! the nonces of signed requests that were already seen so a replay is
+//! rejected. They back the COSE envelope in `cratestack-cose`
+//! (`KeyProviderMacKeys`, ADR 0006).
 //!
-//! **Deprecated (cratestack#1018).** `HmacEnvelope` and `SealedEnvelope` are
-//! replaced by the COSE_Mac0 mode of `cratestack_cose::CoseEnvelope` (ADR 0006),
-//! and are removed in the next minor release.
-
-// This module defines the deprecated types and implements them, so referring to
-// them here is not a use the deprecation is meant to flag.
-#![allow(deprecated)]
+//! The HS256 envelope that used to live here was
+//! deprecated in 0.19.6 and removed in 0.20.0 (cratestack#1357). COSE_Mac0
+//! (`cratestack_cose::CoseEnvelope` in `CoseMode::Mac0`) replaces them.
 
 mod keys;
-mod sealed;
 
 #[cfg(test)]
 mod tests;
 
-use std::sync::Arc;
-
-use crate::error::CratestackError;
-
 pub use keys::{InMemoryNonceStore, KeyProvider, NonceStore, StaticKeyProvider};
-pub use sealed::SealedEnvelope;
-
-/// Maximum tolerable clock skew between sender and receiver when
-/// verifying signed envelopes. Banks running cross-region traffic
-/// with NTP-sync servers can lower this; off-the-shelf deployments
-/// leave it at the default 5 minutes.
-const ENVELOPE_DEFAULT_CLOCK_SKEW_SECS: i64 = 300;
-
-/// HMAC-SHA-256 backed envelope. Sealed messages are self-describing
-/// CBOR maps: signature recipients can decode the envelope, fetch the
-/// key by `kid`, and verify without out-of-band coordination.
-#[deprecated(
-    since = "0.19.6",
-    note = "use the COSE_Mac0 envelope instead: `cratestack_cose::CoseEnvelope` built with `CoseMode::Mac0` (ADR 0006); removed in the next minor release"
-)]
-#[derive(Clone)]
-pub struct HmacEnvelope<K: KeyProvider> {
-    keys: Arc<K>,
-    signing_kid: String,
-    clock_skew_secs: i64,
-    nonces: Option<Arc<dyn NonceStore>>,
-}
-
-impl<K: KeyProvider> HmacEnvelope<K> {
-    pub fn new(keys: Arc<K>, signing_kid: impl Into<String>) -> Self {
-        Self {
-            keys,
-            signing_kid: signing_kid.into(),
-            clock_skew_secs: ENVELOPE_DEFAULT_CLOCK_SKEW_SECS,
-            nonces: None,
-        }
-    }
-
-    pub fn with_clock_skew_secs(mut self, secs: i64) -> Self {
-        self.clock_skew_secs = secs;
-        self
-    }
-
-    /// Attach a nonce store so `open` rejects replays. Without this,
-    /// the envelope is only protected by the clock-skew window — an
-    /// attacker who captured a sealed message can replay it inside
-    /// that window.
-    pub fn with_nonce_store(mut self, store: Arc<dyn NonceStore>) -> Self {
-        self.nonces = Some(store);
-        self
-    }
-
-    async fn compute_mac(&self, key: &[u8], input: &[u8]) -> Result<Vec<u8>, CratestackError> {
-        // `KeyInit` (not `Mac`) owns `new_from_slice` as of hmac 0.13 /
-        // crypto-common 0.2 — the keying half of the trait was split out of
-        // `Mac`. Same bytes on the wire; the split is purely a trait
-        // reorganisation upstream.
-        use hmac::{Hmac, KeyInit, Mac};
-        let mut mac = <Hmac<sha2::Sha256> as KeyInit>::new_from_slice(key)
-            .map_err(|_| CratestackError::Internal("HMAC key length error".to_owned()))?;
-        mac.update(input);
-        Ok(mac.finalize().into_bytes().to_vec())
-    }
-
-    /// Seal a request body. The returned bytes are a CBOR-encoded
-    /// [`SealedEnvelope`] payload — the sender wraps these in their
-    /// codec of choice on the way out.
-    pub async fn seal(
-        &self,
-        payload: serde_json::Value,
-    ) -> Result<SealedEnvelope, CratestackError> {
-        let key = self.keys.resolve_signing_key(&self.signing_kid).await?;
-        let ts = chrono::Utc::now().timestamp();
-        let nonce = uuid::Uuid::new_v4().to_string();
-        let mut envelope = SealedEnvelope {
-            kid: self.signing_kid.clone(),
-            alg: "HS256".to_owned(),
-            ts,
-            nonce,
-            body: payload,
-            mac_b64: String::new(),
-        };
-        let input = envelope.signing_input()?;
-        let mac = self.compute_mac(&key, &input).await?;
-        use base64::Engine;
-        envelope.mac_b64 = base64::engine::general_purpose::STANDARD.encode(mac);
-        Ok(envelope)
-    }
-
-    /// Verify a sealed envelope. Returns the body on success. Constant-
-    /// time MAC compare; clock-skew window enforced; envelope kid is
-    /// resolved through the configured provider so callers can rotate
-    /// keys without changing the recipient.
-    pub async fn open(
-        &self,
-        envelope: &SealedEnvelope,
-    ) -> Result<serde_json::Value, CratestackError> {
-        if envelope.alg != "HS256" {
-            return Err(CratestackError::Unauthorized(format!(
-                "unsupported envelope algorithm '{}'",
-                envelope.alg,
-            )));
-        }
-        let now = chrono::Utc::now().timestamp();
-        let drift = (now - envelope.ts).abs();
-        if drift > self.clock_skew_secs {
-            return Err(CratestackError::Unauthorized(
-                "envelope timestamp outside accepted skew window".to_owned(),
-            ));
-        }
-        let key = self.keys.resolve_signing_key(&envelope.kid).await?;
-        let input = envelope.signing_input()?;
-        let expected = self.compute_mac(&key, &input).await?;
-        use base64::Engine;
-        let actual = base64::engine::general_purpose::STANDARD
-            .decode(&envelope.mac_b64)
-            .map_err(|_| CratestackError::Unauthorized("envelope MAC is not base64".to_owned()))?;
-        if actual.len() != expected.len() {
-            return Err(CratestackError::Unauthorized(
-                "envelope MAC has wrong length".to_owned(),
-            ));
-        }
-        use subtle::ConstantTimeEq;
-        if !bool::from(actual.as_slice().ct_eq(expected.as_slice())) {
-            return Err(CratestackError::Unauthorized(
-                "envelope MAC verification failed".to_owned(),
-            ));
-        }
-        if let Some(nonces) = &self.nonces {
-            let expires_at = chrono::DateTime::<chrono::Utc>::from_timestamp(
-                envelope.ts + self.clock_skew_secs,
-                0,
-            )
-            .ok_or_else(|| {
-                CratestackError::Unauthorized("envelope timestamp out of range".to_owned())
-            })?;
-            let recorded = nonces.record_if_unseen(&envelope.nonce, expires_at).await?;
-            if !recorded {
-                return Err(CratestackError::Unauthorized(
-                    "envelope nonce replay detected".to_owned(),
-                ));
-            }
-        }
-        Ok(envelope.body.clone())
-    }
-}
