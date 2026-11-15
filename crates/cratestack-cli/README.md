@@ -33,6 +33,14 @@ Or from the workspace:
 cargo run -p cratestack-cli -- --help
 ```
 
+## Global flags
+
+- `--require-version <REQ>` (env: `CRATESTACK_REQUIRE_VERSION`) — refuse to run unless this binary's
+  version satisfies `REQ`, before any subcommand runs. `REQ` is a Cargo semver requirement
+  (`=0.20.0`, `>=0.19.6, <0.21`); a bare `0.20.0` means exactly `=0.20.0`. A mismatch prints the
+  running version, the requirement and the executable path to stderr and exits 1. The flag wins
+  over the env var; an empty env var is ignored.
+
 ## Commands
 
 ### `check` — validate a schema
