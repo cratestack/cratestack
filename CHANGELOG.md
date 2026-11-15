@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Published crates require their siblings exactly (cratestack#1390)
+
+Release hygiene, non-breaking for a consumer that already moved every `cratestack-*` pin together. Every `cratestack-*` crate now requires its siblings as `=x.y.z`, not a caret, so one consumer build resolves exactly one CrateStack version. Before, a consumer pinning `cratestack-client = "=0.20.0"` could still resolve `cratestack-core` and `cratestack-policy` at 0.20.1 beside 0.20.0 of everything else, and `cratestack-macros` 0.20.0 then generated code against a core API it was not built with.
+
+- **Upgrading.** Move all your `cratestack-*` pins to the same version in one change. A pin on one facade now carries its siblings along, but a second, different pin on another `cratestack-*` crate in the same graph is a resolution error rather than a silent mix.
+- **Maintainers.** `just bump` keeps the `=`. New CI job `sibling-pins` (`just check-sibling-pins`, `.ci/sibling-pins-check.sh`) fails on any caret `cratestack-*` requirement in `[workspace.dependencies]` or a published member manifest.
+
 ## 0.20.1 (2026-11-15)
 
 ### `@@map` / `@map` storage names (cratestack#1375)

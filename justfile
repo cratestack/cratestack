@@ -1883,6 +1883,13 @@ verify-layering:
 verify-lints-optin:
 	./.ci/lints-workspace-check.sh
 
+# Every `cratestack-*` requirement in `[workspace.dependencies]` and in a
+# published member must be exact (`=x.y.z`), so one consumer build resolves
+# one CrateStack version (cratestack#1390). Manifest-only; `just bump` keeps
+# the `=`.
+check-sibling-pins:
+	./.ci/sibling-pins-check.sh
+
 # Multi-file schema rebuild proof (cratestack#919, design §10 and §15) — real
 # `cargo` builds: editing any file of a split schema rebuilds the consuming
 # crate, adding and listing a part rebuilds and exposes the new type, and an
@@ -4456,13 +4463,18 @@ bump NEW:
 	# dormant for most bumps — it only fires when the new workspace version
 	# collides with some dependency's — so scope this narrowly rather than
 	# relying on the collision not recurring.
+	#
+	# Exact sibling pins (cratestack#1390): the workspace entries read
+	# `version = "=X"`, so the optional `=` is captured and re-emitted. Without
+	# it the pattern would not match `"=X"` at all and the pins would silently
+	# stay on the old release; `just check-sibling-pins` is the guard.
 	find . -name Cargo.toml \
 	  -not -path './target/*' \
 	  -not -path '*/node_modules/*' \
 	  -print0 | CS_CUR="$current" CS_NEW="{{NEW}}" xargs -0 perl -i -pe '
 	    BEGIN { $cur = quotemeta $ENV{CS_CUR}; $new = $ENV{CS_NEW}; }
 	    if (/^version = "$cur"/ || m{path = "(?:crates/|\.\./cratestack-)}) {
-	      s/version = "$cur"/version = "$new"/g;
+	      s/version = "(=?)$cur"/version = "$1$new"/g;
 	    }'
 	# Keep every package this repo ships under `packages/` in lockstep with
 	# the workspace version: the @cratestack/cli npm wrapper (and the

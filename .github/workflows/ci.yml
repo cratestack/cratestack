@@ -1065,6 +1065,18 @@ jobs:
       - name: Workspace-lints opt-in check
         run: ./.ci/lints-workspace-check.sh
 
+  # Exact sibling-pin check (cratestack#1390). Manifest-only TOML read, so no
+  # toolchain beyond python3: every `cratestack-*` requirement in
+  # `[workspace.dependencies]` and published members must be `=x.y.z`.
+  sibling-pins:
+    timeout-minutes: 10
+    name: exact sibling pins (cratestack#1390)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Exact sibling-pin check
+        run: ./.ci/sibling-pins-check.sh
+
   # File-length ceiling check. `CLAUDE.md` declares a ~200-line-per-file
   # convention; until this job existed nothing enforced it, and it had
   # drifted to 116 files over the limit (largest 553 lines) — the same
