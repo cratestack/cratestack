@@ -1308,6 +1308,7 @@ dependencies = [
  "cratestack-parser",
  "cratestack-sqlx",
  "cratestack-studio",
+ "semver",
  "serde",
  "serde_json",
  "sqlx-core",

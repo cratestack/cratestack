@@ -7,6 +7,13 @@ use clap::{Parser, Subcommand, ValueEnum};
 #[command(about = "CrateStack schema tooling")]
 #[command(version)]
 pub(crate) struct Cli {
+    /// Refuse to run unless this binary's version satisfies REQ (a Cargo
+    /// semver requirement such as `>=0.19.6, <0.21`; a bare `0.20.0` means
+    /// exactly `=0.20.0`). Falls back to `CRATESTACK_REQUIRE_VERSION`;
+    /// checked before any subcommand runs.
+    #[arg(long, global = true, value_name = "REQ")]
+    pub(crate) require_version: Option<String>,
+
     #[command(subcommand)]
     pub(crate) command: Command,
 }

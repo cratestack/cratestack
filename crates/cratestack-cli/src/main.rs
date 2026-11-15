@@ -5,6 +5,7 @@ mod cli_types;
 mod contract;
 mod drift;
 mod migrate;
+mod require_version;
 mod schema_diff;
 
 use anyhow::Result;
@@ -15,6 +16,7 @@ use crate::cli_types::Cli;
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
+    require_version::enforce(cli.require_version.as_deref())?;
     run(cli)
 }
 

@@ -123,6 +123,7 @@ cratestack-sqlx.workspace = true
 # when this crate doesn't override it — but since we now pass
 # `default-features = false`, `embed-ui` must be re-added explicitly too).
 cratestack-studio = { workspace = true, default-features = false, features = ["embed-ui"] }
+semver.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sqlx-core.workspace = true
