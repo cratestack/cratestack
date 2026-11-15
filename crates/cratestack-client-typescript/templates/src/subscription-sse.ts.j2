@@ -1,0 +1,98 @@
+// The SSE binding behind `./subscriptions.js`: `fetch` (not `EventSource`,
+// which cannot send headers) read as a stream, split into events, and held
+// to the per-event byte cap (cratestack#1379). Nothing here is kept between
+// calls, and nothing buffered behind an oversized event is delivered.
+
+import {
+  CratestackEventTooLargeError,
+  CratestackSubscriptionError,
+  DEFAULT_MAX_EVENT_BYTES,
+  resolveUrl,
+  type Frame,
+  type SubscriptionHost,
+  type SubscriptionTarget,
+} from "./subscriptions.js";
+
+/** SSE over `fetch` (not `EventSource`, which cannot send headers). */
+export async function* openSse(
+  host: SubscriptionHost,
+  target: SubscriptionTarget,
+  headers: Headers,
+  signal: AbortSignal | undefined,
+): AsyncGenerator<Frame> {
+  headers.set("Accept", "text/event-stream");
+  const init: RequestInit = { headers };
+  if (signal !== undefined) init.signal = signal;
+  const response = await host.fetchFn(resolveUrl(host, target.ssePath, target.sseQuery), init);
+  if (!response.ok || response.body === null) {
+    const body = (await response.json().catch(() => ({}))) as { code?: string; message?: string; details?: unknown };
+    throw new CratestackSubscriptionError(body.code ?? "unknown", body.message ?? response.statusText, body.details, response.status);
+  }
+  const limit = host.subscriptions?.maxEventBytes ?? DEFAULT_MAX_EVENT_BYTES;
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  const encoder = new TextEncoder();
+  // The decoded, CRLF-normalized text of the event still being read. It is
+  // only ever appended to, never re-normalized, so a `\r` that ends one chunk
+  // is held back in `heldCr` until the next chunk shows whether a `\n`
+  // follows it.
+  let buffer = "";
+  let heldCr = false;
+  // UTF-8 bytes of `buffer`: the size of the event being read. Counted after
+  // CRLF -> LF normalization, so a CRLF stream may carry up to one more byte
+  // per line than the cap (the Rust client counts raw bytes instead).
+  let pending = 0;
+  try {
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) return;
+      let text = decoder.decode(value, { stream: true });
+      if (heldCr) {
+        text = `\r${text}`;
+        heldCr = false;
+      }
+      if (text.endsWith("\r")) {
+        text = text.slice(0, -1);
+        heldCr = true;
+      }
+      text = text.replace(/\r\n/g, "\n");
+      // A `\n\n` can straddle two chunks: resume one character back.
+      let searchFrom = Math.max(0, buffer.length - 1);
+      buffer += text;
+      pending += encoder.encode(text).length;
+      let start = 0;
+      let end: number;
+      while ((end = buffer.indexOf("\n\n", searchFrom)) >= 0) {
+        const block = buffer.slice(start, end);
+        if (encoder.encode(block).length + 2 > limit) throw new CratestackEventTooLargeError(limit);
+        start = end + 2;
+        searchFrom = start;
+        const event = parseEvent(block);
+        if (event === undefined) continue;
+        const frame = JSON.parse(event.data) as { next?: unknown; err?: { code: string; message: string; details?: unknown } };
+        if (event.name === "ready") yield { kind: "ready" };
+        else if (event.name === "message") yield { kind: "item", value: frame.next };
+        else if (event.name === "error" && frame.err) {
+          throw new CratestackSubscriptionError(frame.err.code, frame.err.message, frame.err.details);
+        }
+      }
+      if (start > 0) {
+        buffer = buffer.slice(start);
+        pending = encoder.encode(buffer).length;
+      }
+      if (pending > limit) throw new CratestackEventTooLargeError(limit);
+    }
+  } finally {
+    await reader.cancel().catch(() => undefined);
+  }
+}
+
+function parseEvent(block: string): { name: string; data: string } | undefined {
+  let name = "message";
+  const data: string[] = [];
+  for (const line of block.split("\n")) {
+    if (line.startsWith("event:")) name = line.slice(6).trim();
+    else if (line.startsWith("data:")) data.push(line.slice(5).replace(/^ /, ""));
+  }
+  return data.length > 0 ? { name, data: data.join("\n") } : undefined;
+}

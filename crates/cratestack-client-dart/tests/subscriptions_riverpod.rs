@@ -27,6 +27,16 @@ fn file(fixture: &str, name: &str) -> String {
         .clone()
 }
 
+/// `ProviderException` is exported only by `flutter_riverpod/misc.dart`, so
+/// the function must defer to the public `ProviderContainer.defaultRetry`.
+fn assert_retry_function(client: &str) {
+    assert!(
+        client.contains("Duration? cratestackSubscriptionRetry(int retryCount, Object error) {\n  if (error is CratestackEventTooLargeException) return null;\n  return ProviderContainer.defaultRetry(retryCount, error);\n}"),
+        "{client}"
+    );
+    assert!(!client.contains("ProviderException"), "{client}");
+}
+
 const RPC: &str = "tests/fixtures/subscriptions_rpc.cstack";
 
 #[test]
@@ -38,6 +48,9 @@ fn the_rpc_client_and_model_subscribe() {
         client.contains("SubscriptionOptionsProvider = Provider<CratestackSubscriptionOptions>")
     );
     assert!(client.contains("subscriptions: ref.watch("));
+    // Riverpod 3 retries a failed provider unless told otherwise; an
+    // oversized event is not transient, so it must not be retried.
+    assert_retry_function(&client);
 
     let model = file(RPC, "lib/src/models/note.dart");
     assert!(
@@ -46,7 +59,7 @@ fn the_rpc_client_and_model_subscribe() {
     );
     assert!(model.contains("opId: 'model.Note.subscribe',"), "{model}");
     assert!(model.contains("socketPath: '/rpc/ws',"));
-    assert!(model.contains("@riverpod\nStream<CratestackModelEvent<Note>> noteEvents("));
+    assert!(model.contains("@Riverpod(retry: cratestackSubscriptionRetry)\nStream<CratestackModelEvent<Note>> noteEvents("));
     assert!(model.contains("NoteApiProvider).subscribe(input: input);"));
 }
 
@@ -60,7 +73,7 @@ fn a_subscription_procedure_gets_a_method_and_a_stream_provider() {
     assert!(procedures.contains("const ProceduresApi(this._client);"));
     assert!(procedures.contains("Stream<Line> lines(LinesArgs args, {"));
     assert!(procedures.contains("cratestackProcedureQuery(args.toWire())"));
-    assert!(procedures.contains("@riverpod\nStream<Line> lines(Ref ref, LinesArgs args) {"));
+    assert!(procedures.contains("@Riverpod(retry: cratestackSubscriptionRetry)\nStream<Line> lines(Ref ref, LinesArgs args) {"));
     assert!(procedures.contains("class LinesArgs"));
     assert!(procedures.contains("class Room"));
 
@@ -83,6 +96,15 @@ fn a_rest_schema_subscribes_at_its_routes() {
         "lib/src/client.dart",
     );
     assert!(client.contains("basePath: basePath,"), "{client}");
+    assert_retry_function(&client);
+    let model = file(
+        "../cratestack-pg/tests/fixtures/subscribe_rest.cstack",
+        "lib/src/models/sub_note.dart",
+    );
+    assert!(
+        model.contains("@Riverpod(retry: cratestackSubscriptionRetry)\nStream<"),
+        "{model}"
+    );
 }
 
 #[test]

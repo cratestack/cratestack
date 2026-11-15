@@ -37,6 +37,7 @@ final class CratestackSubscriptionOptions {
     this.serverCertificateHashes = const <List<int>>[],
     this.webSocketUrl,
     this.credentials,
+    this.maxEventBytes = cratestackDefaultMaxEventBytes,
   });
 
   final CratestackSubscriptionTransport transport;
@@ -53,6 +54,13 @@ final class CratestackSubscriptionOptions {
   /// The WebSocket URL; by default the base URI with a `ws`/`wss` scheme and
   /// the schema's socket path (`/rpc/ws`, or `/$ws` on REST).
   final Uri? webSocketUrl;
+
+  /// The most UTF-8 bytes one SSE event may span (default 1 MiB), counted
+  /// after `\r\n` is normalized to `\n` and including the terminating blank
+  /// line, so a CRLF stream may carry up to one more byte per line than the
+  /// cap. A longer event, or one that never ends, throws
+  /// [CratestackEventTooLargeException] and cancels the request.
+  final int maxEventBytes;
 
   /// The headers a socket's `Init` carries for the server's `AuthProvider`:
   /// what your HTTP transport adds to every request, such as
@@ -124,6 +132,7 @@ Stream<Object?> cratestackSubscribe({
         target.sseQuery,
         headers: headers,
         onReady: onReady,
+        maxEventBytes: options.maxEventBytes,
       );
   Future<Stream<Object?>> webSocket() async {
     final stream = await _cratestackOpenWebSocket(options, baseUri, basePath, target, headers);

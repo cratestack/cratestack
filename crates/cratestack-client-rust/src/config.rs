@@ -2,12 +2,23 @@ use reqwest::Url;
 
 use crate::subscription::SubscriptionTransport;
 
+/// The default per-event cap for SSE subscriptions: 1 MiB.
+pub const DEFAULT_MAX_SSE_EVENT_BYTES: usize = 1024 * 1024;
+
 #[derive(Debug, Clone)]
 pub struct ClientConfig {
     pub base_url: Url,
     /// Which binding subscriptions use (`docs/design/subscriptions-websocket.md`
     /// §8). Default: [`SubscriptionTransport::Auto`].
     pub subscription_transport: SubscriptionTransport,
+    /// The most bytes one server-sent event may span (cratestack#1379),
+    /// counted as raw bytes received, line endings and the terminating blank
+    /// line included. The generated TypeScript and Dart clients count UTF-8
+    /// bytes after `\r\n` -> `\n` normalization, so they may accept up to one
+    /// more byte per line; the bound is linear in the cap either way. A longer event ends the subscription with
+    /// [`ClientError::EventTooLarge`](crate::ClientError::EventTooLarge).
+    /// Default: [`DEFAULT_MAX_SSE_EVENT_BYTES`].
+    pub max_sse_event_bytes: usize,
     /// The server's WebTransport listener, a separate UDP address (feature
     /// `webtransport`, native targets). Without it `Auto` starts at the
     /// WebSocket.
@@ -20,6 +31,7 @@ impl ClientConfig {
         Self {
             base_url,
             subscription_transport: SubscriptionTransport::default(),
+            max_sse_event_bytes: DEFAULT_MAX_SSE_EVENT_BYTES,
             #[cfg(all(feature = "webtransport", not(target_arch = "wasm32")))]
             webtransport: None,
         }
@@ -28,6 +40,12 @@ impl ClientConfig {
     /// Pin subscriptions to one binding instead of `Auto`.
     pub fn with_subscription_transport(mut self, transport: SubscriptionTransport) -> Self {
         self.subscription_transport = transport;
+        self
+    }
+
+    /// Cap one SSE event at `bytes` (default [`DEFAULT_MAX_SSE_EVENT_BYTES`]).
+    pub fn with_max_sse_event_bytes(mut self, bytes: usize) -> Self {
+        self.max_sse_event_bytes = bytes;
         self
     }
 
