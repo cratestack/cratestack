@@ -157,3 +157,28 @@ fn prune_before_rejects_a_bad_date_with_exit_2_and_leaves_the_lock_alone() {
     assert_eq!(code(&out), 2);
     assert_eq!(std::fs::read_to_string(&lock).unwrap(), before);
 }
+
+#[test]
+fn ops_prints_the_document_and_an_unreadable_schema_exits_two_with_json() {
+    let dir = tempfile::tempdir().unwrap();
+    let schema = schema_in(dir.path());
+    let ok = run(&["ops", "--schema", &schema, "--json"]);
+    assert_eq!(code(&ok), 0);
+    let doc = json(&ok);
+    assert_eq!(doc["ok"], true);
+    assert_eq!(doc["ops"][0]["key"], "procedure.ping");
+
+    let missing = path(dir.path(), "absent.cstack");
+    let bad = run(&["ops", "--schema", &missing, "--json"]);
+    assert_eq!(code(&bad), 2);
+    let doc = json(&bad);
+    assert_eq!(doc["ok"], false);
+    assert!(
+        doc["error"].as_str().is_some_and(|e| !e.is_empty()),
+        "{doc}"
+    );
+
+    let plain = run(&["ops", "--schema", &missing]);
+    assert_eq!(code(&plain), 2);
+    assert!(plain.stdout.is_empty());
+}

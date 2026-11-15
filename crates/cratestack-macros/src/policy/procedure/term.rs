@@ -18,11 +18,11 @@ pub(super) fn parse_procedure_policy_term(
     types: &[TypeDecl],
     auth: Option<&cratestack_core::AuthBlock>,
 ) -> Result<proc_macro2::TokenStream, String> {
-    if term == "auth() != null" {
+    if term == cratestack_policy::AUTH_NOT_NULL_TERM {
         return Ok(quote! { ::cratestack::ProcedurePredicate::AuthNotNull });
     }
 
-    if term == "auth() == null" {
+    if term == cratestack_policy::AUTH_IS_NULL_TERM {
         return Ok(quote! { ::cratestack::ProcedurePredicate::AuthIsNull });
     }
 

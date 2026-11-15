@@ -26,11 +26,11 @@ pub(super) fn parse_policy_term(
     auth: Option<&cratestack_core::AuthBlock>,
     _action: &str,
 ) -> Result<proc_macro2::TokenStream, String> {
-    if term == "auth() != null" {
+    if term == cratestack_policy::AUTH_NOT_NULL_TERM {
         return Ok(quote! { ::cratestack::ReadPredicate::AuthNotNull });
     }
 
-    if term == "auth() == null" {
+    if term == cratestack_policy::AUTH_IS_NULL_TERM {
         return Ok(quote! { ::cratestack::ReadPredicate::AuthIsNull });
     }
 

@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+### `cratestack contract ops`: every op's roles and principal requirement (cratestack#1388)
+
+Additive, non-breaking. `cratestack contract ops --schema <file> [--json]` is a read-only report of every op the schema exposes, with the rules written on it, the roles they name and whether the op can be called with no principal. It exists so a consumer that gates its own artefacts on policies (a relay allowlist per client app, an API gateway's route table) can derive and completeness-check them from CrateStack instead of keeping a hand port of the policy grammar.
+
+- **One analysis, not a second parser.** The `@allow`/`@deny` expression grammar, the term recognisers (`hasRole`/`inTenant`/`auth().isSystem()` and the `auth() ==/!= null` spellings) and the extraction of a rule from its attribute moved from `cratestack-macros` into `cratestack-policy` (`cratestack_policy::{PolicyAst, parse_policy_ast, procedure_rule_expression, model_rule_expression, ...}`), and the macros call them there. `cratestack_policy::analyse_op_policy` classifies the rules over the same AST. Generated code is unchanged. `cratestack-core` exports the op list the digests are keyed by (`client_ops`, `ClientOp`, `OpTarget`).
+- **`--json`.** `{ "ok": true, "schema", "transport", "ops": [ { "key", "kind", "allow", "deny", "roles", "requires_principal", "unanalysed", "contract_digest" } ] }`. `key` and `contract_digest` are what `contract digest` prints (an RPC `op_id`, or `"<METHOD> <route>"` on REST). `kind` is `procedure`, `subscription` or `model.<verb>`. `allow`/`deny` are the rule texts as written, in order. Model ops are listed per verb with the `@@allow`/`@@deny` of that verb (`read` and `all` rules apply to `list`, `get` and `subscribe`). The field set only grows. Without `--json` it prints a table.
+- **`roles`** is every `hasRole("...")` literal in an `@allow`, sorted and deduplicated; a `@deny` adds none.
+- **`requires_principal`** is `true` when no `@allow` rule can hold with no principal: `||` needs one only when every branch does, `&&` when any does, and several `@allow` lines are alternatives. `auth() != null`, `hasRole`, `inTenant`, `auth().isSystem()` and any comparison against an `auth().<claim>` need one (an absent claim satisfies neither `==` nor `!=`); `true`, `auth() == null` and comparisons of inputs or fields do not; `false` never holds. `@deny` is not consulted. An op with no `@allow` is denied to every caller and reports `true` with an empty `allow`.
+- **`unanalysed`** lists the rules the analysis does not understand (a malformed expression, an unknown function, an unrecognised term shape). Such an op reports `requires_principal: false`, so a consumer that gates on it must refuse an op with a non-empty `unanalysed`.
+- **Exit codes.** 0 ok; 2 for an unreadable schema, which with `--json` prints `{ "ok": false, "error": ... }` like `contract check`.
+
+**Transport parity.** Read-only tooling; no request surface changes. MCP is exempt (ADR 0002 D5).
+
 ## 0.20.1 (2026-11-15)
 
 ### `@@map` / `@map` storage names (cratestack#1375)

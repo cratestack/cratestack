@@ -1306,6 +1306,7 @@ dependencies = [
  "cratestack-migrate",
  "cratestack-mock-wiremock",
  "cratestack-parser",
+ "cratestack-policy",
  "cratestack-sqlx",
  "cratestack-studio",
  "semver",
