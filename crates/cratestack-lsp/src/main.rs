@@ -31,6 +31,7 @@ mod rename_error;
 mod semantic_tokens;
 mod server;
 mod state;
+mod storage_completion;
 mod symbol_build;
 mod symbol_target;
 mod text;

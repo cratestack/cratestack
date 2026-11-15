@@ -94,17 +94,7 @@ fn project_view(view: &View, dialect: Dialect, schema: &Schema) -> Option<ViewPr
     let source_tables = view
         .sources
         .iter()
-        .map(|src| {
-            // A source is a model: its table is its `@@map` name, if any.
-            schema
-                .models
-                .iter()
-                .find(|model| model.name == src.name)
-                .map_or_else(
-                    || crate::naming::table_name(&src.name),
-                    |m| m.sql_table_name(),
-                )
-        })
+        .map(|src| crate::convert::storage::table_of(schema, &src.name))
         .collect();
     let primary_key = view
         .fields

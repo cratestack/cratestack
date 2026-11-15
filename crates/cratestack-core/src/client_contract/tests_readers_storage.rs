@@ -21,7 +21,7 @@ const STORAGE_READERS: &[(&str, &[&str])] = &[
             "cratestack-macros/src/view/descriptor.rs",
             "cratestack-migrate/src/convert.rs",
             "cratestack-migrate/src/convert/relations.rs",
-            "cratestack-migrate/src/diff/views.rs",
+            "cratestack-migrate/src/convert/storage.rs",
             "cratestack-studio/src/api/export.rs",
             "cratestack-studio/src/data/model_info.rs",
         ],

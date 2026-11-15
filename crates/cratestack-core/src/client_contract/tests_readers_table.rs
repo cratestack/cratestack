@@ -115,7 +115,7 @@ pub(super) const READERS: &[(&str, &[&str])] = &[
         "@@map",
         &[
             "cratestack-cli/src/migrate/tests_baseline/storage_map.rs",
-            "cratestack-lsp/src/completion.rs",
+            "cratestack-lsp/src/storage_completion.rs",
             "cratestack-migrate/src/error.rs",
         ],
     ),

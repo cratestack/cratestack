@@ -8,11 +8,12 @@
 //! emitter can route them to dialect-specific handling.
 
 mod checks;
+mod enum_check;
 mod fields;
 mod indexes;
 mod relations;
 mod renames;
-mod storage;
+pub(crate) mod storage;
 mod uniques;
 
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -20,10 +21,11 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use cratestack_core::{EnumDecl, Model, Schema, parse_composite_id_attribute};
 use serde::{Deserialize, Serialize};
 
-use crate::ir::{AddCheck, AddForeignKey, AddIndex, CheckKind, Column, ColumnArity, ColumnType};
+use crate::ir::{AddCheck, AddForeignKey, AddIndex, Column};
 use crate::naming::{check_name, column_name, index_name_unique};
 
 use checks::{check_kind_slug, collect_check_kinds, field_has_db_enforce};
+use enum_check::enum_check_kind;
 use fields::{field_has_unique, field_to_column, is_computed_field, is_relation_field};
 use indexes::model_index_indexes;
 use relations::relation_foreign_key;
@@ -200,32 +202,4 @@ pub(crate) fn project_model(model: &Model, schema: &Schema) -> TableProjection {
         model: Some(model.name.clone()),
         field_columns,
     }
-}
-
-/// The membership constraint that stands in for a native enum type on
-/// an enum-typed column (issue #228). Returns `None` for non-enum
-/// columns, and for the degenerate case of an enum declared with no
-/// variants — `IN ()` is not valid SQL, and there is nothing useful to
-/// constrain.
-fn enum_check_kind(
-    column: &Column,
-    enum_variants: &BTreeMap<&str, &EnumDecl>,
-) -> Option<CheckKind> {
-    let (ColumnType::Enum(name) | ColumnType::OrdinalEnum(name)) = &column.ty else {
-        return None;
-    };
-    let decl = enum_variants.get(name.as_str())?;
-    if decl.variants.is_empty() {
-        return None;
-    }
-    // An ordinal enum's CHECK lists its numbers, which is what the column
-    // holds (`docs/design/enum-ordinals.md` §2.2).
-    let ordinals = decl
-        .is_ordinal()
-        .then(|| decl.variants.iter().filter_map(|v| v.ordinal).collect());
-    Some(CheckKind::Enum {
-        variants: decl.variants.iter().map(|v| v.name.clone()).collect(),
-        list: matches!(column.arity, ColumnArity::List),
-        ordinals,
-    })
 }

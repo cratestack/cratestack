@@ -47,7 +47,6 @@ pub(super) fn check_new_table(
     Err(MigrateError::TableStorageNameUnrecorded {
         model: model.to_owned(),
         to: table.name.clone(),
-        candidates: quoted(&gone),
         renames: renames("@@rename", &gone),
     })
 }
@@ -86,20 +85,11 @@ pub(super) fn check_columns(
                 model: model.to_owned(),
                 field: field.clone(),
                 to: column.clone(),
-                candidates: quoted(&gone),
                 renames: renames("@rename", &gone),
             });
         }
     }
     Ok(())
-}
-
-fn quoted(names: &[&str]) -> String {
-    names
-        .iter()
-        .map(|name| format!("`{name}`"))
-        .collect::<Vec<_>>()
-        .join(", ")
 }
 
 /// The marker to write, one per candidate: `@@rename(from = "legacy")`.

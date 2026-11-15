@@ -120,26 +120,25 @@ pub enum MigrateError {
     /// a changed `@@map` from an unrelated drop and create (cratestack#1375).
     #[error(
         "model `{model}` is stored in table `{to}` (`@@map`), which the previous snapshot does \
-         not have, and its table(s) {candidates} are gone from the schema. That snapshot does \
+         not have, and a table the snapshot has is gone from the schema. That snapshot does \
          not record which model each table stores, so this cannot be told from a `@@map` \
          change, and a changed name would drop the old table and create an empty `{to}`. If it \
-         is that table, add {renames} to the model; to keep it, \
+         is one of the tables that is gone, add {renames} to the model; to keep it, \
          restore the old `@@map`; to drop and create deliberately, do it in two migrations."
     )]
     TableStorageNameUnrecorded {
         model: String,
         to: String,
-        candidates: String,
         renames: String,
     },
 
     /// The column counterpart of [`Self::TableStorageNameUnrecorded`].
     #[error(
         "table `{table}` (model `{model}`): field `{field}` is stored in column `{to}` (`@map`), \
-         which the previous snapshot does not have, and its column(s) {candidates} are gone from \
+         which the previous snapshot does not have, and a column the snapshot has is gone from \
          the schema. That snapshot does not record which field each column stores, so this \
          cannot be told from a `@map` change, and a changed name would drop the old column and \
-         add an empty `{to}`. If it is that column, add {renames} to \
+         add an empty `{to}`. If it is a column that is gone, add {renames} to \
          `{field}`; to keep it, restore the old `@map`; to drop and add deliberately, do it in \
          two migrations."
     )]
@@ -148,7 +147,6 @@ pub enum MigrateError {
         model: String,
         field: String,
         to: String,
-        candidates: String,
         renames: String,
     },
 }

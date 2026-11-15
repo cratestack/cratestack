@@ -41,8 +41,7 @@ pub(crate) fn completion_items(
     // tuple — `@@internal(...)` (cratestack#743,
     // `docs/design/route-suppression.md`) is easy to reach for and
     // mistake for a policy attribute (it looks like `@@allow`/`@@deny`
-    // but isn't a policy expression at all), so it's the one keyword
-    // where a one-line reminder in the completion popup earns its keep.
+    // but isn't a policy expression at all), so it earns a one-line reminder.
     let keywords_with_detail = [(
         "@@internal",
         "declares a model action unreachable from the wire (no REST route, RPC dispatch arm, or \
@@ -141,6 +140,7 @@ pub(crate) fn completion_items(
     );
 
     items.extend(crate::mcp_completion::completion_items());
+    items.extend(crate::storage_completion::completion_items());
     items.extend(crate::authn_completion::completion_items());
     items.extend(crate::device_auth_completion::completion_items());
 

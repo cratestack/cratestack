@@ -7,8 +7,15 @@
 use super::storage_unrecorded as unrecorded;
 use crate::convert::TableProjection;
 use crate::error::MigrateError;
+use crate::ir::Op;
 use crate::naming::{column_name, table_name};
 use crate::projection::Projections;
+
+/// [`super::diff_projections`] for `migrate baseline`'s drift report, which
+/// shows a name the database and schema disagree on, not refuses it.
+pub fn diff_for_drift(prev: &Projections, next: &Projections) -> Result<Vec<Op>, MigrateError> {
+    super::diff_checked(prev, next, false)
+}
 
 /// Refuses a diff in which a model's table, or a field's column, is stored
 /// under another name and no rename marker says so. A table the previous side
