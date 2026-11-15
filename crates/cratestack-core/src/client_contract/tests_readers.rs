@@ -50,7 +50,26 @@ fn mentions(line: &str, name: &str) -> bool {
     })
 }
 
+/// A test file: the one exclusion `readers_of_marker` keeps, since the parser
+/// and `schema/` are exactly where a marker's reader is meant to live.
+fn is_test_file(relative: &str) -> bool {
+    let parts: Vec<&str> = relative.split('/').collect();
+    let base = parts.last().copied().unwrap_or_default();
+    base.starts_with("tests")
+        || base.ends_with("_tests.rs")
+        || parts[..parts.len() - 1].contains(&"tests")
+}
+
 pub(super) fn readers_of(name: &str, crates: &Path) -> Vec<String> {
+    scan(name, crates, skipped)
+}
+
+/// [`readers_of`] that also sees the parser and `cratestack-core/src/schema/`.
+pub(super) fn readers_of_marker(name: &str, crates: &Path) -> Vec<String> {
+    scan(name, crates, is_test_file)
+}
+
+fn scan(name: &str, crates: &Path, skip: fn(&str) -> bool) -> Vec<String> {
     let mut files = Vec::new();
     for entry in std::fs::read_dir(crates).expect("crates dir").flatten() {
         rust_files(&entry.path().join("src"), &mut files);
@@ -59,7 +78,7 @@ pub(super) fn readers_of(name: &str, crates: &Path) -> Vec<String> {
         .iter()
         .filter_map(|path| {
             let relative = path.strip_prefix(crates).ok()?.to_str()?.replace('\\', "/");
-            if skipped(&relative) {
+            if skip(&relative) {
                 return None;
             }
             let text = std::fs::read_to_string(path).ok()?;

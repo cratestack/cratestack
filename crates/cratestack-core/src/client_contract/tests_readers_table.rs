@@ -92,14 +92,18 @@ pub(super) const READERS: &[(&str, &[&str])] = &[
     (
         "@@rename",
         &[
+            "cratestack-cli/src/migrate/tests_baseline/storage_map.rs",
             "cratestack-migrate/src/convert/renames.rs",
+            "cratestack-migrate/src/diff/storage_unrecorded.rs",
             "cratestack-migrate/src/error.rs",
         ],
     ),
     (
         "@rename",
         &[
+            "cratestack-cli/src/migrate/tests_baseline/storage_map.rs",
             "cratestack-migrate/src/convert/renames.rs",
+            "cratestack-migrate/src/diff/storage_unrecorded.rs",
             "cratestack-migrate/src/error.rs",
         ],
     ),
@@ -110,11 +114,18 @@ pub(super) const READERS: &[(&str, &[&str])] = &[
     (
         "@@map",
         &[
+            "cratestack-cli/src/migrate/tests_baseline/storage_map.rs",
             "cratestack-lsp/src/completion.rs",
             "cratestack-migrate/src/error.rs",
         ],
     ),
-    ("@map", &["cratestack-migrate/src/error.rs"]),
+    (
+        "@map",
+        &[
+            "cratestack-cli/src/migrate/tests_baseline/storage_map.rs",
+            "cratestack-migrate/src/error.rs",
+        ],
+    ),
     (
         "@@internal",
         &[

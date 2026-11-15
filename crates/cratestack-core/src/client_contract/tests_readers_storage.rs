@@ -9,7 +9,7 @@
 
 use std::path::Path;
 
-use super::tests_readers::readers_of;
+use super::tests_readers::{readers_of, readers_of_marker};
 
 /// `(helper, files that call it)`.
 const STORAGE_READERS: &[(&str, &[&str])] = &[
@@ -64,16 +64,50 @@ const STORAGE_READERS: &[(&str, &[&str])] = &[
     ),
 ];
 
-/// Paths no reader of a storage name may be in: they build routes, wire
-/// shapes or clients, which the mapping must not move.
+/// `(marker reader, files that call it)`: who may turn a `@@map` / `@map` text
+/// into a name. The parser and `cratestack-core/src/schema/` are included.
+const MARKER_READERS: &[(&str, &[&str])] = &[
+    (
+        "map_marker_name",
+        &[
+            "cratestack-core/src/schema.rs",
+            "cratestack-core/src/schema/storage_names.rs",
+            "cratestack-parser/src/validate/storage_map.rs",
+        ],
+    ),
+    (
+        "parse_map_name",
+        &[
+            "cratestack-core/src/schema.rs",
+            "cratestack-core/src/schema/storage_names.rs",
+        ],
+    ),
+];
+
+/// Path prefixes no reader of a storage name may be under: they build routes,
+/// op ids, wire shapes, clients, mocks or the MCP surface, which the mapping
+/// must not move.
+const FORBIDDEN_PREFIXES: &[&str] = &[
+    "cratestack-client", // every client generator, runtime and facade
+    "cratestack-mock-wiremock/",
+    "cratestack-axum/",
+    "cratestack-api/",
+    "cratestack-exec/",
+    "cratestack-mcp/",
+    "cratestack-websocket/",
+    "cratestack-webtransport/",
+    "cratestack-macros/src/axum/",
+    "cratestack-macros/src/client/",
+    "cratestack-macros/src/json_schema/",
+    "cratestack-macros/src/include/mcp",
+    "cratestack-macros/src/procedure/",
+    "cratestack-macros/src/transport/rpc",
+];
+
 fn forbidden(path: &str) -> bool {
-    path.starts_with("cratestack-client-")
-        || path.starts_with("cratestack-mock-wiremock/")
-        || path.starts_with("cratestack-macros/src/client/")
-        || path == "cratestack-macros/src/axum/model/routes.rs"
-        || path == "cratestack-macros/src/axum/model/prep.rs"
-        || path == "cratestack-macros/src/axum/model/handler_subscribe.rs"
-        || path == "cratestack-macros/src/transport/rpc/model_dispatch.rs"
+    FORBIDDEN_PREFIXES
+        .iter()
+        .any(|prefix| path.starts_with(prefix))
 }
 
 #[test]
@@ -94,6 +128,28 @@ fn storage_names_have_only_the_pinned_readers() {
         assert!(
             !found.iter().any(|path| forbidden(path)),
             "{helper}: a route, wire or client file reads a storage name"
+        );
+    }
+}
+
+#[test]
+fn only_the_schema_reader_and_the_parser_read_a_map_marker() {
+    let crates = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+    let crates = crates.canonicalize().expect("crates dir");
+    if !crates.join("cratestack-macros/src").is_dir() {
+        return; // a packaged crate has no sibling sources to read
+    }
+    for (reader, pinned) in MARKER_READERS {
+        let found = readers_of_marker(reader, &crates);
+        assert_eq!(
+            found, *pinned,
+            "{reader}: its set of callers changed. Only the schema reader and the parser's \
+             validation may read a marker's text; everything else asks `sql_table_name` / \
+             `sql_column_name`"
+        );
+        assert!(
+            !found.iter().any(|path| forbidden(path)),
+            "{reader}: {found:?}"
         );
     }
 }
