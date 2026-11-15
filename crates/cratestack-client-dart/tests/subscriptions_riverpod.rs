@@ -38,6 +38,10 @@ fn the_rpc_client_and_model_subscribe() {
         client.contains("SubscriptionOptionsProvider = Provider<CratestackSubscriptionOptions>")
     );
     assert!(client.contains("subscriptions: ref.watch("));
+    // Riverpod 3 retries a failed provider unless told otherwise; an
+    // oversized event is not transient, so it must not be retried.
+    assert!(client.contains("Duration? cratestackSubscriptionRetry(int retryCount, Object error)"));
+    assert!(client.contains("error is CratestackEventTooLargeException"));
 
     let model = file(RPC, "lib/src/models/note.dart");
     assert!(
@@ -46,7 +50,7 @@ fn the_rpc_client_and_model_subscribe() {
     );
     assert!(model.contains("opId: 'model.Note.subscribe',"), "{model}");
     assert!(model.contains("socketPath: '/rpc/ws',"));
-    assert!(model.contains("@riverpod\nStream<CratestackModelEvent<Note>> noteEvents("));
+    assert!(model.contains("@Riverpod(retry: cratestackSubscriptionRetry)\nStream<CratestackModelEvent<Note>> noteEvents("));
     assert!(model.contains("NoteApiProvider).subscribe(input: input);"));
 }
 
@@ -60,7 +64,7 @@ fn a_subscription_procedure_gets_a_method_and_a_stream_provider() {
     assert!(procedures.contains("const ProceduresApi(this._client);"));
     assert!(procedures.contains("Stream<Line> lines(LinesArgs args, {"));
     assert!(procedures.contains("cratestackProcedureQuery(args.toWire())"));
-    assert!(procedures.contains("@riverpod\nStream<Line> lines(Ref ref, LinesArgs args) {"));
+    assert!(procedures.contains("@Riverpod(retry: cratestackSubscriptionRetry)\nStream<Line> lines(Ref ref, LinesArgs args) {"));
     assert!(procedures.contains("class LinesArgs"));
     assert!(procedures.contains("class Room"));
 

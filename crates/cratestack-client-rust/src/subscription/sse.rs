@@ -94,49 +94,63 @@ pub(super) struct Event {
 /// block has arrived, so a multi-byte character or a `\r\n` split across
 /// two transport chunks is decoded only once it is complete.
 ///
-/// One event may span at most `limit` bytes, its terminating blank line
-/// included (cratestack#1379). The buffer is checked whenever it holds no
-/// complete block, so an endless line with no newline is caught as surely
-/// as endless short ones. Past the cap the stream yields
-/// [`ClientError::EventTooLarge`] once, then ends and is dropped, which
-/// drops the connection; nothing buffered behind the oversized event is
-/// delivered.
+/// One event may span at most `limit` raw bytes as received, line endings
+/// and the terminating blank line included (cratestack#1379); the
+/// TypeScript and Dart readers count UTF-8 bytes after CRLF -> LF
+/// normalisation instead, so they may accept up to one more byte per line.
+/// The buffer is checked whenever it holds no complete block, so an endless
+/// line with no newline is caught as surely as endless short ones. Past
+/// the cap the stream yields [`ClientError::EventTooLarge`] once, then ends
+/// and is dropped, which drops the connection; nothing buffered behind the
+/// oversized event is delivered.
+///
+/// Parsing is linear: consumed events are skipped with an offset and the
+/// buffer is compacted once per transport chunk, and each delimiter search
+/// resumes where the previous one stopped.
 pub(super) fn events<S>(bytes: S, limit: usize) -> impl Stream<Item = Result<Event, ClientError>>
 where
     S: Stream<Item = Result<Bytes, reqwest::Error>> + Unpin,
 {
-    // `scanned`: how far the buffer has been searched for a delimiter, so a
-    // trickle of tiny chunks does not rescan it from the start each time.
+    // `start`: the consumed prefix of `buffer`. `scanned`: how far the
+    // unconsumed part has been searched for a delimiter (absolute index), so
+    // neither a trickle of tiny chunks nor a run of blank lines rescans.
     futures_util::stream::unfold(
-        Some((bytes, Vec::<u8>::new(), 0usize)),
+        Some((bytes, Vec::<u8>::new(), 0usize, 0usize)),
         move |state| async move {
-            let (mut bytes, mut buffer, mut scanned) = state?;
+            let (mut bytes, mut buffer, mut start, mut scanned) = state?;
             loop {
-                if let Some(end) = block_end(&buffer, scanned) {
-                    if end > limit {
+                if let Some(end) = block_end(&buffer, scanned.max(start)) {
+                    if end - start > limit {
                         return Some((Err(ClientError::EventTooLarge { limit }), None));
                     }
-                    let block: Vec<u8> = buffer.drain(..end).collect();
-                    scanned = 0;
-                    let Ok(text) = std::str::from_utf8(&block) else {
+                    let block = &buffer[start..end];
+                    start = end;
+                    scanned = end;
+                    let Ok(text) = std::str::from_utf8(block) else {
                         let error =
                             ClientError::InvalidResponse("SSE body is not UTF-8".to_owned());
-                        return Some((Err(error), Some((bytes, buffer, scanned))));
+                        return Some((Err(error), Some((bytes, buffer, start, scanned))));
                     };
                     if let Some(event) = parse_block(&text.replace("\r\n", "\n")) {
-                        return Some((Ok(event), Some((bytes, buffer, scanned))));
+                        return Some((Ok(event), Some((bytes, buffer, start, scanned))));
                     }
                     continue;
                 }
-                if buffer.len() > limit {
+                if buffer.len() - start > limit {
                     return Some((Err(ClientError::EventTooLarge { limit }), None));
                 }
                 // A delimiter may start up to three bytes before the end.
-                scanned = buffer.len().saturating_sub(3);
+                scanned = buffer.len().saturating_sub(3).max(start);
+                // Compact once per chunk, not once per event.
+                if start > 0 {
+                    buffer.drain(..start);
+                    scanned -= start;
+                    start = 0;
+                }
                 match bytes.next().await? {
                     Ok(chunk) => buffer.extend_from_slice(&chunk),
                     Err(error) => {
-                        return Some((Err(error.into()), Some((bytes, buffer, scanned))));
+                        return Some((Err(error.into()), Some((bytes, buffer, start, scanned))));
                     }
                 }
             }
@@ -145,18 +159,18 @@ where
 }
 
 /// The end (exclusive) of the first complete block at or after `from`: a
-/// blank line, written `\n\n` or `\r\n\r\n`, whichever comes first.
+/// blank line, written `\n\n` or `\r\n\r\n`, whichever comes first. One
+/// pass, so a run of blank lines costs a step per byte, not per search.
 fn block_end(buffer: &[u8], from: usize) -> Option<usize> {
-    let tail = &buffer[from.min(buffer.len())..];
-    let find = |needle: &[u8]| {
-        tail.windows(needle.len())
-            .position(|window| window == needle)
-            .map(|at| from + at + needle.len())
-    };
-    match (find(b"\n\n"), find(b"\r\n\r\n")) {
-        (Some(lf), Some(crlf)) => Some(lf.min(crlf)),
-        (lf, crlf) => lf.or(crlf),
+    let mut at = from;
+    while at < buffer.len() {
+        match buffer[at] {
+            b'\n' if buffer.get(at + 1) == Some(&b'\n') => return Some(at + 2),
+            b'\r' if buffer[at..].starts_with(b"\r\n\r\n") => return Some(at + 4),
+            _ => at += 1,
+        }
     }
+    None
 }
 
 pub(super) fn parse_block(block: &str) -> Option<Event> {

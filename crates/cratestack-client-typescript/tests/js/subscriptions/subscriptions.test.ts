@@ -98,14 +98,15 @@ describe("SSE", () => {
 });
 
 /** A `fetch` answering with `chunks`, then `x` forever, nothing but left open, or a clean end. */
-function sseChunks(chunks: string[], tail: "close" | "endless" | "idle" = "close"): { fetch: typeof fetch; state: { cancelled: boolean; sent: number } } {
+function sseChunks(chunks: (string | Uint8Array)[], tail: "close" | "endless" | "idle" = "close"): { fetch: typeof fetch; state: { cancelled: boolean; sent: number } } {
   const state = { cancelled: false, sent: 0 };
   const fetchFn = (async () => {
     let i = 0;
     const body = new ReadableStream<Uint8Array>({
       pull(controller) {
         if (i < chunks.length) {
-          controller.enqueue(encoder.encode(chunks[i++]!));
+          const chunk = chunks[i++]!;
+          controller.enqueue(typeof chunk === "string" ? encoder.encode(chunk) : chunk);
         } else if (tail === "endless") {
           controller.enqueue(encoder.encode("x".repeat(100)));
         } else if (tail === "close") {
@@ -124,7 +125,7 @@ function sseChunks(chunks: string[], tail: "close" | "endless" | "idle" = "close
 
 const READY = 'event: ready\ndata: {"id":1,"ready":{}}\n\n';
 
-/** A `message` event exactly `size` bytes long, delimiter included. */
+/** A `message` event exactly `size` bytes long, its `\n\n` included. */
 function messageOf(size: number): string {
   const head = "event: message\ndata: ";
   const tail = "\n\n";
@@ -177,6 +178,35 @@ describe("SSE event size cap", () => {
     expect(error).toBeInstanceOf(CratestackEventTooLargeError);
     expect(items).toEqual([]);
     expect(state.cancelled).toBe(true);
+  });
+
+  it("reads CRLF events split at every byte position exactly", async () => {
+    const stream = encoder.encode(
+      'event: ready\r\ndata: {"id":1,"ready":{}}\r\n\r\n' +
+        'event: message\r\ndata: {"id":2,"next":{"body":"caf\u00e9"}}\r\n\r\n' +
+        'event: message\r\ndata: {"id":3,"next":{"body":"b"}}\r\n\r\n',
+    );
+    for (let at = 1; at < stream.length; at++) {
+      const { fetch } = sseChunks([stream.slice(0, at), stream.slice(at)]);
+      const { items, error } = await drain(client(fetch));
+      expect(error, `split at byte ${at}`).toBeUndefined();
+      expect(items, `split at byte ${at}`).toEqual([{ body: "caf\u00e9" }, { body: "b" }]);
+    }
+  });
+
+  it("gives the same typed error for a ready event over the cap and for a model feed", async () => {
+    const bigReady = `event: ready\ndata: ${"x".repeat(LIMIT)}\n\n`;
+    expect((await drain(client(sseChunks([bigReady]).fetch))).error).toBeInstanceOf(CratestackEventTooLargeError);
+    const { fetch } = sseChunks([READY, `: ${"x".repeat(LIMIT)}\n\n`]);
+    let error: unknown;
+    try {
+      for await (const _ of client(fetch).notes.subscribe()) {
+        // never reached
+      }
+    } catch (caught) {
+      error = caught;
+    }
+    expect(error).toBeInstanceOf(CratestackEventTooLargeError);
   });
 
   it("counts bytes, not characters, and the default is 1 MiB", async () => {

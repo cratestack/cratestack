@@ -11,8 +11,11 @@ pub struct ClientConfig {
     /// Which binding subscriptions use (`docs/design/subscriptions-websocket.md`
     /// §8). Default: [`SubscriptionTransport::Auto`].
     pub subscription_transport: SubscriptionTransport,
-    /// The most bytes one server-sent event may span, delimiter included
-    /// (cratestack#1379). A longer event ends the subscription with
+    /// The most bytes one server-sent event may span (cratestack#1379),
+    /// counted as raw bytes received, line endings and the terminating blank
+    /// line included. The generated TypeScript and Dart clients count UTF-8
+    /// bytes after `\r\n` -> `\n` normalization, so they may accept up to one
+    /// more byte per line; the bound is linear in the cap either way. A longer event ends the subscription with
     /// [`ClientError::EventTooLarge`](crate::ClientError::EventTooLarge).
     /// Default: [`DEFAULT_MAX_SSE_EVENT_BYTES`].
     pub max_sse_event_bytes: usize,

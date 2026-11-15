@@ -109,9 +109,19 @@ async fn an_oversize_event_split_across_chunks_is_refused() {
     assert!(matches!(out[0], Err(ClientError::EventTooLarge { .. })));
 }
 
+/// An endless body that yields to the runtime between chunks, so the
+/// `timeout` guards below can fire if the reader never stops (`repeat_with`
+/// alone never returns `Pending`, and would hang the test instead).
+fn endless_of(chunk: &'static [u8]) -> impl Stream<Item = Result<Bytes, reqwest::Error>> + Unpin {
+    Box::pin(futures_util::stream::unfold((), move |()| async move {
+        tokio::task::yield_now().await;
+        Some((Ok(Bytes::from_static(chunk)), ()))
+    }))
+}
+
 #[tokio::test]
 async fn an_endless_line_with_no_delimiter_ends_with_the_error() {
-    let endless = futures_util::stream::repeat_with(|| Ok(Bytes::from_static(&[b'x'; 100])));
+    let endless = endless_of(&[b'x'; 100]);
     let mut stream = Box::pin(events(endless, 1024));
     let first = tokio::time::timeout(std::time::Duration::from_secs(5), stream.next())
         .await
@@ -125,7 +135,7 @@ async fn an_endless_line_with_no_delimiter_ends_with_the_error() {
 
 #[tokio::test]
 async fn an_endless_event_of_many_short_lines_ends_with_the_error() {
-    let endless = futures_util::stream::repeat_with(|| Ok(Bytes::from_static(b"data: x\n")));
+    let endless = endless_of(b"data: x\n");
     let mut stream = Box::pin(events(endless, 1024));
     let first = tokio::time::timeout(std::time::Duration::from_secs(5), stream.next())
         .await
@@ -142,4 +152,20 @@ async fn the_cap_is_per_event_not_cumulative() {
     let out = collect(vec![event_of(100), event_of(100), event_of(100)], 100).await;
     assert_eq!(out.len(), 3);
     assert!(out.iter().all(Result::is_ok));
+}
+
+#[tokio::test]
+async fn a_run_of_blank_lines_in_one_chunk_is_parsed_in_linear_time() {
+    // 256 KiB of nothing but delimiters: 131072 empty blocks in one chunk.
+    // Draining and re-searching per block took minutes (cratestack#1379
+    // review); linear parsing takes milliseconds even in a debug build.
+    for unit in [&b"\n"[..], &b"\r\n"[..]] {
+        let body = unit.repeat((256 << 10) / unit.len());
+        let started = std::time::Instant::now();
+        let out = collect(vec![body, b"data: end\n\n".to_vec()], 1 << 20).await;
+        let took = started.elapsed();
+        assert_eq!(out.len(), 1, "{out:?}");
+        assert_eq!(out[0].as_ref().unwrap().data, "end");
+        assert!(took.as_secs() < 2, "quadratic parsing: {took:?}");
+    }
 }

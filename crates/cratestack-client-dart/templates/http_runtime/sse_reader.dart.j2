@@ -1,0 +1,127 @@
+// The SSE reader behind `cratestackSubscribeSse`: bytes in, one decoded
+// frame at a time out, with the per-event byte cap (cratestack#1379).
+
+Stream<Object?> _cratestackSseItems(
+  CratestackHttpTransport transport,
+  Uri baseUri,
+  String path,
+  String? query,
+  Map<String, String>? headers,
+  void Function()? onReady,
+  Future<void> abort,
+  int maxEventBytes,
+) async* {
+  final response = await transport.send(
+    CratestackHttpRequest(
+      method: 'GET',
+      uri: _resolveUri(baseUri, path, query),
+      headers: _mergeHeaders([
+        <String, String>{
+          'Accept': 'text/event-stream',
+          if (cratestackSchemaSha256 != null)
+            'x-cratestack-schema-sha': cratestackSchemaSha256!,
+        },
+        headers,
+      ]),
+      abort: abort,
+    ),
+  );
+  if (response.status < 200 || response.status >= 300) {
+    final bytes = await response.bytes();
+    Object? body;
+    try {
+      body = jsonDecode(utf8.decode(bytes));
+    } on FormatException {
+      body = null;
+    }
+    final map = body is Map<String, Object?> ? body : const <String, Object?>{};
+    throw CratestackSubscriptionException(
+      code: map['code'] as String? ?? 'unknown',
+      message: map['message'] as String? ?? 'HTTP ${response.status}',
+      details: map['details'],
+      status: response.status,
+    );
+  }
+  // The decoded, CRLF-normalized text of the event still being read. It is
+  // only ever appended to, never re-normalized, so a `\r` that ends one
+  // chunk is held back in [heldCr] until the next chunk shows whether a `\n`
+  // follows it.
+  var buffer = '';
+  var heldCr = false;
+  // UTF-8 bytes of [buffer]: the size of the event being read. Counted after
+  // CRLF -> LF normalization, so a CRLF stream may carry up to one more byte
+  // per line than the cap (the Rust client counts raw bytes instead).
+  var pending = 0;
+  final decoded = StringBuffer();
+  final decoder = utf8.decoder.startChunkedConversion(
+    StringConversionSink.fromStringSink(decoded),
+  );
+  await for (final chunk in response.body.cast<List<int>>()) {
+    decoder.add(chunk);
+    var text = decoded.toString();
+    decoded.clear();
+    if (heldCr) {
+      text = '\r$text';
+      heldCr = false;
+    }
+    if (text.endsWith('\r')) {
+      text = text.substring(0, text.length - 1);
+      heldCr = true;
+    }
+    text = text.replaceAll('\r\n', '\n');
+    // A `\n\n` can straddle two chunks: resume one character back.
+    var searchFrom = buffer.isEmpty ? 0 : buffer.length - 1;
+    buffer += text;
+    pending += utf8.encode(text).length;
+    var start = 0;
+    for (var end = buffer.indexOf('\n\n', searchFrom);
+        end >= 0;
+        end = buffer.indexOf('\n\n', searchFrom)) {
+      final block = buffer.substring(start, end);
+      if (utf8.encode(block).length + 2 > maxEventBytes) {
+        throw CratestackEventTooLargeException(maxEventBytes);
+      }
+      start = end + 2;
+      searchFrom = start;
+      final event = _cratestackSseEvent(block);
+      if (event == null) {
+        continue;
+      }
+      final frame = cratestackAsValueMap(jsonDecode(event.data));
+      switch (event.name) {
+        case 'ready':
+          onReady?.call();
+        case 'message':
+          yield frame['next'];
+        case 'error':
+          final err = cratestackAsValueMap(frame['err']);
+          throw CratestackSubscriptionException(
+            code: err['code'] as String? ?? 'unknown',
+            message: err['message'] as String? ?? '',
+            details: err['details'],
+          );
+      }
+    }
+    if (start > 0) {
+      buffer = buffer.substring(start);
+      pending = utf8.encode(buffer).length;
+    }
+    if (pending > maxEventBytes) {
+      throw CratestackEventTooLargeException(maxEventBytes);
+    }
+  }
+}
+
+({String name, String data})? _cratestackSseEvent(String block) {
+  var name = 'message';
+  final data = <String>[];
+  for (final line in block.split('\n')) {
+    if (line.startsWith('event:')) {
+      name = line.substring(6).trim();
+    } else if (line.startsWith('data:')) {
+      final value = line.substring(5);
+      data.add(value.startsWith(' ') ? value.substring(1) : value);
+    }
+  }
+  return data.isEmpty ? null : (name: name, data: data.join('\n'));
+}

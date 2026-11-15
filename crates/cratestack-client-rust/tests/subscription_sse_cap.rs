@@ -15,7 +15,8 @@ use axum::http::{Response, header};
 use axum::routing::get;
 use bytes::Bytes;
 use cratestack_client_rust::{
-    ClientConfig, ClientError, CratestackClient, SubscriptionTarget, SubscriptionTransport,
+    ClientConfig, ClientError, CratestackClient, RpcClientError, SubscriptionTarget,
+    SubscriptionTransport,
 };
 use cratestack_codec_cbor::CborCodec;
 use url::Url;
@@ -86,4 +87,45 @@ async fn an_endless_event_ends_the_subscription_and_drops_the_connection() {
         tokio::time::sleep(Duration::from_millis(50)).await;
     }
     panic!("the server's response body was never dropped: the connection stayed open");
+}
+
+async fn oversize_ready() -> Response<Body> {
+    let body = format!("event: ready\ndata: {}\n\n", "x".repeat(4096));
+    Response::builder()
+        .header(header::CONTENT_TYPE, "text/event-stream")
+        .body(Body::from(body))
+        .expect("response should build")
+}
+
+/// The `ready` event itself over the cap: the open call fails with the typed
+/// error, and the RPC client surfaces it as its own typed variant rather than
+/// an `InvalidResponse` string.
+#[tokio::test]
+async fn an_oversize_ready_is_a_typed_error_on_the_rest_and_the_rpc_surface() {
+    let app = Router::new().route("/rpc/subscribe/procedure.big", get(oversize_ready));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move { axum::serve(listener, app).await });
+    let config = ClientConfig::new(Url::parse(&format!("http://{addr}")).unwrap())
+        .with_subscription_transport(SubscriptionTransport::Sse)
+        .with_max_sse_event_bytes(1024);
+    let client = CratestackClient::new(config, CborCodec);
+    let target = SubscriptionTarget {
+        op_id: "procedure.big".to_owned(),
+        input: serde_json::json!({}),
+        sse_path: "/rpc/subscribe/procedure.big".to_owned(),
+        sse_query: None,
+        socket_path: "/rpc/ws",
+    };
+    let Err(error) = client.subscribe::<serde_json::Value>(target).await else {
+        panic!("an oversize ready must refuse the open");
+    };
+    assert!(
+        matches!(error, ClientError::EventTooLarge { limit: 1024 }),
+        "{error:?}"
+    );
+    assert!(matches!(
+        RpcClientError::from(error),
+        RpcClientError::EventTooLarge { limit: 1024 }
+    ));
 }

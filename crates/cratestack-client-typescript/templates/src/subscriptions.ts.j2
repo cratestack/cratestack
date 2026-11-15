@@ -15,6 +15,7 @@
 // thrown, never a reason to fall back.
 
 import { openSocketSubscription, openWebTransportSubscription, SocketUnreachable } from "./subscription-sockets.js";
+import { openSse } from "./subscription-sse.js";
 
 export type SubscriptionTransport = "auto" | "webtransport" | "websocket" | "sse";
 
@@ -28,7 +29,9 @@ export interface SubscriptionClientOptions {
     url: string;
     serverCertificateHashes?: { algorithm: "sha-256"; value: BufferSource }[];
   };
-  /** The most UTF-8 bytes one SSE event may span, delimiter included.
+  /** The most UTF-8 bytes one SSE event may span, counted after `\r\n` is
+   *  normalized to `\n` and including the terminating blank line (so a CRLF
+   *  stream may carry up to one more byte per line than the cap).
    *  Default `1048576` (1 MiB). A longer event, or one that never ends,
    *  throws `CratestackEventTooLargeError` and drops the connection. */
   maxEventBytes?: number;
@@ -227,70 +230,4 @@ function rememberWebTransportFailure(url: string): void {
 
 function failureKey(url: string): string {
   return `cratestack.webtransport.failed:${new URL(url).origin}`;
-}
-
-/** SSE over `fetch` (not `EventSource`, which cannot send headers). */
-async function* openSse(
-  host: SubscriptionHost,
-  target: SubscriptionTarget,
-  headers: Headers,
-  signal: AbortSignal | undefined,
-): AsyncGenerator<Frame> {
-  headers.set("Accept", "text/event-stream");
-  const init: RequestInit = { headers };
-  if (signal !== undefined) init.signal = signal;
-  const response = await host.fetchFn(resolveUrl(host, target.ssePath, target.sseQuery), init);
-  if (!response.ok || response.body === null) {
-    const body = (await response.json().catch(() => ({}))) as { code?: string; message?: string; details?: unknown };
-    throw new CratestackSubscriptionError(body.code ?? "unknown", body.message ?? response.statusText, body.details, response.status);
-  }
-  const limit = host.subscriptions?.maxEventBytes ?? DEFAULT_MAX_EVENT_BYTES;
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  const encoder = new TextEncoder();
-  let buffer = "";
-  // UTF-8 bytes buffered for the event still being read, and where to resume
-  // looking for its delimiter (a `\n\n` can straddle two chunks).
-  let pending = 0;
-  let searchFrom = 0;
-  try {
-    for (;;) {
-      const { value, done } = await reader.read();
-      if (done) return;
-      buffer += decoder.decode(value, { stream: true }).replace(/\r\n/g, "\n");
-      pending += value.byteLength;
-      let end: number;
-      let consumed = false;
-      while ((end = buffer.indexOf("\n\n", searchFrom)) >= 0) {
-        const block = buffer.slice(0, end);
-        if (encoder.encode(block).length + 2 > limit) throw new CratestackEventTooLargeError(limit);
-        buffer = buffer.slice(end + 2);
-        searchFrom = 0;
-        consumed = true;
-        const event = parseEvent(block);
-        if (event === undefined) continue;
-        const frame = JSON.parse(event.data) as { next?: unknown; err?: { code: string; message: string; details?: unknown } };
-        if (event.name === "ready") yield { kind: "ready" };
-        else if (event.name === "message") yield { kind: "item", value: frame.next };
-        else if (event.name === "error" && frame.err) {
-          throw new CratestackSubscriptionError(frame.err.code, frame.err.message, frame.err.details);
-        }
-      }
-      if (consumed) pending = encoder.encode(buffer).length;
-      if (pending > limit) throw new CratestackEventTooLargeError(limit);
-      searchFrom = Math.max(0, buffer.length - 1);
-    }
-  } finally {
-    await reader.cancel().catch(() => undefined);
-  }
-}
-
-function parseEvent(block: string): { name: string; data: string } | undefined {
-  let name = "message";
-  const data: string[] = [];
-  for (const line of block.split("\n")) {
-    if (line.startsWith("event:")) name = line.slice(6).trim();
-    else if (line.startsWith("data:")) data.push(line.slice(5).replace(/^ /, ""));
-  }
-  return data.length > 0 ? { name, data: data.join("\n") } : undefined;
 }
