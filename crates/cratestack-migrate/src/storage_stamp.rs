@@ -32,3 +32,17 @@ pub fn stamp_storage_names(introspected: &mut Projections, authored: &Projection
             .collect();
     }
 }
+
+impl crate::TableProjection {
+    /// This table without its identity metadata (`model`, `field_columns`).
+    /// Those say which model and fields a table stores, not what DDL it has,
+    /// so "does the database match the schema" compares without them: an
+    /// introspected table never has them.
+    pub fn without_storage_identity(&self) -> Self {
+        Self {
+            model: None,
+            field_columns: Default::default(),
+            ..self.clone()
+        }
+    }
+}

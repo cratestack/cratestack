@@ -229,7 +229,10 @@ model IntrospectionProbeCustomer {
         .tables
         .get(table)
         .expect("project() should produce the same table name");
-    assert_eq!(introspected_table, expected_table);
+    assert_eq!(
+        introspected_table,
+        &expected_table.without_storage_identity()
+    );
 
     // The same claim, proven through the actual comparison engine a
     // baseline command (Phase C) would use.
