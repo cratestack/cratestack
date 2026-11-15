@@ -9,7 +9,7 @@ import {
   type CoseOpened,
 } from "@cratestack/ts-types";
 import { describe, expect, it } from "vitest";
-import { createSealedFetch, createSealedLink } from "../src/sealed.js";
+import { createSealedFetch, createSealedLink, SealRequired } from "../src/sealed.js";
 
 const MEDIA = 'application/cose; cose-type="cose-sign1"';
 const SHA = "ab".repeat(32);
@@ -288,5 +288,108 @@ describe("createSealedFetch (REST)", () => {
     });
     await slowFetch("https://x/widgets/search");
     expect(performance.now() - started).toBeLessThan(200);
+  });
+});
+
+describe("requireSealed (#1371)", () => {
+  const forbidden = (async () => {
+    throw new Error("fetch must not be called");
+  }) as unknown as typeof fetch;
+  const rpc = (kind: "unary" | "batch", opId: string, fetchFn: typeof fetch) => ({
+    kind,
+    opId,
+    fetchFn,
+  });
+
+  it.each([
+    ["unary", "unary", "procedure.pay"],
+    ["batch", "batch", ""],
+  ] as const)("refuses %s with no contract before any fetch", async (_n, kind, opId) => {
+    let fetched = 0;
+    let nexted = 0;
+    const counting = (async () => {
+      fetched++;
+      return new Response("{}");
+    }) as unknown as typeof fetch;
+    const link = createSealedLink({
+      cose: fakeCose(newSeen()),
+      contracts: {},
+      requireSealed: true,
+    });
+    const route = kind === "batch" ? "batch" : opId;
+    const outcome = link(rpc(kind, opId, counting), async (r) => {
+      nexted++;
+      return r.fetchFn("https://x", { method: "POST" });
+    });
+    await expect(outcome).rejects.toBeInstanceOf(SealRequired);
+    await expect(outcome).rejects.toMatchObject({ route, code: "misuse" });
+    await expect(outcome).rejects.toThrow(route);
+    expect([fetched, nexted]).toEqual([0, 0]);
+  });
+
+  it.each([
+    ["unary", "unary", "procedure.pay"],
+    ["batch", "batch", ""],
+  ] as const)("refuses %s when cose declines the route", async (_n, kind, opId) => {
+    const route = kind === "batch" ? "batch" : opId;
+    for (const cose of [undefined, () => undefined]) {
+      const link = createSealedLink({ cose, contracts: { [route]: SHA }, requireSealed: true });
+      await expect(
+        link(rpc(kind, opId, forbidden), (r) => r.fetchFn("https://x")),
+      ).rejects.toMatchObject({ name: "SealRequired", route });
+    }
+  });
+
+  it("still seals a call that has a contract and a client", async () => {
+    const seen = newSeen();
+    const link = createSealedLink({
+      cose: fakeCose(seen),
+      contracts: { "procedure.pay": SHA },
+      requireSealed: true,
+    });
+    await link(
+      rpc("unary", "procedure.pay", async () => coseResponse()),
+      (r) => r.fetchFn("https://x", { method: "POST" }),
+    );
+    expect(seen.sealed).toHaveLength(1);
+  });
+
+  it("leaves unsealed fall-through unchanged when the option is absent or false", async () => {
+    let calls = 0;
+    const plain = (async () => {
+      calls++;
+      return new Response("{}");
+    }) as unknown as typeof fetch;
+    for (const requireSealed of [undefined, false]) {
+      const link = createSealedLink({ cose: fakeCose(newSeen()), contracts: {}, requireSealed });
+      await link(rpc("batch", "", plain), (r) => r.fetchFn("https://x", { method: "POST" }));
+    }
+    expect(calls).toBe(2);
+  });
+
+  it("applies to the REST fetch: unmatched route and declined client", async () => {
+    let calls = 0;
+    const underlying = (async () => {
+      calls++;
+      return new Response("{}");
+    }) as unknown as typeof fetch;
+    const base = { contracts: { "GET /widgets/{id}": SHA }, fetch: underlying };
+    const unmatched = createSealedFetch({
+      ...base,
+      cose: fakeCose(newSeen()),
+      requireSealed: true,
+    });
+    await expect(unmatched("https://x/other")).rejects.toMatchObject({
+      name: "SealRequired",
+      route: "GET /other",
+    });
+    const declined = createSealedFetch({ ...base, cose: undefined, requireSealed: true });
+    await expect(declined("https://x/widgets/1")).rejects.toMatchObject({
+      route: "GET /widgets/{id}",
+    });
+    expect(calls).toBe(0);
+    const lax = createSealedFetch({ ...base, cose: undefined });
+    await lax("https://x/widgets/1");
+    expect(calls).toBe(1);
   });
 });

@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### `requireSealed` makes `createSealedLink` / `createSealedFetch` fail closed (cratestack#1371)
+
+Additive, non-breaking. `@cratestack/cbor/cose`'s `createSealedLink` (and its REST sibling `createSealedFetch`) send a call unsealed when its route has no `OP_CONTRACTS` entry or the `cose` source returns `undefined`. The new opt-in `requireSealed: true` refuses such a call locally, before any `fetch`, rejecting with the new exported `SealRequired` (a `CoseFailure` with code `misuse`, carrying the `route`). It covers unary and `batch` calls alike. The default (`false`/absent) is today's behaviour.
+
 ### Breaking: remove the deprecated `HmacEnvelope` / `SealedEnvelope` (cratestack#1357)
 
 **Breaking, Rust API.** `cratestack_core::HmacEnvelope` and `cratestack_core::SealedEnvelope` are gone. They were deprecated since 0.19.6 (cratestack#1018) with removal promised for the next minor release, which is this one (0.20.0). Code that still names either type no longer compiles.
