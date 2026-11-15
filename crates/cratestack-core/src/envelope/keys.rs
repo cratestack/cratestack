@@ -1,5 +1,5 @@
 //! Key-resolution and nonce-replay-tracking traits used by the signed
-//! envelope. Both are async traits so production deployments can plug
+//! COSE envelope. Both are async traits so production deployments can plug
 //! Vault / KMS / HSM (`KeyProvider`) and Redis (`NonceStore`) without
 //! changing the envelope code.
 

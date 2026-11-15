@@ -2,7 +2,8 @@
 //! `KeyProvider` → Mac0 keys").
 //!
 //! A `KeyProvider` resolves a **string** key id to raw bytes, which is how
-//! `HmacEnvelope` deployments already configure their secrets. A Mac0
+//! deployments of the HS256 envelope (removed in 0.20.0) already configured
+//! their secrets. A Mac0
 //! message names its key by a thumbprint prefix instead (P0 scoping
 //! decision), and a thumbprint cannot be looked up in a string-keyed store.
 //! So the deployer lists their key ids, the secrets are resolved once, at

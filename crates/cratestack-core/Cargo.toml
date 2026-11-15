@@ -64,12 +64,10 @@ bytes.workspace = true
 chrono.workspace = true
 futures-core.workspace = true
 futures-util.workspace = true
-hmac.workspace = true
 http.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
-subtle.workspace = true
 # Only `broadcast`, for the in-process backplane's fan-out. Not the
 # workspace's `tokio` entry: that one turns on `rt-multi-thread`, which does
 # not build for `wasm32-unknown-unknown`, and this crate reaches wasm.
