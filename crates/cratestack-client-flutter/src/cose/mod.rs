@@ -23,7 +23,6 @@ mod convert;
 pub mod envelope;
 pub mod error;
 mod external;
-mod outcome;
 pub mod sign_outcome;
 pub mod types;
 

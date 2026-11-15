@@ -31,6 +31,8 @@ pub mod cbor;
 mod conversions;
 #[cfg(feature = "cose")]
 pub mod cose;
+#[cfg(feature = "cose")]
+mod cose_outcome;
 mod decoder;
 mod runtime;
 mod types;

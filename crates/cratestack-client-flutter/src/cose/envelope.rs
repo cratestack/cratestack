@@ -11,11 +11,11 @@ use cratestack_cose::{
 use zeroize::{Zeroize, Zeroizing};
 
 use super::error::FlutterCoseError;
-use super::outcome;
 use super::types::{
     FlutterCallBinding, FlutterCoseAlg, FlutterCoseMode, FlutterOpened, FlutterSealOptions,
     FlutterSelectorHeader, FlutterServerKey,
 };
+use crate::cose_outcome as outcome;
 
 /// Seals requests and opens responses for one service.
 ///

@@ -17,9 +17,9 @@ use flutter_rust_bridge::DartFnFuture;
 
 use super::envelope::FlutterClientEnvelope;
 use super::error::FlutterCoseError;
-use super::outcome;
 use super::sign_outcome::FlutterSignOutcome;
 use super::types::{FlutterSealOptions, FlutterServerKey};
+use crate::cose_outcome as outcome;
 
 impl FlutterClientEnvelope {
     /// A COSE_Sign1 (ESP256) envelope whose key lives in a platform

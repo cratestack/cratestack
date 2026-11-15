@@ -20,7 +20,7 @@ use std::task::{Context, Poll};
 
 use cratestack_core::CratestackError;
 
-use super::error::FlutterCoseError;
+use crate::cose::error::FlutterCoseError;
 
 /// One seal's recorded signer failure.
 #[derive(Clone, Default)]
