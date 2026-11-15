@@ -49,6 +49,8 @@ mod tests_block_diagnostics;
 #[cfg(test)]
 mod tests_completion;
 #[cfg(test)]
+mod tests_completion_map;
+#[cfg(test)]
 mod tests_device_auth;
 #[cfg(test)]
 mod tests_enum_hover;

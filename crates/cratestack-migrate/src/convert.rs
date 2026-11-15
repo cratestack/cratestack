@@ -12,6 +12,7 @@ mod fields;
 mod indexes;
 mod relations;
 mod renames;
+mod storage;
 mod uniques;
 
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -20,7 +21,7 @@ use cratestack_core::{EnumDecl, Model, Schema, parse_composite_id_attribute};
 use serde::{Deserialize, Serialize};
 
 use crate::ir::{AddCheck, AddForeignKey, AddIndex, CheckKind, Column, ColumnArity, ColumnType};
-use crate::naming::{check_name, column_name, index_name_unique, table_name};
+use crate::naming::{check_name, column_name, index_name_unique};
 
 use checks::{check_kind_slug, collect_check_kinds, field_has_db_enforce};
 use fields::{field_has_unique, field_to_column, is_computed_field, is_relation_field};
@@ -63,6 +64,16 @@ pub struct TableProjection {
     /// `@relation(fields:[...], references:[...])` field. Empty for
     /// the "many" side of a relation, which has no physical column.
     pub foreign_keys: Vec<AddForeignKey>,
+    /// The model this table stores, when a `.cstack` schema produced it
+    /// (cratestack#1375). It is how `migrate diff` tells a table whose
+    /// `@@map` changed from a different table. `None` in an introspected
+    /// projection and in a snapshot written before the field existed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    /// Field name → the column it is stored in (`@map`), for every stored
+    /// field. Same provenance and defaults as [`Self::model`].
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub field_columns: BTreeMap<String, String>,
 }
 
 pub(crate) fn project_model(model: &Model, schema: &Schema) -> TableProjection {
@@ -77,7 +88,7 @@ pub(crate) fn project_model(model: &Model, schema: &Schema) -> TableProjection {
         .map(|decl| (decl.name.as_str(), decl))
         .collect();
 
-    let table = table_name(&model.name);
+    let table = model.sql_table_name();
     // `@@rename(from = "...")` and `@rename(from = "...")` take the
     // SQL identifier the developer is renaming, not the PascalCase
     // model name or camelCase field name. This matches the docs and
@@ -104,6 +115,7 @@ pub(crate) fn project_model(model: &Model, schema: &Schema) -> TableProjection {
     let mut indexes = Vec::new();
     let mut checks = Vec::new();
     let mut foreign_keys = Vec::new();
+    let mut field_columns = BTreeMap::new();
 
     for field in &model.fields {
         if is_relation_field(field) {
@@ -111,7 +123,7 @@ pub(crate) fn project_model(model: &Model, schema: &Schema) -> TableProjection {
             // column themselves; the foreign-key column lives on the
             // owning side as a regular scalar field. The relation
             // itself is promoted to a foreign-key constraint here.
-            if let Some(fk) = relation_foreign_key(field, schema, &table) {
+            if let Some(fk) = relation_foreign_key(model, field, schema, &table) {
                 foreign_keys.push(fk);
             }
             continue;
@@ -165,6 +177,7 @@ pub(crate) fn project_model(model: &Model, schema: &Schema) -> TableProjection {
                 kind,
             });
         }
+        field_columns.insert(field.name.clone(), column.name.clone());
         columns.push(column);
     }
 
@@ -184,6 +197,8 @@ pub(crate) fn project_model(model: &Model, schema: &Schema) -> TableProjection {
         indexes,
         checks,
         foreign_keys,
+        model: Some(model.name.clone()),
+        field_columns,
     }
 }
 

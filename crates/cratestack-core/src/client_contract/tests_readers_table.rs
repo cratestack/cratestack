@@ -87,13 +87,34 @@ pub(super) const READERS: &[(&str, &[&str])] = &[
         "@@soft_delete",
         &["cratestack-macros/src/model/descriptor.rs"],
     ),
-    ("@@rename", &["cratestack-migrate/src/convert/renames.rs"]),
-    ("@rename", &["cratestack-migrate/src/convert/renames.rs"]),
+    // `migrate/src/error.rs` only names the marker in the message of the
+    // refusal that tells an author to write it (cratestack#1375).
+    (
+        "@@rename",
+        &[
+            "cratestack-migrate/src/convert/renames.rs",
+            "cratestack-migrate/src/error.rs",
+        ],
+    ),
+    (
+        "@rename",
+        &[
+            "cratestack-migrate/src/convert/renames.rs",
+            "cratestack-migrate/src/error.rs",
+        ],
+    ),
     // Read only through `Model::sql_table_name` / `Field::sql_column_name`
     // (`schema/storage_names.rs`, off this scan); `tests_readers_storage.rs`
-    // pins who calls those.
-    ("@@map", &[]),
-    ("@map", &[]),
+    // pins who calls those. The two files below only *name* `@@map`: a
+    // completion keyword and the text of the migrate refusal.
+    (
+        "@@map",
+        &[
+            "cratestack-lsp/src/completion.rs",
+            "cratestack-migrate/src/error.rs",
+        ],
+    ),
+    ("@map", &["cratestack-migrate/src/error.rs"]),
     (
         "@@internal",
         &[

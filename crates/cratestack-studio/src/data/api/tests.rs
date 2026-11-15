@@ -80,3 +80,12 @@ async fn follow_returns_unsupported() {
         .expect_err("unsupported");
     assert!(matches!(error, DataError::Unsupported { .. }));
 }
+
+/// A `@@map` table name is not a route (cratestack#1375).
+#[test]
+fn list_url_ignores_a_mapped_table_name() {
+    assert_eq!(
+        list_url("https://example.test", "MapBank"),
+        "https://example.test/api/map_banks"
+    );
+}

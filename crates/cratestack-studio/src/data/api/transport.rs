@@ -1,14 +1,15 @@
 //! URL construction + auth header application for the deployed-API
 //! source.
 
-use cratestack_migrate::table_name;
+use cratestack_core::route_naming::model_route_segment;
 use reqwest::header::HeaderName;
 
 use crate::data::DataError;
 
-/// Build the list-endpoint URL for `model`: `<base>/api/<plural-snake>`.
+/// Build the list-endpoint URL for `model`: `<base>/api/<plural-snake>`. That
+/// is the REST route, which a `@@map` table name never moves.
 pub(super) fn list_url(base_url: &str, model: &str) -> String {
-    let plural = table_name(model);
+    let plural = model_route_segment(model);
     let trimmed = base_url.trim_end_matches('/');
     format!("{trimmed}/api/{plural}")
 }

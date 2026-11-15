@@ -14,8 +14,9 @@ use std::collections::HashSet;
 
 use cratestack_core::{Model, parse_index_attribute};
 
+use super::storage::column_of;
 use crate::ir::{AddIndex, Column};
-use crate::naming::{column_name, index_name};
+use crate::naming::index_name;
 
 /// One `AddIndex` per `@@index([...])` on the model, in declaration
 /// order.
@@ -42,7 +43,7 @@ pub(super) fn model_index_indexes(model: &Model, table: &str, columns: &[Column]
         let index_columns: Vec<String> = parsed
             .fields
             .iter()
-            .map(|field| column_name(field))
+            .map(|field| column_of(model, field))
             .collect();
         if !index_columns
             .iter()

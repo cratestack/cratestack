@@ -2,15 +2,17 @@
 //! identifiers. Kept in one place so the IR, the emitters, and the
 //! verification step all agree.
 
-/// `Customer` → `customers`. Matches the convention the macro codegen
-/// uses for `ModelDescriptor::TABLE_NAME` so generated migrations
-/// produce the same table names the runtime queries against.
+/// `Customer` → `customers`: the *derived default* table name, and what a
+/// model with no `@@map("...")` is stored under. A model's real table is
+/// `Model::sql_table_name`, which this agrees with when there is no marker
+/// (cratestack#1375); this is the fallback for a name with no model behind it
+/// (a view, an older snapshot).
 pub fn table_name(model: &str) -> String {
     cratestack_core::route_naming::pluralize(&to_snake_case(model))
 }
 
-/// `orderCount` → `order_count`. Matches the macro codegen's column
-/// naming for the same reason.
+/// `orderCount` → `order_count`: the *derived default* column name of a field
+/// with no `@map("...")`; a model's real column is `Field::sql_column_name`.
 pub fn column_name(field: &str) -> String {
     to_snake_case(field)
 }

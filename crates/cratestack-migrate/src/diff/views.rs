@@ -47,7 +47,7 @@ pub(crate) fn project_views(schema: &Schema) -> BTreeMap<String, ViewProjection>
     schema
         .views
         .iter()
-        .filter_map(|view| project_view(view, dialect).map(|p| (p.name.clone(), p)))
+        .filter_map(|view| project_view(view, dialect, schema).map(|p| (p.name.clone(), p)))
         .collect()
 }
 
@@ -76,7 +76,7 @@ fn dialect_for(schema: &Schema) -> Dialect {
     }
 }
 
-fn project_view(view: &View, dialect: Dialect) -> Option<ViewProjection> {
+fn project_view(view: &View, dialect: Dialect, schema: &Schema) -> Option<ViewProjection> {
     // Materialized views are server-only (ADR-0003 §"Materialized
     // views"). The macro's embedded composer hard-errors at expansion
     // time; the migration generator has to apply the same gate
@@ -94,7 +94,17 @@ fn project_view(view: &View, dialect: Dialect) -> Option<ViewProjection> {
     let source_tables = view
         .sources
         .iter()
-        .map(|src| crate::naming::table_name(&src.name))
+        .map(|src| {
+            // A source is a model: its table is its `@@map` name, if any.
+            schema
+                .models
+                .iter()
+                .find(|model| model.name == src.name)
+                .map_or_else(
+                    || crate::naming::table_name(&src.name),
+                    |m| m.sql_table_name(),
+                )
+        })
         .collect();
     let primary_key = view
         .fields

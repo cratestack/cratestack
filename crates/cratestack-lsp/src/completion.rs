@@ -43,12 +43,19 @@ pub(crate) fn completion_items(
     // mistake for a policy attribute (it looks like `@@allow`/`@@deny`
     // but isn't a policy expression at all), so it's the one keyword
     // where a one-line reminder in the completion popup earns its keep.
-    let keywords_with_detail = [(
-        "@@internal",
-        "declares a model action unreachable from the wire (no REST route, RPC dispatch arm, or \
-         client stub) — e.g. @@internal(\"create\"); purely a generation-time gate, not a policy \
-         (see docs/design/route-suppression.md)",
-    )];
+    let keywords_with_detail = [
+        (
+            "@@internal",
+            "declares a model action unreachable from the wire (no REST route, RPC dispatch arm, \
+             or client stub) — e.g. @@internal(\"create\"); purely a generation-time gate, not a \
+             policy (see docs/design/route-suppression.md)",
+        ),
+        (
+            "@@map",
+            "SQL table name only — routes, op ids and clients are unchanged; e.g. \
+             @@map(\"legacy_accounts\") (cratestack#1375)",
+        ),
+    ];
     // Sourced from the parser's authoritative list rather than hand-copied,
     // so this can't silently drift the way it did before `Decimal` was
     // added here (cratestack#232) — a real editor regression that shipped

@@ -79,4 +79,38 @@ pub enum MigrateError {
         "enum `{enum_name}`: {reason}. Ordinals are permanent: stored rows keep the meaning their number had when written."
     )]
     EnumOrdinalHistory { enum_name: String, reason: String },
+
+    /// A model's table is stored under another name (its `@@map` was added,
+    /// changed or removed) without a `@@rename`. Matching is by name, so this
+    /// would otherwise drop the table and create an empty one (cratestack#1375).
+    #[error(
+        "model `{model}`: its table changed from `{from}` to `{to}` (`@@map`), and a changed \
+         name would drop `{from}` and create an empty `{to}`. To rename the table, add \
+         `@@rename(from = \"{from}\")` to the model; to keep it, restore the old `@@map`. To \
+         adopt a database that already has `{to}`, run `cratestack migrate baseline` after \
+         writing the `@@map`."
+    )]
+    TableStorageNameChanged {
+        model: String,
+        from: String,
+        to: String,
+    },
+
+    /// A field's column is stored under another name (its `@map` was added,
+    /// changed or removed) without a `@rename`; same reasoning as
+    /// [`Self::TableStorageNameChanged`].
+    #[error(
+        "table `{table}` (model `{model}`): field `{field}` is stored in column `{to}`, not \
+         `{from}` (`@map`), and a changed name would drop `{from}` and add an empty `{to}`. To \
+         rename the column, add `@rename(from = \"{from}\")` to `{field}`; to keep it, restore \
+         the old `@map`. To adopt a database that already has `{to}`, run `cratestack migrate \
+         baseline` after writing the `@map`."
+    )]
+    ColumnStorageNameChanged {
+        table: String,
+        model: String,
+        field: String,
+        from: String,
+        to: String,
+    },
 }

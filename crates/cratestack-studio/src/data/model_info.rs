@@ -7,7 +7,6 @@
 use cratestack_core::{
     EnumDecl, Field, Model, ModelEventKind, Schema, TypeArity, parse_emit_attribute,
 };
-use cratestack_migrate::{column_name, table_name};
 
 use super::DataError;
 
@@ -77,7 +76,7 @@ pub(crate) fn resolve_model<'a>(
         .filter(|f| is_scalar_field(schema, f))
         .map(|f| ColumnInfo {
             field_name: f.name.as_str(),
-            column_name: column_name(&f.name),
+            column_name: f.sql_column_name(),
             scalar: f.ty.name.as_str(),
             ordinal_enum: schema
                 .enums
@@ -93,9 +92,9 @@ pub(crate) fn resolve_model<'a>(
     Ok((
         model,
         ModelSqlInfo {
-            table: table_name(&model.name),
+            table: model.sql_table_name(),
             columns,
-            pk_column: column_name(&pk_field.name),
+            pk_column: pk_field.sql_column_name(),
             pk_field_name: pk_field.name.as_str(),
             pk_cast,
         },
@@ -116,7 +115,7 @@ pub(crate) fn version_column(model: &Model) -> Option<String> {
         .fields
         .iter()
         .find(|f| f.attributes.iter().any(|a| a.raw == "@version"))
-        .map(|f| column_name(&f.name))
+        .map(Field::sql_column_name)
 }
 
 /// The set of operations `model`'s `@@emit(...)` attribute(s) declare,

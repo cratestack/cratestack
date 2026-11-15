@@ -19,6 +19,11 @@ const STORAGE_READERS: &[(&str, &[&str])] = &[
             "cratestack-macros/src/model/descriptor.rs",
             "cratestack-macros/src/relation/types.rs",
             "cratestack-macros/src/view/descriptor.rs",
+            "cratestack-migrate/src/convert.rs",
+            "cratestack-migrate/src/convert/relations.rs",
+            "cratestack-migrate/src/diff/views.rs",
+            "cratestack-studio/src/api/export.rs",
+            "cratestack-studio/src/data/model_info.rs",
         ],
     ),
     (
@@ -42,6 +47,11 @@ const STORAGE_READERS: &[(&str, &[&str])] = &[
             "cratestack-macros/src/relation/types.rs",
             "cratestack-macros/src/shared/sql.rs",
             "cratestack-macros/src/transport/subscription_module/model_feed.rs",
+            "cratestack-migrate/src/convert/fields.rs",
+            "cratestack-studio/src/api/drift.rs",
+            "cratestack-studio/src/data/db_errors.rs",
+            "cratestack-studio/src/data/model_info.rs",
+            "cratestack-studio/src/data/relations.rs",
         ],
     ),
     (
@@ -49,6 +59,7 @@ const STORAGE_READERS: &[(&str, &[&str])] = &[
         &[
             "cratestack-macros/src/model/descriptor/unique.rs",
             "cratestack-macros/src/policy/model/term.rs",
+            "cratestack-migrate/src/convert/storage.rs",
         ],
     ),
 ];

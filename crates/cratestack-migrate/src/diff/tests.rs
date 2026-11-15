@@ -9,6 +9,7 @@ mod projection;
 mod relation_actions;
 mod relations;
 mod renames;
+mod storage_map;
 mod views;
 
 use cratestack_core::Schema;

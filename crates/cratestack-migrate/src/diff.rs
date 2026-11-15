@@ -27,6 +27,7 @@ mod extensions;
 mod foreign_keys;
 mod indexes;
 mod primary_key;
+mod storage_names;
 mod tables;
 // `pub(crate)` (not private) so `crate::projection` — the public
 // `Schema → Projections` seam — can reach `views::{ViewProjection,
@@ -72,6 +73,9 @@ pub fn diff_projections(prev: &Projections, next: &Projections) -> Result<Vec<Op
     // An ordinal enum renumbered, or a number reused, refuses the whole
     // diff before any op is computed, like a primary-key change.
     enum_ordinals::check_ordinal_history(prev, next)?;
+    // A changed `@@map` / `@map` must be declared a rename, never read as a
+    // drop and a create (cratestack#1375).
+    storage_names::check_storage_names_stable(prev, next)?;
     let prev_tables = &prev.tables;
     let next_tables = &next.tables;
 

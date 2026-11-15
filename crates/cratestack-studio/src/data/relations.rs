@@ -18,7 +18,6 @@
 //! and surfaces as [`DataError::Unsupported`].
 
 use cratestack_core::{Field, Model, Schema, TypeArity};
-use cratestack_migrate::column_name;
 
 use super::DataError;
 use super::model_info::{ModelSqlInfo, PkCast};
@@ -128,7 +127,7 @@ pub(crate) fn resolve_relation<'a>(
 
     Ok(ResolvedRelation {
         target_model,
-        filter_column: column_name(&target_field_name),
+        filter_column: target_field.sql_column_name(),
         filter_cast,
         filter_value: FilterValueSource {
             field_name: source_field_name,

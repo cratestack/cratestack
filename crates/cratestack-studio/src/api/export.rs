@@ -74,7 +74,16 @@ pub async fn export_records(
         }
     }
 
-    let filename = format!("{}-{}", target.key, table_name(&model));
+    let table = target
+        .schema
+        .models
+        .iter()
+        .find(|candidate| candidate.name == model)
+        .map_or_else(
+            || table_name(&model),
+            cratestack_core::Model::sql_table_name,
+        );
+    let filename = format!("{}-{table}", target.key);
     let (body, ctype, ext) = match format {
         ExportFormat::Json => (
             serde_json::to_vec(&all_rows).unwrap_or_else(|_| Vec::from(b"[]" as &[u8])),

@@ -16,12 +16,14 @@
 //! `on_delete`/`on_update` are simply never read: this function
 //! already returns `None` for it above before either is inspected.
 
-use cratestack_core::{Field, Schema, TypeArity};
+use cratestack_core::{Field, Model, Schema, TypeArity};
 
+use super::storage::column_of;
 use crate::ir::{AddForeignKey, ForeignKeyAction};
-use crate::naming::{column_name, fk_name, table_name};
+use crate::naming::fk_name;
 
 pub(super) fn relation_foreign_key(
+    model: &Model,
     field: &Field,
     schema: &Schema,
     table: &str,
@@ -38,13 +40,13 @@ pub(super) fn relation_foreign_key(
     let target_field = relation.references.first()?;
     let target_model = schema.models.iter().find(|m| m.name == field.ty.name)?;
 
-    let column = column_name(local_field);
+    let column = column_of(model, local_field);
     Some(AddForeignKey {
         name: fk_name(table, &column),
         table: table.to_owned(),
         column,
-        referenced_table: table_name(&target_model.name),
-        referenced_column: column_name(target_field),
+        referenced_table: target_model.sql_table_name(),
+        referenced_column: column_of(target_model, target_field),
         on_delete: relation
             .on_delete
             .as_deref()
