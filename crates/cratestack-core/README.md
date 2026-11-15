@@ -10,7 +10,7 @@ Core types, traits, and error handling shared across the CrateStack workspace.
 - **Auth context**: `CratestackContext`, `PrincipalContext`, `CratestackAuthIdentity`, `AuthProvider`
 - **Schema AST**: `Schema`, `Model`, `Field`, `Procedure`, `MixinDecl`, `TypeDecl`, `EnumDecl`
 - **Audit**: `AuditEvent`, `AuditOperation`, `AuditActor`, `AuditSink`, `NoopAuditSink`, `MulticastAuditSink`
-- **Signed envelope** (`HmacEnvelope`, HS256, *deprecated since 0.19.6*, use COSE_Mac0 from `cratestack-cose`): `KeyProvider`, `StaticKeyProvider`, `NonceStore`, `InMemoryNonceStore`
+- **Key and replay primitives** (back the COSE envelope in `cratestack-cose`; the HS256 envelope was removed in 0.20.0): `KeyProvider`, `StaticKeyProvider`, `NonceStore`, `InMemoryNonceStore`
 - **Codec/envelope traits**: `CratestackCodec`; the async signing seam `CratestackEnvelope` with its `Binding` (the COSE external-AAD inputs), `BodyShape`, `PathParams`, the provisional `StreamSealer`/`StreamOpener`, and the zero-cost `NoEnvelope` (ADR 0006)
 - **Event bus**: `CratestackEventBus`, `ModelEvent<T>`, `ModelEventKind`, `CratestackEventEnvelope`
 - **Transaction isolation**: `TransactionIsolation`
@@ -181,9 +181,9 @@ assert_eq!(isolation.as_sql(), "SERIALIZABLE");
 
 Accepts `read_committed` / `read committed`, `repeatable_read` / `repeatable read`, and `serializable`.
 
-## Signed Envelope (HMAC-SHA-256)
+## Key and replay primitives
 
-`HmacEnvelope<K: KeyProvider>` seals and opens HS256-signed messages. Production multi-replica deployments back the `NonceStore` with Redis so replay rejection holds cluster-wide. It is a standalone async API: it does **not** implement `CratestackEnvelope`, and ADR 0006 replaces it with COSE_Mac0 mode (`cratestack_cose::CoseEnvelope` in `CoseMode::Mac0`). `HmacEnvelope` and `SealedEnvelope` are `#[deprecated(since = "0.19.6")]` (cratestack#1018) and are removed in the next minor release.
+`KeyProvider` resolves signing keys by `kid`, and `NonceStore` records already-seen request nonces so replays are rejected. Production multi-replica deployments back the `NonceStore` with Redis so replay rejection holds cluster-wide. The HS256 envelope that used these was deprecated in 0.19.6 (cratestack#1018) and removed in 0.20.0 (cratestack#1357). COSE_Mac0 (`cratestack_cose::CoseEnvelope` in `CoseMode::Mac0`, ADR 0006) replaces them, loading keys from a `KeyProvider` through `cratestack_cose::KeyProviderMacKeys`.
 
 ## Envelope seam (ADR 0006)
 

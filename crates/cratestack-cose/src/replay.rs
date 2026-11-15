@@ -9,8 +9,8 @@
 use chrono::{DateTime, Utc};
 use cratestack_core::{CratestackError, REQUEST_NONCE_LEN, RequestNonce};
 
-/// The default clock skew, the same 300 s `HmacEnvelope` and the
-/// signed-request verifier use (`ENVELOPE_DEFAULT_CLOCK_SKEW_SECS`).
+/// The default clock skew, the same 300 s the removed HS256 envelope
+/// (0.20.0) and the signed-request verifier used (`ENVELOPE_DEFAULT_CLOCK_SKEW_SECS`).
 pub const DEFAULT_SKEW_SECS: u64 = 300;
 
 /// The length of the random `cti` the default source produces (§5).
@@ -44,7 +44,7 @@ pub(crate) fn nonce_expiry(iat: u64, skew: u64) -> Option<DateTime<Utc>> {
 }
 
 /// The key a `(kid, cti)` pair is recorded under. `NonceStore` takes a
-/// string, and the store may be shared with `HmacEnvelope`, so the key is
+/// string, and the store may be shared with other nonce users, so the key is
 /// namespaced and hex-encoded; the fixed `kid` length keeps the split
 /// between `kid` and `cti` unambiguous.
 pub(crate) fn nonce_key(kid: &[u8], cti: &[u8]) -> String {
