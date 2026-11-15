@@ -65,7 +65,7 @@ fn every_dropped_attribute_has_a_reason_and_a_unique_name() {
 
 #[test]
 fn attributes_with_no_semantics_today_are_not_pre_approved() {
-    for raw in ["@@map(\"t\")", "@map(\"c\")", "@@mcp(x)", "@mcp(x)"] {
+    for raw in ["@@mcp(x)", "@mcp(x)"] {
         assert!(!is_dropped(raw), "{raw} must stay in until it is reviewed");
     }
 }

@@ -11,7 +11,7 @@
 /// invariance test (`cratestack-parser/tests/op_contract_dropped.rs`) and a
 /// pinned reader list (`tests_readers.rs`): a new reader of the name anywhere
 /// fails that test and forces this decision to be reviewed again. Names with
-/// no semantics today (`@map`, `@@map`) and MCP markers (lifted into the IR's
+/// no semantics today and MCP markers (lifted into the IR's
 /// `mcp` node before attributes are read) are deliberately absent, so giving
 /// one a meaning later moves digests.
 pub(crate) const DROPPED_ATTRIBUTES: &[(&str, &str)] = &[
@@ -41,6 +41,16 @@ pub(crate) const DROPPED_ATTRIBUTES: &[(&str, &str)] = &[
     ),
     ("@@rename", "migration marker"),
     ("@rename", "migration marker"),
+    (
+        "@@map",
+        "storage: the SQL table name only (cratestack#1375); routes, op ids and wire \
+         names come from the model name",
+    ),
+    (
+        "@map",
+        "storage: the SQL column name only (cratestack#1375); wire field names come \
+         from the field name",
+    ),
     (
         "@@internal",
         "decides whether an op exists, which is the op key",

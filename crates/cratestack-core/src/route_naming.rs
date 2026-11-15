@@ -59,12 +59,12 @@ pub fn to_snake_case(value: &str) -> String {
 /// anything else just gets a bare `s` appended (`day` -> `days`).
 ///
 /// Still not a grammatically complete English pluralizer — irregular
-/// plurals (`person` -> `people`) are not handled, and there is
-/// deliberately no way to override the result for a given model today.
-/// `@@map(...)` is the planned escape hatch for that (flagged as a known
-/// gap by cratestack#504, not yet implemented, out of scope here). This
-/// function only needs to match the server's route registration and the
-/// migration engine's table naming, not be linguistically ideal.
+/// plurals (`person` -> `people`) are not handled. The *table* name can be
+/// overridden with `@@map("...")` (cratestack#1375,
+/// [`crate::schema::Model::sql_table_name`]); the *route* never can, so this
+/// function stays the one source of every REST path. It only needs to match
+/// the server's route registration and the migration engine's default table
+/// naming, not be linguistically ideal.
 ///
 /// **Migrating past cratestack#504's `y -> ies` fix.** This function
 /// feeds `cratestack-migrate`'s table-name derivation

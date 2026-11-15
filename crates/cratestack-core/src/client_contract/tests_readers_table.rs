@@ -89,6 +89,11 @@ pub(super) const READERS: &[(&str, &[&str])] = &[
     ),
     ("@@rename", &["cratestack-migrate/src/convert/renames.rs"]),
     ("@rename", &["cratestack-migrate/src/convert/renames.rs"]),
+    // Read only through `Model::sql_table_name` / `Field::sql_column_name`
+    // (`schema/storage_names.rs`, off this scan); `tests_readers_storage.rs`
+    // pins who calls those.
+    ("@@map", &[]),
+    ("@map", &[]),
     (
         "@@internal",
         &[

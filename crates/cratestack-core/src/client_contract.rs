@@ -71,6 +71,8 @@ mod tests_ops;
 #[cfg(test)]
 mod tests_readers;
 #[cfg(test)]
+mod tests_readers_storage;
+#[cfg(test)]
 mod tests_readers_symbols;
 #[cfg(test)]
 mod tests_readers_table;

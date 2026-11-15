@@ -50,7 +50,7 @@ fn mentions(line: &str, name: &str) -> bool {
     })
 }
 
-fn readers_of(name: &str, crates: &Path) -> Vec<String> {
+pub(super) fn readers_of(name: &str, crates: &Path) -> Vec<String> {
     let mut files = Vec::new();
     for entry in std::fs::read_dir(crates).expect("crates dir").flatten() {
         rust_files(&entry.path().join("src"), &mut files);
