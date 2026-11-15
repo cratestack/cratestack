@@ -101,7 +101,7 @@ pub fn check_count(owner: &str, named: usize, produced: usize) -> Result<(), Str
 pub const PROCEDURE_POLICY_NAMES: &[&str] = &["allow", "deny", "authorize"];
 
 /// Attribute names a model reader takes for a policy.
-pub const MODEL_POLICY_NAMES: &[&str] = &["allow", "deny"];
+const MODEL_POLICY_NAMES: &[&str] = &["allow", "deny"];
 
 /// The macros' audit of one model's attributes: every `@@allow`/`@@deny`
 /// that reads as a policy must be taken by one of `actions` (or `all`), in

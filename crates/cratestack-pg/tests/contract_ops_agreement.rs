@@ -116,7 +116,10 @@ macro_rules! read_anonymously {
 /// Create row 101 (with `label`) as a caller who passes every rule's
 /// create-time read.
 macro_rules! create_labelled_as_member {
-    ($db:expr, $accessor:ident, $input:ident) => {{
+    ($db:expr, $accessor:ident, $input:ident) => {
+        create_labelled_as_member!($db, $accessor, $input, "public")
+    };
+    ($db:expr, $accessor:ident, $input:ident, $label:expr) => {{
         let member = CratestackContext::authenticated([
             ("id".to_owned(), Value::Int(7)),
             (
@@ -130,7 +133,7 @@ macro_rules! create_labelled_as_member {
                 id: 101,
                 published: true,
                 ownerId: 7,
-                label: "public".to_owned(),
+                label: $label.to_owned(),
             })
             .run()
             .await
@@ -190,7 +193,11 @@ async fn delivered(response: Response, window: Duration) -> usize {
         .count()
 }
 
-const PARENT_TABLES: [&str; 12] = [
+/// What the server reads `label == "(x" || published || label == ")"` as: one
+/// comparison against the string between the outer quotes.
+const QUIRK_LABEL: &str = r#"(x" || published || label == ")"#;
+
+const PARENT_TABLES: [&str; 13] = [
     "ca_open",
     "ca_null",
     "ca_role",
@@ -203,6 +210,7 @@ const PARENT_TABLES: [&str; 12] = [
     "ca_some",
     "ca_in_lit",
     "ca_not_in_lit",
+    "ca_quirk",
 ];
 
 #[tokio::test]
@@ -223,11 +231,15 @@ async fn an_op_the_analysis_says_needs_a_principal_gives_an_anonymous_caller_not
             "INSERT INTO {table} VALUES (1, TRUE, 1), (2, TRUE, 2)"
         ));
     }
-    for table in ["ca_in_lit", "ca_not_in_lit"] {
+    for table in ["ca_in_lit", "ca_not_in_lit", "ca_quirk"] {
         statements.push(format!(
             "ALTER TABLE {table} ADD COLUMN label TEXT NOT NULL DEFAULT 'public'"
         ));
     }
+    // Row 1 holds the odd label; row 2 is a published row with a plain one.
+    statements.push(format!(
+        "UPDATE ca_quirk SET label = '{QUIRK_LABEL}' WHERE id = 1"
+    ));
     for table in ["ca_none", "ca_every", "ca_some"] {
         statements.push(format!(
             "CREATE TABLE {table}_item (id BIGINT PRIMARY KEY, parent_id BIGINT NOT NULL, user_id BIGINT NOT NULL)"
@@ -266,6 +278,7 @@ async fn an_op_the_analysis_says_needs_a_principal_gives_an_anonymous_caller_not
         "CaSome",
         "CaInLit",
         "CaNotInLit",
+        "CaQuirk",
     ];
     let mut feeds = Vec::new();
     for model in models {
@@ -283,6 +296,7 @@ async fn an_op_the_analysis_says_needs_a_principal_gives_an_anonymous_caller_not
     create_as_member!(db, ca_some, CreateCaSomeInput);
     create_labelled_as_member!(db, ca_in_lit, CreateCaInLitInput);
     create_labelled_as_member!(db, ca_not_in_lit, CreateCaNotInLitInput);
+    create_labelled_as_member!(db, ca_quirk, CreateCaQuirkInput, QUIRK_LABEL);
 
     let window = Duration::from_millis(800);
     let counts = cratestack::futures::future::join_all(
@@ -306,7 +320,23 @@ async fn an_op_the_analysis_says_needs_a_principal_gives_an_anonymous_caller_not
         ("CaSome", read_anonymously!(db, ca_some)),
         ("CaInLit", read_anonymously!(db, ca_in_lit)),
         ("CaNotInLit", read_anonymously!(db, ca_not_in_lit)),
+        ("CaQuirk", read_anonymously!(db, ca_quirk)),
     ]);
+
+    // One comparison, not a three-way OR: an anonymous caller reads exactly
+    // the rows carrying the odd label (1, and the 101 created above), and not
+    // the published row 2 an OR would have let through.
+    let mut quirk_ids: Vec<i64> = db
+        .ca_quirk()
+        .find_many()
+        .run(&CratestackContext::anonymous())
+        .await
+        .expect("list runs")
+        .into_iter()
+        .map(|row| row.id)
+        .collect();
+    quirk_ids.sort_unstable();
+    assert_eq!(quirk_ids, [1, 101], "CaQuirk is one `FieldEqLiteral`");
 
     let schema = cratestack_parser::parse_schema(
         &std::fs::read_to_string(SCHEMA_PATH).expect("fixture is readable"),
@@ -335,5 +365,5 @@ async fn an_op_the_analysis_says_needs_a_principal_gives_an_anonymous_caller_not
             checked += 1;
         }
     }
-    assert_eq!(checked, 36);
+    assert_eq!(checked, 39);
 }

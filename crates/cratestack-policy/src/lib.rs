@@ -33,8 +33,8 @@ mod truth;
 
 pub use analysis::{OpPolicyAnalysis, PolicyDialect, analyse_op_policy};
 pub use audit::{
-    MODEL_POLICY_NAMES, PROCEDURE_POLICY_NAMES, audit_model_attributes, audit_procedure_attributes,
-    check_attribute, check_count, policy_names_in,
+    PROCEDURE_POLICY_NAMES, audit_model_attributes, audit_procedure_attributes, check_attribute,
+    check_count, policy_names_in,
 };
 pub use eval::{authorize_procedure, authorize_query, context_has_role, context_in_tenant};
 pub use procedure_types::{
@@ -43,8 +43,7 @@ pub use procedure_types::{
 pub use read_types::{PolicyExpr, PolicyLiteral, ReadPolicy, ReadPredicate, RelationQuantifier};
 pub use slots::{ModelPolicySlot, model_verb_policy_slot};
 pub use syntax::{
-    AUTH_IS_NULL_TERM, AUTH_NOT_NULL_TERM, ModelTerm, PolicyAst, ProcedureTerm,
-    authorize_attribute_inner, find_unquoted, is_auth_is_system_term, model_rule_expression,
-    parse_builtin_policy_call, parse_policy_ast, parse_string_literal, procedure_rule_expression,
-    read_model_term, read_procedure_term, split_comparison, split_in_term,
+    ModelTerm, PolicyAst, ProcedureTerm, authorize_attribute_inner, model_rule_expression,
+    parse_policy_ast, parse_string_literal, procedure_rule_expression, read_model_term,
+    read_procedure_term, split_list_elements,
 };

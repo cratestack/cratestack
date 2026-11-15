@@ -18,6 +18,7 @@
 //! ANY($1)` would express 'one of these purposes'").
 
 use cratestack_core::{EnumDecl, Model};
+use cratestack_policy::split_list_elements;
 use quote::quote;
 
 use super::literal::parse_policy_literal;
@@ -63,103 +64,4 @@ fn lower_elements(
         .map(|element| parse_policy_literal(element, field, enums))
         .collect::<Result<Vec<_>, _>>()?;
     Ok(quote! { &[#(#literals),*] })
-}
-
-/// Split the bracket contents on commas, ignoring commas inside a
-/// quoted string literal so `["a,b", "c"]` is two elements, not three.
-///
-/// An empty list is rejected rather than lowered to a constant `FALSE`:
-/// it is far more likely a truncated edit than an intentional
-/// "match nothing", and SQL has no valid `IN ()` form to render it to.
-fn split_list_elements<'a>(source: &'a str, lhs: &str) -> Result<Vec<&'a str>, String> {
-    let mut elements = Vec::new();
-    let mut start = 0usize;
-    let mut quote: Option<char> = None;
-
-    for (index, character) in source.char_indices() {
-        match quote {
-            Some(open) if character == open => quote = None,
-            Some(_) => {}
-            None if character == '"' || character == '\'' => quote = Some(character),
-            None if character == ',' => {
-                elements.push(source[start..index].trim());
-                start = index + character.len_utf8();
-            }
-            None => {}
-        }
-    }
-    if quote.is_some() {
-        return Err(format!(
-            "unterminated string literal in the `in` list for `{lhs}`"
-        ));
-    }
-    elements.push(source[start..].trim());
-
-    if let Some(position) = elements.iter().position(|element| element.is_empty()) {
-        return Err(if elements.len() == 1 {
-            format!("`{lhs} in []` is empty; an `in` list needs at least one value")
-        } else {
-            format!(
-                "empty value at position {} in the `in` list for `{lhs}` (a trailing or doubled comma)",
-                position + 1
-            )
-        });
-    }
-
-    Ok(elements)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::split_list_elements;
-    use cratestack_policy::split_in_term;
-
-    #[test]
-    fn splits_a_plain_in_term() {
-        assert_eq!(
-            split_in_term("purpose in [product_image, kyc_selfie]"),
-            Some(("purpose", "product_image, kyc_selfie", false))
-        );
-    }
-
-    #[test]
-    fn splits_a_negated_in_term() {
-        assert_eq!(
-            split_in_term("purpose not in [kyc_selfie]"),
-            Some(("purpose", "kyc_selfie", true))
-        );
-    }
-
-    /// Decisive test for the whitespace guard in `cratestack_policy::split_in_term`: a
-    /// field whose name merely *ends* in `in` is not an `in` term.
-    #[test]
-    fn a_field_named_join_is_not_an_in_term() {
-        assert_eq!(split_in_term("join [a]"), None);
-    }
-
-    #[test]
-    fn a_term_without_brackets_is_not_an_in_term() {
-        assert_eq!(split_in_term("purpose == product_image"), None);
-    }
-
-    #[test]
-    fn commas_inside_a_string_literal_do_not_split() {
-        assert_eq!(
-            split_list_elements("\"a,b\", \"c\"", "label").as_deref(),
-            Ok(["\"a,b\"", "\"c\""].as_slice())
-        );
-    }
-
-    #[test]
-    fn an_empty_list_is_rejected() {
-        let error = split_list_elements("", "purpose").expect_err("empty list must be rejected");
-        assert!(error.contains("at least one value"), "got: {error}");
-    }
-
-    #[test]
-    fn a_trailing_comma_is_rejected() {
-        let error =
-            split_list_elements("a, ", "purpose").expect_err("trailing comma must be rejected");
-        assert!(error.contains("position 2"), "got: {error}");
-    }
 }

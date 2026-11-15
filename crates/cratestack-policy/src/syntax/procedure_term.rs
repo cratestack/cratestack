@@ -11,6 +11,7 @@ use super::terms::{
 
 /// One procedure policy term, by shape. Borrowed slices are of the input.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum ProcedureTerm<'a> {
     /// `auth() != null`.
     AuthNotNull,
@@ -38,7 +39,8 @@ pub enum ProcedureTerm<'a> {
 }
 
 /// Read one procedure term, in the order the macros always did. The
-/// comparison split ignores string literals.
+/// comparison split is a plain first-`==`/first-`!=` split and does not look
+/// at literals.
 pub fn read_procedure_term(term: &str) -> ProcedureTerm<'_> {
     if term == AUTH_NOT_NULL_TERM {
         return ProcedureTerm::AuthNotNull;

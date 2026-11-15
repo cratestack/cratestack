@@ -2,6 +2,10 @@
 //! opaque terms. Shared by the macros, which lower each term to a runtime
 //! predicate, and by [`crate::analysis`], which classifies each one, so the
 //! two read every rule's structure the same way.
+//!
+//! A term runs to the next `&&` or `||` at parenthesis depth zero, counting
+//! every `(` and `)`, including any inside a string literal. That is the
+//! macros' original reading, kept exactly (see the changelog).
 
 /// A parsed policy expression.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -92,28 +96,7 @@ impl<'a> PolicyExpressionParser<'a> {
     fn parse_term(&mut self) -> Result<PolicyAst, String> {
         let start = self.cursor;
         let mut depth = 0usize;
-        // Inside a `"…"` / `'…'` literal nothing is structure: a `&&`, `||`
-        // or parenthesis there is part of the value (`label in ["a && b"]`),
-        // and a backslash escapes the next character.
-        let mut quote: Option<char> = None;
-        let mut escaped = false;
         while let Some(ch) = self.peek() {
-            if let Some(open) = quote {
-                if escaped {
-                    escaped = false;
-                } else if ch == '\\' {
-                    escaped = true;
-                } else if ch == open {
-                    quote = None;
-                }
-                self.cursor += ch.len_utf8();
-                continue;
-            }
-            if ch == '"' || ch == '\'' {
-                quote = Some(ch);
-                self.cursor += ch.len_utf8();
-                continue;
-            }
             if ch == '(' {
                 depth += 1;
             } else if ch == ')' {

@@ -3,9 +3,9 @@
 
 /// The spelling of the two whole-term `auth()` null checks. Exact string
 /// matches, on purpose: the lowering recognises no other spelling.
-pub const AUTH_NOT_NULL_TERM: &str = "auth() != null";
+pub(crate) const AUTH_NOT_NULL_TERM: &str = "auth() != null";
 /// See [`AUTH_NOT_NULL_TERM`].
-pub const AUTH_IS_NULL_TERM: &str = "auth() == null";
+pub(crate) const AUTH_IS_NULL_TERM: &str = "auth() == null";
 
 /// Recognises `auth().isSystem()` (and the bare `isSystem()` shorthand)
 /// with any interior whitespace, e.g. `auth() . isSystem ()`.
@@ -18,7 +18,7 @@ pub const AUTH_IS_NULL_TERM: &str = "auth() == null";
 /// precisely what the `query` construct exists for (epic cratestack#488,
 /// webank ADR 0038), so that combination has to work; sharing the
 /// recogniser is what keeps the two dialects agreeing on the spelling.
-pub fn is_auth_is_system_term(term: &str) -> bool {
+pub(crate) fn is_auth_is_system_term(term: &str) -> bool {
     let squashed = term
         .chars()
         .filter(|character| !character.is_whitespace())
@@ -41,7 +41,7 @@ pub fn parse_string_literal(value: &str) -> Option<&str> {
 
 /// `name("literal")` as `(name, literal)`; `None` when the term is not a
 /// single call shape, `Some(Err)` when it is one with a bad argument.
-pub fn parse_builtin_policy_call(term: &str) -> Option<Result<(&str, &str), String>> {
+pub(crate) fn parse_builtin_policy_call(term: &str) -> Option<Result<(&str, &str), String>> {
     let open = term.find('(')?;
     let name = term[..open].trim();
     let args = term[open + 1..].strip_suffix(')')?.trim();

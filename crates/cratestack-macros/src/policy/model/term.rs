@@ -38,8 +38,8 @@ pub(super) fn parse_policy_term(
         ModelTerm::AuthRelation(relation_field) => {
             parse_auth_relation_equality(model, auth, types, relation_field)
         }
-        // Set membership is read before comparison, and comparisons split
-        // outside string literals, so `label in ["== x"]` is membership.
+        // Set membership is read before comparison, so `label in ["== x"]`
+        // is membership.
         ModelTerm::In { lhs, list, negate } => {
             parse_model_in_comparison(lhs, list, model, models, enums, negate)
         }
@@ -47,6 +47,9 @@ pub(super) fn parse_policy_term(
             parse_model_comparison(lhs, rhs, model, models, types, enums, auth, negate)
         }
         ModelTerm::Bare(term) => parse_bare_model_term(term, model, models),
+        // `ModelTerm` is `#[non_exhaustive]`: a shape this macro has no
+        // lowering for is refused, never guessed.
+        _ => Err(format!("unsupported policy term `{term}`")),
     }
 }
 

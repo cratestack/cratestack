@@ -41,6 +41,8 @@ mod tests_in_list;
 #[cfg(test)]
 mod tests_literal;
 #[cfg(test)]
+mod tests_literal_readings;
+#[cfg(test)]
 mod tests_system_principal;
 
 use cratestack_core::{EnumDecl, Model, TypeDecl};

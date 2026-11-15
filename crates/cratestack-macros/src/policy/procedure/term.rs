@@ -43,6 +43,9 @@ pub(super) fn parse_procedure_policy_term(
             return parse_procedure_comparison(lhs, rhs, subject, types, auth, negate);
         }
         ProcedureTerm::Bare(_) => {}
+        // `ProcedureTerm` is `#[non_exhaustive]`: a shape this macro has no
+        // lowering for is refused, never guessed.
+        _ => return Err(format!("unsupported policy term `{term}`")),
     }
 
     let field_decl = resolve_procedure_field(subject, types, term)?;

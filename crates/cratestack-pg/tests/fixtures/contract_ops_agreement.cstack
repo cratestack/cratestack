@@ -171,8 +171,8 @@ model CaSomeItem {
   @@map("ca_some_item")
 }
 
-// A string literal is a value, never an operator (second-round review): the
-// server renders `label IN (..)` for these, so an anonymous caller reads rows.
+// Set membership is read before comparison, as the macros do: the server
+// renders `label IN (..)` for these, so an anonymous caller reads rows.
 model CaInLit {
   id Int @id
   published Boolean
@@ -197,4 +197,21 @@ model CaNotInLit {
   @@emit(created)
   @@subscribe
   @@map("ca_not_in_lit")
+}
+
+// The server's own reading, quirks included: the parentheses inside the two
+// literals hold the whole rule together, so it is ONE comparison, `label`
+// equal to the odd string between the outer quotes. It is not a three-way OR,
+// so `published` rows are not readable. `contract ops` reads it the same way.
+model CaQuirk {
+  id Int @id
+  published Boolean
+  ownerId Int
+  label String
+
+  @@allow("read", label == "(x" || published || label == ")")
+  @@allow("create", auth() != null)
+  @@emit(created)
+  @@subscribe
+  @@map("ca_quirk")
 }

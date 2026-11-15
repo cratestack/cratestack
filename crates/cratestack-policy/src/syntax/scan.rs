@@ -1,57 +1,24 @@
-//! Finding an operator in a policy term, outside string literals.
+//! Dividing a policy term at its comparison operator.
 //!
-//! A literal is `"…"` or `'…'`; a backslash inside one escapes the next
-//! character, so `\"` does not close it. An operator that sits inside a
-//! literal is part of a value, never an operator: `label in ["== auth().id"]`
-//! is a set-membership test against two strings, and `x != "a == b"` is one
-//! `!=`. Every splitter of a term goes through here, so the macros that lower
-//! a term and the analysis that classifies it cannot disagree on where it
-//! divides.
+//! This is the macros' own reading, reproduced exactly: the term is divided at
+//! the first `==`, else at the first `!=`, wherever that is. It does not look
+//! at string literals, so an operator inside one still divides the term
+//! (`x != "a == b"` is read as `==` with `x != "a` on the left). That is how
+//! the generated server has always read a policy; `contract ops` reads it the
+//! same way so the two cannot disagree. Reading literals better is a
+//! deliberate, separate change (see the changelog).
 
-/// The byte offset of the first `needle` in `text` that is outside every
-/// string literal.
-pub fn find_unquoted(text: &str, needle: &str) -> Option<usize> {
-    let mut quote: Option<char> = None;
-    let mut escaped = false;
-    for (offset, ch) in text.char_indices() {
-        match quote {
-            Some(open) => {
-                if escaped {
-                    escaped = false;
-                } else if ch == '\\' {
-                    escaped = true;
-                } else if ch == open {
-                    quote = None;
-                }
-            }
-            None => {
-                if ch == '"' || ch == '\'' {
-                    quote = Some(ch);
-                } else if text[offset..].starts_with(needle) {
-                    return Some(offset);
-                }
-            }
-        }
-    }
-    None
-}
-
-/// Split `term` at its first unquoted `==` (else its first unquoted `!=`)
-/// into `(lhs, rhs, negate)`, both sides trimmed.
+/// Split `term` at its first `==` (else its first `!=`) into
+/// `(lhs, rhs, negate)`, both sides trimmed.
 ///
 /// `==` is looked for first, as both dialects always have: a term with both
 /// operators divides at the `==`.
-pub fn split_comparison(term: &str) -> Option<(&str, &str, bool)> {
-    [("==", false), ("!=", true)]
-        .into_iter()
-        .find_map(|(operator, negate)| {
-            let at = find_unquoted(term, operator)?;
-            Some((
-                term[..at].trim(),
-                term[at + operator.len()..].trim(),
-                negate,
-            ))
-        })
+pub(crate) fn split_comparison(term: &str) -> Option<(&str, &str, bool)> {
+    if let Some((lhs, rhs)) = term.split_once("==") {
+        return Some((lhs.trim(), rhs.trim(), false));
+    }
+    let (lhs, rhs) = term.split_once("!=")?;
+    Some((lhs.trim(), rhs.trim(), true))
 }
 
 #[cfg(test)]
@@ -59,37 +26,26 @@ mod tests {
     use super::*;
 
     #[test]
-    fn an_operator_inside_a_literal_is_not_found() {
-        assert_eq!(find_unquoted(r#"a == "x""#, "=="), Some(2));
-        assert_eq!(find_unquoted(r#"a in ["== x"]"#, "=="), None);
-        assert_eq!(find_unquoted(r#"a in ['!= x']"#, "!="), None);
-        assert_eq!(find_unquoted(r#"a == "b" == c"#, "=="), Some(2));
-        assert_eq!(find_unquoted(r#""a" == b"#, "=="), Some(4));
-    }
-
-    #[test]
-    fn an_escaped_quote_does_not_close_the_literal() {
-        assert_eq!(find_unquoted(r#"a in ["q\" == x"]"#, "=="), None);
-        assert_eq!(find_unquoted(r#"a != "q\\" == x"#, "=="), Some(11));
-    }
-
-    #[test]
-    fn the_other_quote_kind_inside_a_literal_is_text() {
-        assert_eq!(find_unquoted(r#"a in ["it's", "== x"]"#, "=="), None);
-    }
-
-    #[test]
-    fn comparison_splits_at_equals_first_and_outside_literals() {
+    fn comparison_splits_at_the_first_equals_else_the_first_not_equals() {
         assert_eq!(split_comparison("a == b"), Some(("a", "b", false)));
         assert_eq!(split_comparison("a != b"), Some(("a", "b", true)));
         assert_eq!(
-            split_comparison(r#"a != "x == y""#),
-            Some(("a", r#""x == y""#, true))
-        );
-        assert_eq!(split_comparison(r#"a in ["== x"]"#), None);
-        assert_eq!(
             split_comparison("a != b == c"),
             Some(("a != b", "c", false))
+        );
+        assert_eq!(split_comparison("a"), None);
+    }
+
+    /// The quirk the server has always had: a literal is not special.
+    #[test]
+    fn an_operator_inside_a_literal_still_divides_the_term() {
+        assert_eq!(
+            split_comparison(r#"x != "a == b""#),
+            Some((r#"x != "a"#, r#"b""#, false))
+        );
+        assert_eq!(
+            split_comparison(r#"x == "a == b""#),
+            Some(("x", r#""a == b""#, false))
         );
     }
 }

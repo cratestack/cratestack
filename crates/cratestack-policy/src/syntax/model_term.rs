@@ -1,16 +1,18 @@
 //! How one model `@@allow`/`@@deny` term is read: which shape it is, and where
 //! it divides. The macros lower the result to a `ReadPredicate`; the analysis
 //! classifies it. Both call [`read_model_term`], so a term is the same shape
-//! to each, and a string literal holding an operator or a keyword
-//! (`label in ["== auth().id"]`) is read as the membership test it is.
+//! to each. The order of the checks is the macros' original one, quirks
+//! included; in particular `label in ["== auth().id"]` is a membership test
+//! because membership is read before comparison.
 
-use super::scan::{find_unquoted, split_comparison};
+use super::scan::split_comparison;
 use super::terms::{
     AUTH_IS_NULL_TERM, AUTH_NOT_NULL_TERM, is_auth_is_system_term, parse_builtin_policy_call,
 };
 
 /// One model policy term, by shape. Borrowed slices are of the input term.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum ModelTerm<'a> {
     /// `auth() != null`.
     AuthNotNull,
@@ -46,8 +48,9 @@ pub enum ModelTerm<'a> {
 
 /// Read one model term. The checks run in the order the macros always did:
 /// whole-term `auth()` forms, a builtin call, `auth() ==` / `== auth()`, set
-/// membership, then comparison. Membership comes before comparison, and the
-/// comparison split ignores literals, so a value cannot pose as an operator.
+/// membership, then comparison. Membership comes before comparison, so a list
+/// whose literals hold `==` is still a membership test. The comparison split
+/// is a plain first-`==`/first-`!=` split and does not look at literals.
 pub fn read_model_term(term: &str) -> ModelTerm<'_> {
     if term == AUTH_NOT_NULL_TERM {
         return ModelTerm::AuthNotNull;
@@ -82,8 +85,8 @@ pub fn read_model_term(term: &str) -> ModelTerm<'_> {
 /// Anchored on the first `[` and the term's final `]` rather than on a
 /// substring search for `" in "`, so a value containing the keyword
 /// (`purpose in ["shipped in transit"]`) cannot be mis-split.
-pub fn split_in_term(term: &str) -> Option<(&str, &str, bool)> {
-    let open = find_unquoted(term, "[")?;
+pub(crate) fn split_in_term(term: &str) -> Option<(&str, &str, bool)> {
+    let open = term.find('[')?;
     let (head, list) = term.split_at(open);
     let list = list.strip_prefix('[')?.strip_suffix(']')?;
 
@@ -106,4 +109,71 @@ fn strip_keyword<'a>(head: &'a str, keyword: &str) -> Option<&'a str> {
     }
     let rest = rest.trim_end();
     (!rest.is_empty()).then_some(rest)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn splits_a_plain_in_term() {
+        assert_eq!(
+            split_in_term("purpose in [product_image, kyc_selfie]"),
+            Some(("purpose", "product_image, kyc_selfie", false))
+        );
+    }
+
+    #[test]
+    fn splits_a_negated_in_term() {
+        assert_eq!(
+            split_in_term("purpose not in [kyc_selfie]"),
+            Some(("purpose", "kyc_selfie", true))
+        );
+    }
+
+    /// The whitespace guard in `strip_keyword`: a field whose name merely
+    /// *ends* in `in` is not an `in` term.
+    #[test]
+    fn a_field_named_join_is_not_an_in_term() {
+        assert_eq!(split_in_term("join [a]"), None);
+    }
+
+    #[test]
+    fn a_term_without_brackets_is_not_an_in_term() {
+        assert_eq!(split_in_term("purpose == product_image"), None);
+    }
+
+    /// Membership is read before comparison: this is the whole difference
+    /// between a set test and a comparison with a garbled left side.
+    #[test]
+    fn membership_is_read_before_comparison() {
+        assert_eq!(
+            read_model_term(r#"label in ["== auth().id"]"#),
+            ModelTerm::In {
+                lhs: "label",
+                list: r#""== auth().id""#,
+                negate: false
+            }
+        );
+        assert_eq!(
+            read_model_term(r#"label not in ["!= x"]"#),
+            ModelTerm::In {
+                lhs: "label",
+                list: r#""!= x""#,
+                negate: true
+            }
+        );
+    }
+
+    #[test]
+    fn a_comparison_divides_at_the_first_operator_literal_or_not() {
+        assert_eq!(
+            read_model_term(r#"x != "a == b""#),
+            ModelTerm::Comparison {
+                lhs: r#"x != "a"#,
+                rhs: r#"b""#,
+                negate: false
+            }
+        );
+    }
 }

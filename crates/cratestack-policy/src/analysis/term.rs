@@ -33,12 +33,14 @@
 //! `MaybeTrue`: that is the direction that never reports a principal as
 //! required for an op an anonymous caller can pass.
 //!
-//! The recognisers are the macros' own ([`crate::syntax`]), applied in the
-//! macros' order; a term they would reject, or one this table has no row
-//! for, is [`Term::Unanalysed`].
+//! The recognisers are the macros' own ([`crate::syntax`]), in the macros'
+//! order and with their quirks (membership before comparison; a comparison
+//! divides at the first `==`/`!=`, a literal included). A term they would
+//! reject, or one this table has no row for, is [`Term::Unanalysed`].
 
 use crate::syntax::{
     ModelTerm, ProcedureTerm, parse_string_literal, read_model_term, read_procedure_term,
+    split_list_elements,
 };
 
 /// Which policy dialect a term is written in: a model's `@@allow`/`@@deny`
@@ -88,9 +90,17 @@ fn classify_model_term(term: &str) -> Term {
         ModelTerm::AuthNotNull | ModelTerm::AuthIsSystem => known(Anon::AlwaysFalse),
         ModelTerm::AuthIsNull => known(Anon::MaybeTrue),
         ModelTerm::Builtin(call) => classify_call(call),
-        ModelTerm::AuthRelation(relation) => classify_comparison("auth()", relation),
-        ModelTerm::In { lhs, .. } => {
-            if is_path(lhs) {
+        ModelTerm::AuthRelation(relation) => {
+            if is_path(relation) {
+                known(Anon::AlwaysFalse)
+            } else {
+                Term::Unanalysed
+            }
+        }
+        ModelTerm::In { lhs, list, .. } => {
+            // A list the macros refuse (empty, a trailing comma, an
+            // unterminated literal) is a compile error there.
+            if is_path(lhs) && split_list_elements(list, lhs).is_ok() {
                 known(Anon::MaybeTrue)
             } else {
                 Term::Unanalysed
@@ -138,10 +148,18 @@ fn classify_bare(term: &str) -> Term {
 }
 
 fn classify_comparison(lhs: &str, rhs: &str) -> Term {
-    if lhs.is_empty() || rhs.is_empty() || lhs == "null" || rhs == "null" {
+    let on_auth = |side: &str| side.starts_with("auth()");
+    // What the macros accept: a field, relation or `auth().x` path on the
+    // left, and one of those or a literal on the right. Anything else is a
+    // compile error there (`x != "a == b"` leaves `x != "a` on the left), so
+    // it is reported, not judged.
+    let valid_side = |side: &str| is_path(side) || auth_path(side);
+    let valid_rhs = valid_side(rhs)
+        || parse_string_literal(rhs).is_some()
+        || !rhs.contains(['"', '\'']) && !on_auth(rhs);
+    if rhs.is_empty() || lhs == "null" || rhs == "null" || !valid_side(lhs) || !valid_rhs {
         return Term::Unanalysed;
     }
-    let on_auth = |side: &str| side.starts_with("auth()");
     if !(on_auth(lhs) || on_auth(rhs)) {
         return known(Anon::MaybeTrue);
     }
@@ -157,6 +175,12 @@ fn classify_comparison(lhs: &str, rhs: &str) -> Term {
     } else {
         Anon::AlwaysFalse
     })
+}
+
+/// `auth().x` or `auth().x.y`, as the macros read it: prefix stripped, trimmed.
+fn auth_path(side: &str) -> bool {
+    side.strip_prefix("auth().")
+        .is_some_and(|rest| is_path(rest.trim()))
 }
 
 /// A bare boolean field or relation path: `published`, `author.active`.
