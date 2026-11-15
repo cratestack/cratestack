@@ -14,6 +14,14 @@ Additive. Closes the keystore half of #1151: `package:cratestack_cbor/cose.dart`
 
 **Transport parity.** No REST or RPC request surface changes: this is the client's signing path, identical on both. MCP is exempt (ADR 0002 D5).
 
+### Breaking: remove the deprecated `HmacEnvelope` / `SealedEnvelope` (cratestack#1357)
+
+**Breaking, Rust API.** `cratestack_core::HmacEnvelope` and `cratestack_core::SealedEnvelope` are gone. They were deprecated since 0.19.6 (cratestack#1018) with removal promised for the next minor release, which is this one (0.20.0). Code that still names either type no longer compiles.
+
+**Migration.** COSE_Mac0 replaces the HS256 envelope. Build a `cratestack_cose::CoseEnvelope` in `CoseMode::Mac0` (`CoseEnvelope::server(CoseMode::Mac0, ..)` / `CoseEnvelope::client(CoseMode::Mac0, ..)`), load the same secrets through `KeyProviderMacKeys::load`, serve it with `cratestack-axum`'s `envelope_layer`, and seal client calls with `CratestackClient::with_envelope` (`cratestack-client`'s `cose` feature). See ADR 0006.
+
+**Unchanged.** `KeyProvider`, `NonceStore`, `InMemoryNonceStore` and `StaticKeyProvider` stay, at the same paths (`cratestack_core::{..}` and `cratestack_core::envelope::{..}`); `cratestack-cose` builds on them. `cratestack-core` no longer depends on `hmac` or `subtle`.
+
 ## 0.19.7 (2026-11-14)
 
 ### `@device_auth` procedure marker; `generate-dart --preset fespalier` emits a `DeviceAuthServer` (cratestack#1303)
