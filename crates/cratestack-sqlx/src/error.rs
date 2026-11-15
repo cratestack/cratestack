@@ -9,6 +9,11 @@
 //! [`CratestackError::db_sqlstate`] / [`CratestackError::db_constraint`] instead of
 //! substring-matching the stringified detail.
 //!
+//! Connection-class errors (`PoolTimedOut`, `PoolClosed`, `WorkerCrashed`,
+//! `Io`, `Tls`) are mapped to `CratestackError::Unavailable` (HTTP 503), so a
+//! caller can tell "could not reach the database" from a protocol or decode
+//! failure, which stays `Database`.
+//!
 //! `sqlx::Error::RowNotFound` is mapped to `CratestackError::NotFound` so a missing
 //! row surfaces as a 404 rather than a 500. Callers that want a custom
 //! not-found message should construct it themselves before calling this
@@ -25,8 +30,10 @@ use crate::sqlx;
 ///
 /// If `error` is `sqlx::Error::Database(db_err)`, this function produces
 /// `CratestackError::DatabaseTyped` with the SQLSTATE code and constraint name
-/// extracted from the driver error.  All other `sqlx::Error` kinds (pool
-/// timeouts, decode errors, etc.) fall back to `CratestackError::Database` with the
+/// extracted from the driver error.  Connection-class errors
+/// (`PoolTimedOut`, `PoolClosed`, `WorkerCrashed`, `Io`, `Tls`) become
+/// `CratestackError::Unavailable`. All other `sqlx::Error` kinds (decode
+/// errors, protocol errors, etc.) fall back to `CratestackError::Database` with the
 /// stringified message, identical to the legacy `error.to_string()` path.
 ///
 /// # Usage
@@ -60,6 +67,17 @@ pub fn cratestack_error_from_sqlx(error: sqlx::Error) -> CratestackError {
             })
         }
         sqlx::Error::RowNotFound => CratestackError::NotFound("not found".to_owned()),
+        // The database could not be reached or answered at all. `Unavailable`'s
+        // string is the public message, so it is fixed: the cause (an `Io`
+        // error can carry the host and port) goes to tracing only.
+        error @ (sqlx::Error::PoolTimedOut
+        | sqlx::Error::PoolClosed
+        | sqlx::Error::WorkerCrashed
+        | sqlx::Error::Io(_)
+        | sqlx::Error::Tls(_)) => {
+            tracing::warn!(%error, "database unavailable");
+            CratestackError::Unavailable("database unavailable".to_owned())
+        }
         other => CratestackError::Database(other.to_string()),
     }
 }
@@ -103,6 +121,64 @@ mod tests {
         // Typed accessors return None for the legacy variant.
         assert_eq!(err.db_sqlstate(), None);
         assert_eq!(err.db_constraint(), None);
+    }
+
+    fn assert_unavailable(error: sqlx::Error) {
+        let message = error.to_string();
+        let err = cratestack_error_from_sqlx(error);
+        assert!(
+            matches!(err, CratestackError::Unavailable(_)),
+            "{message}: should map to Unavailable, got {err:?}",
+        );
+        assert_eq!(err.status_code().as_u16(), 503);
+        assert_eq!(err.code(), "UNAVAILABLE");
+    }
+
+    #[test]
+    fn pool_timed_out_maps_to_unavailable() {
+        assert_unavailable(sqlx::Error::PoolTimedOut);
+    }
+
+    #[test]
+    fn pool_closed_maps_to_unavailable() {
+        assert_unavailable(sqlx::Error::PoolClosed);
+    }
+
+    #[test]
+    fn worker_crashed_maps_to_unavailable() {
+        assert_unavailable(sqlx::Error::WorkerCrashed);
+    }
+
+    #[test]
+    fn io_error_maps_to_unavailable_without_leaking_the_address() {
+        let io = std::io::Error::new(
+            std::io::ErrorKind::ConnectionRefused,
+            "connect to 10.1.2.3:5432 refused",
+        );
+        let err = cratestack_error_from_sqlx(sqlx::Error::Io(io));
+        assert!(matches!(err, CratestackError::Unavailable(_)), "{err:?}");
+        // `Unavailable`'s string is the public message: no host or port in it.
+        assert!(!err.public_message().contains("10.1.2.3"));
+        assert_eq!(err.status_code().as_u16(), 503);
+    }
+
+    #[test]
+    fn tls_error_maps_to_unavailable() {
+        assert_unavailable(sqlx::Error::Tls("handshake failed".into()));
+    }
+
+    /// Protocol, decode, configuration and the like stay `Database(String)`.
+    #[test]
+    fn decode_and_configuration_errors_stay_database() {
+        for error in [
+            sqlx::Error::Decode("bad column".into()),
+            sqlx::Error::Configuration("bad option".into()),
+            sqlx::Error::ColumnNotFound("x".to_owned()),
+        ] {
+            let err = cratestack_error_from_sqlx(error);
+            assert!(matches!(err, CratestackError::Database(_)), "{err:?}");
+            assert_eq!(err.status_code().as_u16(), 500);
+        }
     }
 
     /// The `DatabaseTyped` variant exposes sqlstate and constraint through the

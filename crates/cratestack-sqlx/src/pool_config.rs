@@ -1,0 +1,194 @@
+//! A bounded Postgres pool with session settings, built without naming sqlx.
+//!
+//! [`PgPoolConfig`] is the one public way to build the `PgPool` that
+//! `Cratestack::builder(pool)` takes (cratestack#1385). A crate that uses
+//! only generated `cratestack-pg` models can bound its pool and pin
+//! `statement_timeout` / `lock_timeout` without depending on sqlx.
+//!
+//! ```rust,ignore
+//! let config = cratestack::PgPoolConfig::from_url(&url)?   // BadRequest on a bad URL
+//!     .max_connections(2)
+//!     .acquire_timeout(Duration::from_secs(5))
+//!     .test_before_acquire(true)
+//!     .session_setting("statement_timeout", "30000")
+//!     .session_setting("lock_timeout", "10000");
+//! let pool = config.clone().connect_lazy()?;
+//! config.verify_settings(&pool).await?;                    // fail fast at start-up
+//! ```
+//!
+//! # Session settings
+//!
+//! Each setting is sent as a startup `-c name=value` option, appended after
+//! any `options` already in the URL, so it wins over a URL that sets the
+//! same name (the server keeps the last `-c` for a name). A connection
+//! pooler that drops startup options (pgbouncer in transaction mode) defeats
+//! this silently; [`PgPoolConfig::verify_settings`] is how to notice.
+//!
+//! # URL forms
+//!
+//! Only URLs are accepted (`postgres://` or `postgresql://`). A libpq
+//! key=value DSN (`host=localhost dbname=app`) is refused with a
+//! `BadRequest` that says so, rather than reaching the URL parser and
+//! failing with a message about something else. Convert it to a URL.
+//!
+//! # No separate connect timeout
+//!
+//! sqlx has no connect-timeout knob. Establishing a connection happens
+//! inside `acquire`, so [`PgPoolConfig::acquire_timeout`] bounds the wait
+//! for a free connection *and* for a new one to come up.
+
+use std::fmt;
+use std::time::Duration;
+
+use cratestack_core::CratestackError;
+
+use crate::sqlx::PgPool;
+use crate::sqlx::postgres::{PgConnectOptions, PgPoolOptions};
+
+mod validate;
+mod verify;
+
+#[cfg(test)]
+mod tests;
+
+/// Pool size when [`PgPoolConfig::max_connections`] is not called. Matches
+/// what `cratestack-service`'s `ServiceConfig::state` always used.
+const DEFAULT_MAX_CONNECTIONS: u32 = 5;
+
+/// Builder for a bounded Postgres pool with session settings.
+///
+/// See the [module docs](self). `Debug` omits the connection details, so a
+/// logged config never carries the URL's password.
+#[derive(Clone)]
+pub struct PgPoolConfig {
+    connect: PgConnectOptions,
+    max_connections: u32,
+    acquire_timeout: Option<Duration>,
+    test_before_acquire: Option<bool>,
+    /// Name to value, in the order set; a repeated name keeps its last value.
+    settings: Vec<(String, String)>,
+    /// First invalid input seen by an infallible setter, reported when the
+    /// pool is built so the chain stays a plain builder.
+    invalid: Option<String>,
+}
+
+impl fmt::Debug for PgPoolConfig {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("PgPoolConfig")
+            .field("max_connections", &self.max_connections)
+            .field("acquire_timeout", &self.acquire_timeout)
+            .field("test_before_acquire", &self.test_before_acquire)
+            .field("settings", &self.settings)
+            .finish_non_exhaustive()
+    }
+}
+
+impl PgPoolConfig {
+    /// Start from a `postgres://` or `postgresql://` URL.
+    ///
+    /// A bad URL, or a key=value DSN, is `CratestackError::BadRequest`. The
+    /// message never echoes any part of the input, so a password in a
+    /// malformed URL cannot reach a log.
+    pub fn from_url(url: &str) -> Result<Self, CratestackError> {
+        Ok(Self {
+            connect: validate::parse_url(url)?,
+            max_connections: DEFAULT_MAX_CONNECTIONS,
+            acquire_timeout: None,
+            test_before_acquire: None,
+            settings: Vec::new(),
+            invalid: None,
+        })
+    }
+
+    /// Upper bound on open connections (default 5). Zero is refused when the
+    /// pool is built.
+    pub fn max_connections(mut self, max: u32) -> Self {
+        self.max_connections = max;
+        self
+    }
+
+    /// How long a caller waits for a connection, including the time to open
+    /// a new one. sqlx's default (30 s) applies when unset.
+    pub fn acquire_timeout(mut self, timeout: Duration) -> Self {
+        self.acquire_timeout = Some(timeout);
+        self
+    }
+
+    /// Ping a pooled connection before handing it out. sqlx's default
+    /// applies when unset.
+    pub fn test_before_acquire(mut self, test: bool) -> Self {
+        self.test_before_acquire = Some(test);
+        self
+    }
+
+    /// Set a Postgres setting on every connection at startup, for example
+    /// `("statement_timeout", "30000")`.
+    ///
+    /// `name` must match `[a-z_][a-z0-9_.]*` (a custom `app.name` setting is
+    /// fine) and `value` must hold no control character; anything else is a
+    /// `BadRequest` reported when the pool is built. A name set twice keeps
+    /// its last value.
+    pub fn session_setting(mut self, name: &str, value: &str) -> Self {
+        if let Err(message) = validate::check_setting(name, value) {
+            self.invalid.get_or_insert(message);
+            return self;
+        }
+        self.settings.retain(|(existing, _)| existing != name);
+        self.settings.push((name.to_owned(), value.to_owned()));
+        self
+    }
+
+    /// The connection options with the session settings appended last.
+    pub(crate) fn connect_options(&self) -> Result<PgConnectOptions, CratestackError> {
+        if let Some(message) = &self.invalid {
+            return Err(CratestackError::BadRequest(message.clone()));
+        }
+        if self.max_connections == 0 {
+            return Err(CratestackError::BadRequest(
+                "max_connections must be at least 1".to_owned(),
+            ));
+        }
+        Ok(self.connect.clone().options(
+            self.settings
+                .iter()
+                .map(|(name, value)| (name.as_str(), value.as_str())),
+        ))
+    }
+
+    fn pool_options(&self) -> PgPoolOptions {
+        let mut options = PgPoolOptions::new().max_connections(self.max_connections);
+        if let Some(timeout) = self.acquire_timeout {
+            options = options.acquire_timeout(timeout);
+        }
+        if let Some(test) = self.test_before_acquire {
+            options = options.test_before_acquire(test);
+        }
+        options
+    }
+
+    /// Build the pool without connecting; the first connection is made on
+    /// first use. Needs a Tokio runtime. The result is the `PgPool` that
+    /// `Cratestack::builder` takes.
+    ///
+    /// Fails with `BadRequest` on an invalid setting name or value, or a
+    /// zero `max_connections`.
+    pub fn connect_lazy(&self) -> Result<PgPool, CratestackError> {
+        Ok(self
+            .pool_options()
+            .connect_lazy_with(self.connect_options()?))
+    }
+
+    /// Build the pool and open one connection now. A database that cannot be
+    /// reached is `CratestackError::Unavailable`; the cause is logged, not
+    /// returned, since it can carry the host and port.
+    pub async fn connect(&self) -> Result<PgPool, CratestackError> {
+        let options = self.connect_options()?;
+        self.pool_options()
+            .connect_with(options)
+            .await
+            .map_err(|error| {
+                tracing::warn!(%error, "postgres pool could not connect");
+                CratestackError::Unavailable("database unavailable".to_owned())
+            })
+    }
+}

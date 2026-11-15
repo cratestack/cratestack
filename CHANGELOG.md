@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+### `PgPoolConfig`: a bounded Postgres pool with session settings, no sqlx at the call site (cratestack#1385)
+
+Additive, plus one behaviour change below. `Cratestack::builder(pool)` takes a `PgPool`, and until now the only public way to build one was `ServiceConfig::state()` (fixed at 5 connections, no timeouts) or naming sqlx. `PgPoolConfig` is the builder, exported from `cratestack-pg` (`cratestack::PgPoolConfig`), `cratestack-sqlx` and, under its `postgres` feature, `cratestack-service`.
+
+- **API.** `PgPoolConfig::from_url(&str) -> Result<Self, CratestackError>`, then `max_connections(u32)` (default 5), `acquire_timeout(Duration)`, `test_before_acquire(bool)` and `session_setting(name, value)`, then `connect_lazy(&self) -> Result<PgPool, _>` or `async connect(&self) -> Result<PgPool, _>` (opens one connection; failure is `Unavailable`). `verify_settings(&self, &PgPool)` is the start-up check.
+- **Session settings win over the URL.** They are startup `-c` options appended after the URL's own `options=`, and the server keeps the last `-c` for a name; a test pins `options=-c statement_timeout=999999` plus `session_setting("statement_timeout", "30000")` giving 30 s. Names must match `[a-z_][a-z0-9_.]*` and values hold no control character, else `BadRequest` when the pool is built (the setters chain, so the error is reported by `connect_lazy` / `connect`). A name set twice keeps its last value. `max_connections(0)` is `BadRequest`.
+- **`verify_settings`** reads each setting from one pooled connection and compares it with the expected value as the server renders it (inside a rolled-back transaction it runs `set_config(name, expected, true)` and compares that with `current_setting`), so `30000` and `30s` agree. A mismatch is `Unavailable` naming the setting with expected and actual values; it catches a pooler (pgbouncer in transaction mode) that drops startup options.
+- **URLs only.** A libpq key=value DSN (`host=... dbname=...`) is refused with a `BadRequest` that says to use a `postgres://` URL. A bad URL is `BadRequest`; no message echoes any part of the input, so a password never reaches a log.
+- **No `connect_timeout`.** sqlx has no such knob; opening a connection happens inside `acquire`, so `acquire_timeout` bounds both the wait and the connect.
+- **`ServiceConfig::state()`** is rebuilt on it, same defaults (5 connections, lazy) and the same `Internal("invalid database url: ...")` error, now without the underlying parser text.
+- **Facades.** `cratestack-api`, `cratestack-sqlite` and `cratestack-client` are unaffected (`cargo tree -p cratestack-api -e normal` shows no sqlx).
+
+### Behaviour change: connection-class sqlx errors are `Unavailable` (HTTP 503) (cratestack#1385)
+
+`cratestack_error_from_sqlx` mapped every non-`Database`, non-`RowNotFound` error to `CratestackError::Database(String)` (HTTP 500). `PoolTimedOut`, `PoolClosed`, `WorkerCrashed`, `Io` and `Tls` now map to `CratestackError::Unavailable` (code `UNAVAILABLE`, HTTP **503**), so a caller can tell "could not reach the database" from a protocol or decode failure (still `Database`, 500) without matching strings. The `Unavailable` string is the public message, so it is the fixed `database unavailable`; the cause (an `Io` error can carry the host and port) is logged at `warn`. A caller that matched `Database(_)` for these cases, or alerted on 500s from the generated routes during a database outage, sees 503 now. No in-tree caller matched on the old variant.
+
+**Transport parity.** No request surface changes; the status code change applies to REST and RPC alike through `CratestackError`. MCP is exempt (ADR 0002 D5).
+
 ## 0.20.1 (2026-11-15)
 
 ### `@@map` / `@map` storage names (cratestack#1375)

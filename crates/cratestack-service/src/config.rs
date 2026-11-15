@@ -124,20 +124,19 @@ impl ServiceConfig {
     }
 
     /// Build the [`crate::ServiceState`] handed to `health` handlers: a
-    /// lazily-connecting [`cratestack_sqlx::sqlx::PgPool`] (real connection
+    /// lazily-connecting [`cratestack_sqlx::sqlx::PgPool`] (built by [`crate::PgPoolConfig`], max 5) (real connection
     /// attempts happen on first use, e.g. inside
     /// [`crate::health::readiness`]) plus a clone of this config.
     #[cfg(feature = "postgres")]
     pub async fn state(&self) -> Result<crate::ServiceState, CratestackError> {
-        use cratestack_sqlx::sqlx::postgres::{PgConnectOptions, PgPoolOptions};
-
-        let options: PgConnectOptions = self
-            .database_url
-            .parse()
-            .map_err(|error| CratestackError::Internal(format!("invalid database url: {error}")))?;
-        let pool = PgPoolOptions::new()
-            .max_connections(5)
-            .connect_lazy_with(options);
+        let pool = cratestack_sqlx::PgPoolConfig::from_url(&self.database_url)
+            .and_then(|config| config.max_connections(5).connect_lazy())
+            .map_err(|error| {
+                CratestackError::Internal(format!(
+                    "invalid database url: {}",
+                    error.public_message()
+                ))
+            })?;
 
         Ok(crate::ServiceState {
             config: self.clone(),

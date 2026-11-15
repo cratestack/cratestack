@@ -54,6 +54,10 @@ mod run;
 pub mod migrations;
 
 pub use config::ServiceConfig;
+/// The pool builder `ServiceConfig::state` is built on, re-exported so a
+/// service that needs its own bounds or session settings does not name sqlx.
+#[cfg(feature = "postgres")]
+pub use cratestack_sqlx::PgPoolConfig;
 pub use run::run;
 
 /// Request-scoped state handed to every `health` handler.
