@@ -12,7 +12,7 @@
 //!     .test_before_acquire(true)
 //!     .session_setting("statement_timeout", "30000")
 //!     .session_setting("lock_timeout", "10000");
-//! let pool = config.clone().connect_lazy()?;
+//! let pool = config.connect_lazy()?;
 //! config.verify_settings(&pool).await?;                    // fail fast at start-up
 //! ```
 //!
@@ -23,6 +23,13 @@
 //! same name (the server keeps the last `-c` for a name). A connection
 //! pooler that drops startup options (pgbouncer in transaction mode) defeats
 //! this silently; [`PgPoolConfig::verify_settings`] is how to notice.
+//!
+//! Five names are excluded: `DateStyle`, `client_encoding`, `TimeZone`,
+//! `extra_float_digits` and `application_name`. sqlx sends them itself as
+//! startup parameters, which the server applies after `-c` options, so a
+//! `-c` for them would silently lose. `session_setting` refuses them
+//! (`BadRequest`, case-insensitive); [`PgPoolConfig::application_name`] is the
+//! supported way to set the one that is useful.
 //!
 //! # URL forms
 //!
@@ -42,14 +49,16 @@ use std::time::Duration;
 
 use cratestack_core::CratestackError;
 
-use crate::sqlx::PgPool;
-use crate::sqlx::postgres::{PgConnectOptions, PgPoolOptions};
+use crate::sqlx::postgres::PgConnectOptions;
 
+mod connect;
 mod validate;
 mod verify;
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tests_classify;
 
 /// Pool size when [`PgPoolConfig::max_connections`] is not called. Matches
 /// what `cratestack-service`'s `ServiceConfig::state` always used.
@@ -67,6 +76,7 @@ pub struct PgPoolConfig {
     test_before_acquire: Option<bool>,
     /// Name to value, in the order set; a repeated name keeps its last value.
     settings: Vec<(String, String)>,
+    application_name: Option<String>,
     /// First invalid input seen by an infallible setter, reported when the
     /// pool is built so the chain stays a plain builder.
     invalid: Option<String>,
@@ -96,6 +106,7 @@ impl PgPoolConfig {
             acquire_timeout: None,
             test_before_acquire: None,
             settings: Vec::new(),
+            application_name: None,
             invalid: None,
         })
     }
@@ -127,7 +138,10 @@ impl PgPoolConfig {
     /// `name` must match `[a-z_][a-z0-9_.]*` (a custom `app.name` setting is
     /// fine) and `value` must hold no control character; anything else is a
     /// `BadRequest` reported when the pool is built. A name set twice keeps
-    /// its last value.
+    /// its last value. `DateStyle`, `client_encoding`, `TimeZone`,
+    /// `extra_float_digits` and `application_name` are refused (any case):
+    /// sqlx sets them at startup and the server applies those after `-c`
+    /// options. Use [`application_name`](Self::application_name) for the last.
     pub fn session_setting(mut self, name: &str, value: &str) -> Self {
         if let Err(message) = validate::check_setting(name, value) {
             self.invalid.get_or_insert(message);
@@ -138,57 +152,16 @@ impl PgPoolConfig {
         self
     }
 
-    /// The connection options with the session settings appended last.
-    pub(crate) fn connect_options(&self) -> Result<PgConnectOptions, CratestackError> {
-        if let Some(message) = &self.invalid {
-            return Err(CratestackError::BadRequest(message.clone()));
+    /// Set `application_name` on every connection, through sqlx's own
+    /// startup parameter (the only way it reliably applies). A value with a
+    /// control character is a `BadRequest` reported when the pool is built.
+    pub fn application_name(mut self, name: &str) -> Self {
+        if name.chars().any(char::is_control) {
+            self.invalid
+                .get_or_insert("application_name has a control character in its value".to_owned());
+            return self;
         }
-        if self.max_connections == 0 {
-            return Err(CratestackError::BadRequest(
-                "max_connections must be at least 1".to_owned(),
-            ));
-        }
-        Ok(self.connect.clone().options(
-            self.settings
-                .iter()
-                .map(|(name, value)| (name.as_str(), value.as_str())),
-        ))
-    }
-
-    fn pool_options(&self) -> PgPoolOptions {
-        let mut options = PgPoolOptions::new().max_connections(self.max_connections);
-        if let Some(timeout) = self.acquire_timeout {
-            options = options.acquire_timeout(timeout);
-        }
-        if let Some(test) = self.test_before_acquire {
-            options = options.test_before_acquire(test);
-        }
-        options
-    }
-
-    /// Build the pool without connecting; the first connection is made on
-    /// first use. Needs a Tokio runtime. The result is the `PgPool` that
-    /// `Cratestack::builder` takes.
-    ///
-    /// Fails with `BadRequest` on an invalid setting name or value, or a
-    /// zero `max_connections`.
-    pub fn connect_lazy(&self) -> Result<PgPool, CratestackError> {
-        Ok(self
-            .pool_options()
-            .connect_lazy_with(self.connect_options()?))
-    }
-
-    /// Build the pool and open one connection now. A database that cannot be
-    /// reached is `CratestackError::Unavailable`; the cause is logged, not
-    /// returned, since it can carry the host and port.
-    pub async fn connect(&self) -> Result<PgPool, CratestackError> {
-        let options = self.connect_options()?;
-        self.pool_options()
-            .connect_with(options)
-            .await
-            .map_err(|error| {
-                tracing::warn!(%error, "postgres pool could not connect");
-                CratestackError::Unavailable("database unavailable".to_owned())
-            })
+        self.application_name = Some(name.to_owned());
+        self
     }
 }

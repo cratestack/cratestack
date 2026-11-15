@@ -115,7 +115,7 @@ fn setting_values_with_control_characters_are_refused() {
     for bad in ["a\0b", "a\nb"] {
         let result = PgPoolConfig::from_url("postgres://u@localhost/db")
             .unwrap()
-            .session_setting("application_name", bad)
+            .session_setting("statement_timeout", bad)
             .connect_options();
         bad_request(result);
     }

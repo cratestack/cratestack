@@ -241,4 +241,35 @@ mod tests {
         assert!(message.contains("rate limiter"));
         assert!(message.contains("SEARCH_REDIS_URL"));
     }
+
+    #[cfg(feature = "postgres")]
+    #[tokio::test]
+    async fn state_builds_a_lazy_pool_of_five_for_a_valid_url() {
+        let lookup = lookup_from(&[("APP_DATABASE_URL", "  postgres://u:p@127.0.0.1:1/db  ")]);
+        let config = ServiceConfig::from_env_with("APP", "app", 8080, &lookup).unwrap();
+        let state = config.state().await.expect("valid url, nothing connects");
+        assert_eq!(state.pool.options().get_max_connections(), 5);
+        assert_eq!(state.pool.size(), 0, "the pool must be lazy");
+    }
+
+    #[cfg(feature = "postgres")]
+    #[tokio::test]
+    async fn state_rejects_a_bad_url_without_echoing_it() {
+        for url in [
+            "mysql://u:hunter2secret@h/db",
+            "postgres://u:hunter2secret@h:notaport/db",
+        ] {
+            let lookup: &'static [(&str, &str)] = Box::leak(Box::new([("APP_DATABASE_URL", url)]));
+            let config =
+                ServiceConfig::from_env_with("APP", "app", 8080, lookup_from(lookup)).unwrap();
+            let Err(error) = config.state().await else {
+                panic!("invalid url must be refused");
+            };
+            let cratestack_core::CratestackError::Internal(message) = &error else {
+                panic!("expected Internal, got {error:?}");
+            };
+            assert!(message.starts_with("invalid database url"), "{message}");
+            assert!(!message.contains("hunter2secret"), "{message}");
+        }
+    }
 }

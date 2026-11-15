@@ -20,11 +20,15 @@ impl PgPoolConfig {
     /// The transaction is rolled back, leaving the connection as it was.
     ///
     /// A mismatch is `CratestackError::Unavailable` naming the setting with
-    /// the expected and actual values. A configured value the server rejects
-    /// is `BadRequest`. With no settings configured this succeeds without
-    /// touching the pool.
+    /// the expected and actual values; a custom setting that is unset counts
+    /// as a mismatch even when `""` was expected. `BadRequest` for a value
+    /// the server rejects, a name it does not know, and a setting
+    /// `set_config` cannot change on a live connection (context `backend`,
+    /// `superuser-backend`: cannot be verified after connection start;
+    /// `postmaster`, `sighup`: cannot be a session setting at all). With no
+    /// settings configured this succeeds without touching the pool.
     pub async fn verify_settings(&self, pool: &PgPool) -> Result<(), CratestackError> {
-        self.connect_options()?; // refuse a config that could not have built `pool`
+        self.validate()?; // refuse a config that could not have built `pool`
         if self.settings.is_empty() {
             return Ok(());
         }
@@ -32,9 +36,34 @@ impl PgPoolConfig {
         for (name, expected) in &self.settings {
             let actual: Option<String> = sqlx::query_scalar("SELECT current_setting($1, true)")
                 .bind(name)
-                .fetch_one(&mut *tx)
+                .fetch_optional(&mut *tx)
                 .await
-                .map_err(cratestack_error_from_sqlx)?;
+                .map_err(cratestack_error_from_sqlx)?
+                .flatten();
+            let context: Option<String> =
+                sqlx::query_scalar("SELECT context FROM pg_settings WHERE name = $1")
+                    .bind(name)
+                    .fetch_optional(&mut *tx)
+                    .await
+                    .map_err(cratestack_error_from_sqlx)?;
+            match context.as_deref() {
+                None if !name.contains('.') => {
+                    return Err(CratestackError::BadRequest(format!(
+                        "unknown setting `{name}`"
+                    )));
+                }
+                Some("backend" | "superuser-backend") => {
+                    return Err(CratestackError::BadRequest(format!(
+                        "`{name}` cannot be verified after connection start"
+                    )));
+                }
+                Some("postmaster" | "sighup") => {
+                    return Err(CratestackError::BadRequest(format!(
+                        "`{name}` cannot be a session setting"
+                    )));
+                }
+                _ => {}
+            }
             let canonical: String = sqlx::query_scalar("SELECT set_config($1, $2, true)")
                 .bind(name)
                 .bind(expected)
@@ -46,11 +75,12 @@ impl PgPoolConfig {
                     )),
                     other => cratestack_error_from_sqlx(other),
                 })?;
-            let actual = actual.unwrap_or_default();
-            if actual != canonical {
+            if actual.as_deref() != Some(canonical.as_str()) {
                 return Err(CratestackError::Unavailable(format!(
-                    "postgres session setting `{name}` is `{actual}` but `{canonical}` was \
-                     requested; a connection pooler may be dropping startup options"
+                    "the server reports {} for `{name}`, expected `{canonical}` (a pooler \
+                     dropping startup options, or a server/role/database-level override, \
+                     can cause this)",
+                    actual.map_or("<unset>".to_owned(), |a| format!("`{a}`")),
                 )));
             }
         }

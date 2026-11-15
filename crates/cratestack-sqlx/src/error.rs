@@ -10,7 +10,7 @@
 //! substring-matching the stringified detail.
 //!
 //! Connection-class errors (`PoolTimedOut`, `PoolClosed`, `WorkerCrashed`,
-//! `Io`, `Tls`) are mapped to `CratestackError::Unavailable` (HTTP 503), so a
+//! `Io`) are mapped to `CratestackError::Unavailable` (HTTP 503), so a
 //! caller can tell "could not reach the database" from a protocol or decode
 //! failure, which stays `Database`.
 //!
@@ -31,7 +31,7 @@ use crate::sqlx;
 /// If `error` is `sqlx::Error::Database(db_err)`, this function produces
 /// `CratestackError::DatabaseTyped` with the SQLSTATE code and constraint name
 /// extracted from the driver error.  Connection-class errors
-/// (`PoolTimedOut`, `PoolClosed`, `WorkerCrashed`, `Io`, `Tls`) become
+/// (`PoolTimedOut`, `PoolClosed`, `WorkerCrashed`, `Io`) become
 /// `CratestackError::Unavailable`. All other `sqlx::Error` kinds (decode
 /// errors, protocol errors, etc.) fall back to `CratestackError::Database` with the
 /// stringified message, identical to the legacy `error.to_string()` path.
@@ -73,8 +73,7 @@ pub fn cratestack_error_from_sqlx(error: sqlx::Error) -> CratestackError {
         error @ (sqlx::Error::PoolTimedOut
         | sqlx::Error::PoolClosed
         | sqlx::Error::WorkerCrashed
-        | sqlx::Error::Io(_)
-        | sqlx::Error::Tls(_)) => {
+        | sqlx::Error::Io(_)) => {
             tracing::warn!(%error, "database unavailable");
             CratestackError::Unavailable("database unavailable".to_owned())
         }

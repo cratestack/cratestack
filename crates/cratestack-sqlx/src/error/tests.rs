@@ -77,8 +77,12 @@ fn io_error_maps_to_unavailable_without_leaking_the_address() {
 }
 
 #[test]
-fn tls_error_maps_to_unavailable() {
-    assert_unavailable(sqlx::Error::Tls("handshake failed".into()));
+fn tls_error_stays_a_permanent_database_error() {
+    // A TLS failure is a configuration fault (sslmode=require against a
+    // server without TLS, a name mismatch); it must not read as retryable.
+    let err = cratestack_error_from_sqlx(sqlx::Error::Tls("handshake failed".into()));
+    assert!(matches!(err, CratestackError::Database(_)), "{err:?}");
+    assert_eq!(err.status_code().as_u16(), 500);
 }
 
 /// Protocol, decode, configuration and the like stay `Database(String)`.

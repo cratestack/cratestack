@@ -4,8 +4,6 @@
 //! testcontainers; `CRATESTACK_REQUIRE_DB` turns a skip into a panic). The URL
 //! it hands back carries no query string of its own.
 
-use std::time::Duration;
-
 mod support;
 
 use cratestack::sqlx::postgres::PgPoolOptions;
@@ -58,9 +56,10 @@ async fn verify_settings_passes_on_a_matching_pool() {
     let config = config_with_hostile_url(&url)
         .session_setting("statement_timeout", "30000")
         .session_setting("lock_timeout", "10000")
-        .session_setting("application_name", "pool_config_test");
+        .application_name("pool_config_test");
     let pool = config.clone().connect_lazy().unwrap();
     config.verify_settings(&pool).await.expect("settings match");
+    assert_eq!(show(&pool, "application_name").await, "pool_config_test");
 
     // The check must leave the connection as it found it.
     assert_eq!(show(&pool, "statement_timeout").await, "30s");
@@ -116,6 +115,7 @@ async fn verify_settings_refuses_a_pool_whose_setting_differs() {
     assert!(message.contains("statement_timeout"), "{message}");
     assert!(message.contains("30s"), "expected value missing: {message}");
     assert!(message.contains("5s"), "actual value missing: {message}");
+    assert!(message.contains("the server reports"), "{message}");
     assert_eq!(error.status_code().as_u16(), 503);
 
     // The failed check rolled back; the pool is unchanged.
@@ -152,59 +152,48 @@ async fn verify_settings_handles_custom_settings() {
 }
 
 #[tokio::test]
-async fn connect_checks_the_database_is_reachable() {
+async fn verify_settings_handles_unset_unknown_and_unchangeable_settings() {
     let Some(pg) = support::pg::connect_or_skip().await else {
         return;
     };
     let url = pg.url.clone();
     let pool = PgPoolConfig::from_url(&url)
         .unwrap()
-        .connect()
-        .await
-        .expect("reachable");
-    assert_eq!(show(&pool, "server_version_num").await.len(), 6);
+        .connect_lazy()
+        .unwrap();
+    let verify = |name: &'static str, value: &'static str| {
+        let url = url.clone();
+        let pool = pool.clone();
+        async move {
+            PgPoolConfig::from_url(&url)
+                .unwrap()
+                .session_setting(name, value)
+                .verify_settings(&pool)
+                .await
+        }
+    };
 
-    let error = PgPoolConfig::from_url("postgres://u:p@127.0.0.1:1/db")
-        .unwrap()
-        .acquire_timeout(Duration::from_secs(2))
-        .connect()
-        .await
-        .expect_err("nothing listens on port 1");
+    // Unset custom setting: a mismatch even when "" was expected.
+    let error = verify("app.never_set", "").await.expect_err("unset");
     assert!(
         matches!(error, CratestackError::Unavailable(_)),
         "{error:?}"
     );
-}
-
-#[tokio::test]
-async fn bad_url_is_bad_request() {
-    let error = PgPoolConfig::from_url("postgres://u:topsecret@host:notaport/db").unwrap_err();
+    // A name the server does not know.
+    let error = verify("no_such_setting_xyz", "1")
+        .await
+        .expect_err("unknown");
     let CratestackError::BadRequest(message) = error else {
         panic!("expected BadRequest");
     };
-    assert!(!message.contains("topsecret"), "{message}");
-}
-
-#[tokio::test]
-async fn key_value_dsn_is_refused() {
-    let error = PgPoolConfig::from_url("host=localhost dbname=x").unwrap_err();
-    assert!(matches!(error, CratestackError::BadRequest(_)), "{error:?}");
-}
-
-#[tokio::test]
-async fn pool_bounds_are_applied() {
-    let Some(pg) = support::pg::connect_or_skip().await else {
-        return;
-    };
-    let url = pg.url.clone();
-    let pool = PgPoolConfig::from_url(&url)
-        .unwrap()
-        .max_connections(2)
-        .acquire_timeout(Duration::from_secs(3))
-        .test_before_acquire(true)
-        .connect_lazy()
-        .unwrap();
-    assert_eq!(pool.options().get_max_connections(), 2);
-    assert_eq!(pool.options().get_acquire_timeout(), Duration::from_secs(3));
-    assert!(pool.options().get_test_before_acquire());
+    assert!(message.contains("unknown setting"), "{message}");
+    // Fixed at connection start (backend) and at server start (postmaster).
+    for name in ["log_disconnections", "shared_buffers"] {
+        let error = verify(name, "on").await.expect_err(name);
+        assert!(
+            matches!(error, CratestackError::BadRequest(_)),
+            "{name}: {error:?}"
+        );
+        assert_eq!(error.status_code().as_u16(), 400);
+    }
 }
