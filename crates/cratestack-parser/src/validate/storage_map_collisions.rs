@@ -17,8 +17,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use cratestack_core::route_naming::{pluralize, to_snake_case};
 use cratestack_core::{Field, Model, Schema, is_computed_field, is_relation_attribute};
 
-use crate::diagnostics::{SchemaError, span_error};
 use super::snake_case_collisions::find_collision_by;
+use crate::diagnostics::{SchemaError, span_error};
 
 fn is_mapped(model: &Model) -> bool {
     model.attributes.iter().any(|a| a.raw.starts_with("@@map"))

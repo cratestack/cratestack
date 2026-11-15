@@ -113,4 +113,42 @@ pub enum MigrateError {
         from: String,
         to: String,
     },
+
+    /// A mapped model's table is new, while a table the previous snapshot
+    /// holds without saying which model it stores is gone. The snapshot came
+    /// from `migrate baseline` (or predates `model`), so the diff cannot tell
+    /// a changed `@@map` from an unrelated drop and create (cratestack#1375).
+    #[error(
+        "model `{model}` is stored in table `{to}` (`@@map`), which the previous snapshot does \
+         not have, and its table(s) {candidates} are gone from the schema. That snapshot does \
+         not record which model each table stores, so this cannot be told from a `@@map` \
+         change, and a changed name would drop the old table and create an empty `{to}`. If it \
+         is that table, add {renames} to the model; to keep it, \
+         restore the old `@@map`; to drop and create deliberately, do it in two migrations."
+    )]
+    TableStorageNameUnrecorded {
+        model: String,
+        to: String,
+        candidates: String,
+        renames: String,
+    },
+
+    /// The column counterpart of [`Self::TableStorageNameUnrecorded`].
+    #[error(
+        "table `{table}` (model `{model}`): field `{field}` is stored in column `{to}` (`@map`), \
+         which the previous snapshot does not have, and its column(s) {candidates} are gone from \
+         the schema. That snapshot does not record which field each column stores, so this \
+         cannot be told from a `@map` change, and a changed name would drop the old column and \
+         add an empty `{to}`. If it is that column, add {renames} to \
+         `{field}`; to keep it, restore the old `@map`; to drop and add deliberately, do it in \
+         two migrations."
+    )]
+    ColumnStorageNameUnrecorded {
+        table: String,
+        model: String,
+        field: String,
+        to: String,
+        candidates: String,
+        renames: String,
+    },
 }

@@ -32,6 +32,7 @@ mod clean;
 mod drift;
 mod refuses;
 mod regression;
+mod storage_map;
 
 use std::fs;
 use std::path::{Path, PathBuf};

@@ -4,6 +4,7 @@
 //! the `@@rename(from = "...")` / `@rename(from = "...")` that says it is a
 //! rename.
 
+use super::storage_unrecorded as unrecorded;
 use crate::convert::TableProjection;
 use crate::error::MigrateError;
 use crate::naming::{column_name, table_name};
@@ -21,6 +22,7 @@ pub(crate) fn check_storage_names_stable(
             continue;
         };
         let Some(was) = previous_table(prev, table, model) else {
+            unrecorded::check_new_table(prev, next, table, model)?;
             continue;
         };
         if was.name != table.name && table.rename_from.as_deref() != Some(was.name.as_str()) {
@@ -31,6 +33,7 @@ pub(crate) fn check_storage_names_stable(
             });
         }
         check_columns(was, table, model)?;
+        unrecorded::check_columns(was, table, model)?;
     }
     Ok(())
 }
@@ -39,7 +42,7 @@ pub(crate) fn check_storage_names_stable(
 /// model, else the one with the same name (the model was renamed, its table
 /// not), else, for a snapshot written before `model` was recorded, the one
 /// named for the model's derived default.
-fn previous_table<'a>(
+pub(super) fn previous_table<'a>(
     prev: &'a Projections,
     table: &TableProjection,
     model: &str,

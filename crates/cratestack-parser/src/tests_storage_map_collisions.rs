@@ -112,7 +112,10 @@ fn the_codegen_name_guard_holds_when_a_colliding_field_is_mapped_away() {
     // the `FOO_BAR` constant whatever column they live in.
     refused(
         "model Bank {\n  id Int @id\n  fooBar String\n  foo_bar String @map(\"legacy_foo\")\n}\n",
-        &["field `foo_bar` on model `Bank` collides with field `fooBar`", "`foo_bar`"],
+        &[
+            "field `foo_bar` on model `Bank` collides with field `fooBar`",
+            "`foo_bar`",
+        ],
     );
     refused(
         "model Bank {\n  id Int @id\n  fooBar String @map(\"legacy_foo\")\n  foo_bar String\n}\n",
@@ -143,7 +146,11 @@ fn only_stored_fields_compete_for_a_column() {
 fn a_soft_delete_field_may_not_be_mapped_away_from_deleted_at() {
     refused(
         "model A {\n  id Int @id\n  deletedAt DateTime? @map(\"removed_at\")\n  @@soft_delete\n}\n",
-        &["field `deletedAt` on model `A`", "`deleted_at`", "@@soft_delete"],
+        &[
+            "field `deletedAt` on model `A`",
+            "`deleted_at`",
+            "@@soft_delete",
+        ],
     );
     accepted("model A {\n  id Int @id\n  deletedAt DateTime?\n  @@soft_delete\n}\n");
     accepted("model A {\n  id Int @id\n  deletedAt DateTime? @map(\"removed_at\")\n}\n");

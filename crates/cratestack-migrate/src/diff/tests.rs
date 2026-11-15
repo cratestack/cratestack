@@ -10,6 +10,7 @@ mod relation_actions;
 mod relations;
 mod renames;
 mod storage_map;
+mod storage_map_baseline;
 mod views;
 
 use cratestack_core::Schema;
