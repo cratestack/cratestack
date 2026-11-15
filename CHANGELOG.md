@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.20.1 (2026-11-15)
+
 ### `@@map` / `@map` storage names (cratestack#1375)
 
 Additive, non-breaking: a schema without the markers is unchanged. `@@map("<table>")` on a model and `@map("<column>")` on a stored field of a model or mixin set the table and column the generated SQL uses, so a schema can sit on an existing database. Design: `docs/design/storage-name-mapping.md`.
