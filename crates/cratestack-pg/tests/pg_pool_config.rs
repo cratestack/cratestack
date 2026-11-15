@@ -1,23 +1,15 @@
 //! `PgPoolConfig` against a real Postgres (cratestack#1385).
 //!
-//! Needs `CRATESTACK_TEST_DATABASE_URL`; skips without it unless
-//! `CRATESTACK_REQUIRE_DB` is set, in which case a missing URL panics.
-//! The URL must carry no query string of its own.
+//! Backend selection is the shared `support::pg::connect_or_skip` (URL or
+//! testcontainers; `CRATESTACK_REQUIRE_DB` turns a skip into a panic). The URL
+//! it hands back carries no query string of its own.
 
 use std::time::Duration;
 
+mod support;
+
 use cratestack::sqlx::postgres::PgPoolOptions;
 use cratestack::{CratestackError, PgPoolConfig};
-
-fn base_url() -> Option<String> {
-    match std::env::var("CRATESTACK_TEST_DATABASE_URL") {
-        Ok(url) => Some(url),
-        Err(_) if std::env::var("CRATESTACK_REQUIRE_DB").is_ok() => {
-            panic!("CRATESTACK_REQUIRE_DB is set but CRATESTACK_TEST_DATABASE_URL is not")
-        }
-        Err(_) => None,
-    }
-}
 
 async fn show(pool: &cratestack::sqlx::PgPool, name: &str) -> String {
     cratestack::sqlx::query_scalar::<_, String>(cratestack::sqlx::AssertSqlSafe(format!(
@@ -34,7 +26,10 @@ fn config_with_hostile_url(url: &str) -> PgPoolConfig {
 
 #[tokio::test]
 async fn session_setting_overrides_the_url_options() {
-    let Some(url) = base_url() else { return };
+    let Some(pg) = support::pg::connect_or_skip().await else {
+        return;
+    };
+    let url = pg.url.clone();
 
     // Control: the URL's own option really is applied without ours, so the
     // override below is not vacuous.
@@ -56,7 +51,10 @@ async fn session_setting_overrides_the_url_options() {
 
 #[tokio::test]
 async fn verify_settings_passes_on_a_matching_pool() {
-    let Some(url) = base_url() else { return };
+    let Some(pg) = support::pg::connect_or_skip().await else {
+        return;
+    };
+    let url = pg.url.clone();
     let config = config_with_hostile_url(&url)
         .session_setting("statement_timeout", "30000")
         .session_setting("lock_timeout", "10000")
@@ -72,7 +70,10 @@ async fn verify_settings_passes_on_a_matching_pool() {
 /// spelling of the same quantity is not a mismatch.
 #[tokio::test]
 async fn verify_settings_compares_units_not_spellings() {
-    let Some(url) = base_url() else { return };
+    let Some(pg) = support::pg::connect_or_skip().await else {
+        return;
+    };
+    let url = pg.url.clone();
     let pool = PgPoolConfig::from_url(&url)
         .unwrap()
         .session_setting("statement_timeout", "30000")
@@ -88,7 +89,10 @@ async fn verify_settings_compares_units_not_spellings() {
 
 #[tokio::test]
 async fn verify_settings_refuses_a_pool_whose_setting_differs() {
-    let Some(url) = base_url() else { return };
+    let Some(pg) = support::pg::connect_or_skip().await else {
+        return;
+    };
+    let url = pg.url.clone();
     // A pool that dropped our startup options, as a transaction-mode pooler
     // would: built directly with a different timeout.
     let options = url
@@ -120,7 +124,10 @@ async fn verify_settings_refuses_a_pool_whose_setting_differs() {
 
 #[tokio::test]
 async fn verify_settings_handles_custom_settings() {
-    let Some(url) = base_url() else { return };
+    let Some(pg) = support::pg::connect_or_skip().await else {
+        return;
+    };
+    let url = pg.url.clone();
     let config = PgPoolConfig::from_url(&url)
         .unwrap()
         .session_setting("app.tenant_id", "t-42");
@@ -146,7 +153,10 @@ async fn verify_settings_handles_custom_settings() {
 
 #[tokio::test]
 async fn connect_checks_the_database_is_reachable() {
-    let Some(url) = base_url() else { return };
+    let Some(pg) = support::pg::connect_or_skip().await else {
+        return;
+    };
+    let url = pg.url.clone();
     let pool = PgPoolConfig::from_url(&url)
         .unwrap()
         .connect()
@@ -183,7 +193,10 @@ async fn key_value_dsn_is_refused() {
 
 #[tokio::test]
 async fn pool_bounds_are_applied() {
-    let Some(url) = base_url() else { return };
+    let Some(pg) = support::pg::connect_or_skip().await else {
+        return;
+    };
+    let url = pg.url.clone();
     let pool = PgPoolConfig::from_url(&url)
         .unwrap()
         .max_connections(2)
