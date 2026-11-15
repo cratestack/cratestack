@@ -105,3 +105,46 @@ fn a_mixin_column_collides_in_the_model_that_uses_it() {
         &["collides with field", "`name`"],
     );
 }
+
+#[test]
+fn the_codegen_name_guard_holds_when_a_colliding_field_is_mapped_away() {
+    // `fooBar` and `foo_bar` both become the Dart/TS identifier `fooBar` and
+    // the `FOO_BAR` constant whatever column they live in.
+    refused(
+        "model Bank {\n  id Int @id\n  fooBar String\n  foo_bar String @map(\"legacy_foo\")\n}\n",
+        &["field `foo_bar` on model `Bank` collides with field `fooBar`", "`foo_bar`"],
+    );
+    refused(
+        "model Bank {\n  id Int @id\n  fooBar String @map(\"legacy_foo\")\n  foo_bar String\n}\n",
+        &["collides with field `fooBar`"],
+    );
+}
+
+#[test]
+fn only_stored_fields_compete_for_a_column() {
+    // A relation's scalar column may be mapped to the relation's name.
+    accepted(
+        "model User {\n  id Int @id\n}\n\nmodel Post {\n  id Int @id\n  ownerId Int @map(\"owner\")\n  \
+         owner User @relation(fields:[ownerId],references:[id])\n}\n",
+    );
+    // A `@computed` field has no column.
+    accepted(
+        "model Post {\n  id Int @id\n  title String @map(\"label\")\n  \
+         label String @computed\n}\n",
+    );
+    // Two stored fields still may not share one column.
+    refused(
+        "model A {\n  id Int @id\n  a Int @map(\"x\")\n  b Int @map(\"x\")\n}\n",
+        &["field `b` on model `A` collides with field `a`", "`x`"],
+    );
+}
+
+#[test]
+fn a_soft_delete_field_may_not_be_mapped_away_from_deleted_at() {
+    refused(
+        "model A {\n  id Int @id\n  deletedAt DateTime? @map(\"removed_at\")\n  @@soft_delete\n}\n",
+        &["field `deletedAt` on model `A`", "`deleted_at`", "@@soft_delete"],
+    );
+    accepted("model A {\n  id Int @id\n  deletedAt DateTime?\n  @@soft_delete\n}\n");
+    accepted("model A {\n  id Int @id\n  deletedAt DateTime? @map(\"removed_at\")\n}\n");
+}

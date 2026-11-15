@@ -68,6 +68,7 @@ pub(super) fn validate_models_collecting(
                 &format!("model `{}`", model.name),
             )?;
             validate_field_column_collisions(&model.fields, "model", &model.name)?;
+            super::storage_map_collisions::validate_stored_column_collisions(model, &model_names)?;
             super::storage_map_collisions::validate_soft_delete_column(model)?;
             validate_no_build_setter_collision(
                 model

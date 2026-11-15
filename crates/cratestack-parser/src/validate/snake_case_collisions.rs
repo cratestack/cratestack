@@ -70,21 +70,13 @@ pub(super) fn validate_field_column_collisions(
     owner_kind: &str,
     owner_name: &str,
 ) -> Result<(), SchemaError> {
-    // The final column of each field: its `@map` name, else `to_snake_case`.
-    let columns: BTreeMap<&str, String> = fields
-        .iter()
-        .map(|field| (field.name.as_str(), field.sql_column_name()))
-        .collect();
     let entries = fields.iter().map(|field| (field.name.as_str(), field.span));
-    if let Some((existing, colliding, span, normalized)) =
-        find_collision_by(entries, |name| columns[name].clone())
-    {
+    if let Some((existing, colliding, span, normalized)) = find_snake_case_collision(entries) {
         return Err(span_error(
             format!(
                 "field `{colliding}` on {owner_kind} `{owner_name}` collides with field \
                  `{existing}` — both normalize to the SQL/codegen column name `{normalized}` \
-                 (`@map` name if any, else `cratestack_core::route_naming::to_snake_case`); rename \
-                 one of them",
+                 (see `cratestack_core::route_naming::to_snake_case`); rename one of them",
             ),
             span,
         ));
