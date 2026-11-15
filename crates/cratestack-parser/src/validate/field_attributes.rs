@@ -9,6 +9,7 @@
 //! 2. `super::rename_attributes`: a field's `@rename` in the one form the
 //!    migrator reads, where it is read, at most once. Its messages say why
 //!    a view, a type or a relation field cannot rename.
+//!    `super::storage_map` does the same for `@map("<column>")`.
 //! 3. [`check_shape_hinted`] on each attribute, the check procedures,
 //!    queries and `@@` attributes go through: the name must be in the
 //!    kind's list, spelled exactly, with an argument list exactly when it
@@ -109,6 +110,7 @@ pub(super) fn validate_field_attributes(
     let kind = host.label();
     validate_removed_field_attributes(kind, owner_name, field)?;
     super::rename_attributes::validate_field_rename(kind, owner_name, field)?;
+    super::storage_map::validate_field_map(kind, owner_name, field)?;
     let owner = format!("field `{}` on {kind} `{owner_name}`", field.name);
     let construct = format!("{kind} field");
     for attribute in &field.attributes {

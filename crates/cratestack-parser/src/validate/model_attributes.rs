@@ -108,6 +108,7 @@ pub(super) fn validate_model_attributes(
         validate_model_block_attribute(&model.name, attribute)?;
     }
     validate_model_rename_count(model)?;
+    super::storage_map::validate_model_map(model)?;
 
     // A subscription with nothing to subscribe to is a footgun, not a
     // valid empty state: without `@@emit(...)` no model event is ever

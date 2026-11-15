@@ -35,11 +35,11 @@ fn every_listed_model_attribute_is_accepted() {
         "{HEAD}transport rpc\n\nmodel Doc {{\n  id Int @id\n  a Int\n  b Int\n  \
          @@allow(\"read\", true)\n  @@deny('update', false)\n  @@emit(created)\n  @@paged\n  \
          @@audit\n  @@soft_delete\n  @@retain(days: 30)\n  @@subscribe\n  @@unique([a, b])\n  \
-         @@index([a])\n  @@internal(\"delete\")\n  @@rename(from = \"old_docs\")\n}}\n\n\
+         @@index([a])\n  @@internal(\"delete\")\n  @@rename(from = \"old_docs\")\n  @@map(\"legacy_docs\")\n}}\n\n\
          model Pair {{\n  a Int\n  b Int\n  @@id([a, b])\n}}\n"
     );
     let schema = parse_schema(&source).unwrap_or_else(|error| panic!("should parse: {error}"));
-    assert_eq!(schema.models[0].attributes.len(), 12);
+    assert_eq!(schema.models[0].attributes.len(), 13);
 }
 
 #[test]
@@ -62,7 +62,6 @@ fn every_listed_view_attribute_is_accepted() {
 #[test]
 fn a_model_attribute_nothing_reads_is_refused() {
     for (line, name) in [
-        ("@@map(\"docs\")", "@@map"),
         ("@@check(\"a > 0\")", "@@check"),
         ("@@unique_per_tenant(a)", "@@unique_per_tenant"),
         ("@@index_hint(a)", "@@index_hint"),

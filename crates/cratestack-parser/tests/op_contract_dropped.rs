@@ -169,6 +169,22 @@ fn rename_markers_move_nothing() {
 }
 
 #[test]
+fn storage_map_moves_nothing() {
+    assert_unchanged(&edit(
+        "  body String\n}",
+        "  body String @map(\"body_text\")\n}",
+    ));
+    assert_unchanged(&edit(
+        "  body String\n}",
+        "  body String\n\n  @@map(\"legacy_notes\")\n}",
+    ));
+    assert_unchanged(&edit(
+        "  body String\n}",
+        "  body String @pii @map(\"body_enc\")\n\n  @@map(\"legacy_notes\")\n}",
+    ));
+}
+
+#[test]
 fn pii_sensitive_and_unique_fields_move_nothing() {
     for attrs in ["@pii", "@sensitive", "@unique", "@pii @sensitive @unique"] {
         assert_unchanged(&edit(
