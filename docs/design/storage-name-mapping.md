@@ -40,8 +40,12 @@ model Account {
    `FROM user` (Postgres's `current_user`) and `@@map("order")` would not parse:
    reserved words are refused until identifiers are quoted (a follow-up).
 5. **Uniqueness.** Final table names are unique across models and views. Final
-   column names are unique within a model, counting derived names and the
-   implicit `deleted_at` of `@@soft_delete`. `@@map("deposits")` beside a
+   column names are unique among a model's *stored* fields (not relation or
+   `@computed` fields, so `ownerId Int @map("owner")` may sit beside
+   `owner User`), counting the implicit `deleted_at` of `@@soft_delete`: a
+   field may not be mapped to it, nor `deletedAt` mapped away from it. The
+   generated-identifier check (`to_snake_case` of every field name, so
+   `fooBar` beside `foo_bar` is refused even when one is mapped) is unchanged. `@@map("deposits")` beside a
    `Deposit` model is a collision.
 6. **Migrate.** See section 3.
 7. **Hand-written SQL** (a view's `@@server_sql` / `@@sql`, `query` blocks,
@@ -108,6 +112,26 @@ refused instead.
 - A deliberate drop-and-recreate of a table under another name is refused too;
   the way is two migrations.
 - New snapshots carry `model` / `field_columns`: a one-time textual diff.
+- **Baseline stamps the snapshot.** An introspected table has no model, so
+  `migrate baseline` copies `model` and the field-to-column map from the
+  authored schema onto every table that has the same name (a column only if
+  the database has it). The baseline checksum is of the introspected shape,
+  unstamped, so it is unchanged. Where the snapshot still records nothing (a
+  baseline whose table name differed from the schema's, or a snapshot from
+  before the fields), a mapped model or column that is new while an
+  unrecorded table or column vanishes is refused
+  (`TableStorageNameUnrecorded` / `ColumnStorageNameUnrecorded`); a
+  deliberate drop and create is two migrations. The baseline's own drift
+  report uses `diff_for_drift`, which does not refuse names.
+- Identity metadata is not DDL: comparing an introspected table with an
+  authored one uses `TableProjection::without_storage_identity`.
+- A no-op `migrate diff` does not rewrite the snapshot, so an older snapshot
+  stays unstamped until the next real change; the derived-name fallback covers
+  it, and a baseline snapshot is stamped when written.
+- **Embedded (`include_embedded_schema!`)** has no migrate step. Adding or
+  changing `@@map` on a device creates a new empty table and orphans the old
+  rows; adding `@map` to an existing column errors. Re-sync or wipe an
+  embedded cache when a mapping changes.
 
 ## 4. Verification
 
