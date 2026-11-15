@@ -45,6 +45,10 @@ fn a_schema_with_subscriptions_gets_streams_over_sse() {
     assert!(apis.contains("this.subscriptions = const CratestackSubscriptionOptions()"));
     assert!(runtime.contains("Stream<Object?> cratestackSubscribeSse("));
     assert!(runtime.contains("final class CratestackSubscriptionException"));
+    // cratestack#1379: the SSE reader is bounded; the behaviour itself is
+    // proven by `fixtures/subscriptions_rpc_test.dart` under `just verify-dart`.
+    assert!(runtime.contains("final class CratestackEventTooLargeException"));
+    assert!(runtime.contains("int maxEventBytes = cratestackDefaultMaxEventBytes,"));
 }
 
 #[test]

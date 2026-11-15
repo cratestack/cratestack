@@ -107,6 +107,9 @@ pub(crate) fn client_error_to_rpc(error: ClientError) -> RpcClientError {
         ClientError::Codec(error) => RpcClientError::Codec(error),
         ClientError::InvalidResponse(message) => RpcClientError::InvalidResponse(message),
         ClientError::BadInput(message) => RpcClientError::BadInput(message),
+        error @ ClientError::EventTooLarge { .. } => {
+            RpcClientError::InvalidResponse(error.to_string())
+        }
         ClientError::Envelope(error) => RpcClientError::Envelope(error),
         ClientError::State(message) => RpcClientError::InvalidResponse(message),
         ClientError::Remote {

@@ -29,7 +29,10 @@ pub(super) async fn open<C: HttpClientCodec, T: DeserializeOwned + Send + 'stati
             "text/event-stream",
         )
         .await?;
-    let mut events = Box::pin(events(response.bytes_stream()));
+    let mut events = Box::pin(events(
+        response.bytes_stream(),
+        client.config.max_sse_event_bytes,
+    ));
     match events.next().await {
         Some(Ok(event)) if event.name == "ready" => {}
         Some(Ok(event)) if event.name == "error" => return Err(error_of(&event.data)),
@@ -90,43 +93,65 @@ pub(super) struct Event {
 /// keepalive) yields nothing. The buffer holds raw bytes until a whole
 /// block has arrived, so a multi-byte character or a `\r\n` split across
 /// two transport chunks is decoded only once it is complete.
-pub(super) fn events<S>(bytes: S) -> impl Stream<Item = Result<Event, ClientError>>
+///
+/// One event may span at most `limit` bytes, its terminating blank line
+/// included (cratestack#1379). The buffer is checked whenever it holds no
+/// complete block, so an endless line with no newline is caught as surely
+/// as endless short ones. Past the cap the stream yields
+/// [`ClientError::EventTooLarge`] once, then ends and is dropped, which
+/// drops the connection; nothing buffered behind the oversized event is
+/// delivered.
+pub(super) fn events<S>(bytes: S, limit: usize) -> impl Stream<Item = Result<Event, ClientError>>
 where
     S: Stream<Item = Result<Bytes, reqwest::Error>> + Unpin,
 {
+    // `scanned`: how far the buffer has been searched for a delimiter, so a
+    // trickle of tiny chunks does not rescan it from the start each time.
     futures_util::stream::unfold(
-        (bytes, Vec::<u8>::new()),
-        |(mut bytes, mut buffer)| async move {
+        Some((bytes, Vec::<u8>::new(), 0usize)),
+        move |state| async move {
+            let (mut bytes, mut buffer, mut scanned) = state?;
             loop {
-                if let Some(end) = block_end(&buffer) {
+                if let Some(end) = block_end(&buffer, scanned) {
+                    if end > limit {
+                        return Some((Err(ClientError::EventTooLarge { limit }), None));
+                    }
                     let block: Vec<u8> = buffer.drain(..end).collect();
+                    scanned = 0;
                     let Ok(text) = std::str::from_utf8(&block) else {
                         let error =
                             ClientError::InvalidResponse("SSE body is not UTF-8".to_owned());
-                        return Some((Err(error), (bytes, buffer)));
+                        return Some((Err(error), Some((bytes, buffer, scanned))));
                     };
                     if let Some(event) = parse_block(&text.replace("\r\n", "\n")) {
-                        return Some((Ok(event), (bytes, buffer)));
+                        return Some((Ok(event), Some((bytes, buffer, scanned))));
                     }
                     continue;
                 }
+                if buffer.len() > limit {
+                    return Some((Err(ClientError::EventTooLarge { limit }), None));
+                }
+                // A delimiter may start up to three bytes before the end.
+                scanned = buffer.len().saturating_sub(3);
                 match bytes.next().await? {
                     Ok(chunk) => buffer.extend_from_slice(&chunk),
-                    Err(error) => return Some((Err(error.into()), (bytes, buffer))),
+                    Err(error) => {
+                        return Some((Err(error.into()), Some((bytes, buffer, scanned))));
+                    }
                 }
             }
         },
     )
 }
 
-/// The end (exclusive) of the first complete block: a blank line, written
-/// `\n\n` or `\r\n\r\n`, whichever comes first.
-fn block_end(buffer: &[u8]) -> Option<usize> {
+/// The end (exclusive) of the first complete block at or after `from`: a
+/// blank line, written `\n\n` or `\r\n\r\n`, whichever comes first.
+fn block_end(buffer: &[u8], from: usize) -> Option<usize> {
+    let tail = &buffer[from.min(buffer.len())..];
     let find = |needle: &[u8]| {
-        buffer
-            .windows(needle.len())
+        tail.windows(needle.len())
             .position(|window| window == needle)
-            .map(|at| at + needle.len())
+            .map(|at| from + at + needle.len())
     };
     match (find(b"\n\n"), find(b"\r\n\r\n")) {
         (Some(lf), Some(crlf)) => Some(lf.min(crlf)),

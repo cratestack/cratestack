@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+### Security hardening: one SSE event is size-capped in the Rust, TypeScript and Dart subscription clients (cratestack#1379)
+
+Additive, non-breaking for callers; a stream that used to grow without bound now ends. Every SSE subscription reader buffered bytes until it saw the blank line ending an event, with no limit, so a hostile or broken server (or any intermediary) that never sent the delimiter could exhaust the client's memory. The same class as the CBOR depth limit (cratestack#1315).
+
+- **The cap.** One event may span at most **1 MiB, its terminating blank line included**. The count covers every buffered byte of the event being read: many `data:` lines, and also one endless line with no newline at all. A longer event ends the subscription with a typed error, the connection is dropped, and nothing buffered behind it is delivered.
+- **Rust.** `ClientConfig::with_max_sse_event_bytes(n)` (field `max_sse_event_bytes`, default `DEFAULT_MAX_SSE_EVENT_BYTES`); the stream yields `ClientError::EventTooLarge { limit }` once and ends. `ClientError` is `#[non_exhaustive]`, so a downstream `match` already needs its catch-all arm; the Flutter bridge and the RPC and runtime error conversions map it to their invalid-response code. The delimiter search also resumes where the last one stopped instead of rescanning the buffer on every chunk.
+- **TypeScript (generated).** `subscriptions: { maxEventBytes }` on the client options; the reader throws `CratestackEventTooLargeError` (a `CratestackSubscriptionError`, code `event_too_large`, with `.limit`) and cancels the `fetch` body. The cap counts UTF-8 bytes.
+- **Dart (generated).** `CratestackSubscriptionOptions(maxEventBytes: ...)`; the stream throws `CratestackEventTooLargeException` (a `CratestackSubscriptionException`, code `event_too_large`, with `.limit`) and cancels the request. The cap counts UTF-8 bytes.
+- **Scope.** Only the SSE readers. The WebSocket and WebTransport bindings are not changed. An event refused for size is not retried and `Auto` does not fall back on it. A server whose single frame legitimately exceeds 1 MiB must raise the cap.
+
+**Transport parity.** The cap lives in the SSE reader, which both the REST and the RPC subscription routes use; the generated TypeScript and Dart readers are shared by both. No request surface changes. MCP is exempt (ADR 0002 D5).
+
 ## 0.20.1 (2026-11-15)
 
 ### `@@map` / `@map` storage names (cratestack#1375)

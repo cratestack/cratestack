@@ -70,6 +70,12 @@ pub enum ClientError {
     InvalidResponse(String),
     #[error("bad input: {0}")]
     BadInput(String),
+    /// One server-sent event outgrew the per-event byte cap
+    /// (`ClientConfig::with_max_sse_event_bytes`, default 1 MiB), so the
+    /// subscription was ended and its connection dropped (cratestack#1379).
+    /// `limit` is the cap that was exceeded.
+    #[error("subscription event exceeds the {limit}-byte limit")]
+    EventTooLarge { limit: usize },
     /// The signed transport failed (cratestack#1007). Never a decoded body.
     #[error("signed transport: {0}")]
     Envelope(#[from] EnvelopeError),

@@ -118,4 +118,58 @@ void main() {
       ),
     );
   });
+
+  group('the per-event byte cap', () {
+    const limit = 200;
+    const ready = 'event: ready\ndata: {"id":1,"ready":{}}\n\n';
+    const good = 'event: message\ndata: {"id":2,"next":{"body":"ok"}}\n\n';
+
+    Future<List<Line>> drain(List<String> chunks, {int cap = limit}) {
+      final transport = _SseTransport(200, chunks);
+      final client = DartVerifySubscriptionsRpcCratestackClient(
+        CratestackRpcHttpAdapter(transport, baseUri: Uri.parse('https://api.test')),
+        subscriptions: CratestackSubscriptionOptions(
+          transport: CratestackSubscriptionTransport.sse,
+          maxEventBytes: cap,
+        ),
+      );
+      return client.procedures
+          .lines(const LinesArgs(args: Room(roomId: 'r1')))
+          .toList();
+    }
+
+    // A comment-only block `size` bytes long, delimiter included.
+    String comment(int size) => ': ${'x' * (size - 4)}\n\n';
+
+    test('an event exactly at the cap is accepted', () async {
+      final lines = await drain(<String>[ready, comment(limit), good]);
+      expect(lines.map((line) => line.body), <String>['ok']);
+    });
+
+    test('an event one byte over the cap is refused and nothing follows', () async {
+      await expectLater(
+        drain(<String>[ready, comment(limit + 1) + good]),
+        throwsA(
+          isA<CratestackEventTooLargeException>()
+              .having((error) => error.limit, 'limit', limit)
+              .having((error) => error.code, 'code', 'event_too_large'),
+        ),
+      );
+    });
+
+    test('an event with no delimiter ends with the error', () async {
+      await expectLater(
+        drain(<String>[ready, ...List<String>.filled(50, 'x' * 100)]),
+        throwsA(isA<CratestackEventTooLargeException>()),
+      );
+    });
+
+    test('bytes are counted, not characters, and the default is 1 MiB', () async {
+      await expectLater(
+        drain(<String>[ready, ': ${'é' * 100}\n\n']),
+        throwsA(isA<CratestackEventTooLargeException>()),
+      );
+      expect(cratestackDefaultMaxEventBytes, 1024 * 1024);
+    });
+  });
 }

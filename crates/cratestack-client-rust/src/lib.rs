@@ -36,9 +36,9 @@ pub use client::{
     ensure_crypto_provider,
 };
 pub use codec::HttpClientCodec;
-pub use config::ClientConfig;
 #[cfg(all(feature = "webtransport", not(target_arch = "wasm32")))]
 pub use config::WebTransportEndpoint;
+pub use config::{ClientConfig, DEFAULT_MAX_SSE_EVENT_BYTES};
 pub use cratestack_core::ProjectionDecoder;
 /// Back-compat alias — the trait moved to `cratestack-core` and was
 /// renamed `ProjectionDecoder` to free up the `Projection` name for

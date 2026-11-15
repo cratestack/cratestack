@@ -20,7 +20,9 @@ async fn events_split_across_chunks() {
         Ok(Bytes::from_static(b"\n: keepalive\n\nevent: message\nda")),
         Ok(Bytes::from_static(b"ta: {\"next\":1}\n\n")),
     ];
-    let events: Vec<_> = events(futures_util::stream::iter(chunks)).collect().await;
+    let events: Vec<_> = events(futures_util::stream::iter(chunks), 1 << 20)
+        .collect()
+        .await;
     let names: Vec<_> = events
         .iter()
         .map(|e| e.as_ref().unwrap().name.as_str())
@@ -41,7 +43,9 @@ async fn utf8_and_crlf_split_across_chunks() {
         Ok(Bytes::from_static(b"\xa9\"}\r\n\r")),
         Ok(Bytes::from_static(b"\n")),
     ];
-    let events: Vec<_> = events(futures_util::stream::iter(chunks)).collect().await;
+    let events: Vec<_> = events(futures_util::stream::iter(chunks), 1 << 20)
+        .collect()
+        .await;
     assert_eq!(events.len(), 1);
     let event = events[0].as_ref().unwrap();
     assert_eq!(event.name, "message");
@@ -51,6 +55,91 @@ async fn utf8_and_crlf_split_across_chunks() {
 #[tokio::test]
 async fn invalid_utf8_in_a_block_is_an_error() {
     let chunks = vec![Ok(Bytes::from_static(b"data: \xff\n\n"))];
-    let events: Vec<_> = events(futures_util::stream::iter(chunks)).collect().await;
+    let events: Vec<_> = events(futures_util::stream::iter(chunks), 1 << 20)
+        .collect()
+        .await;
     assert!(matches!(events[0], Err(ClientError::InvalidResponse(_))));
+}
+
+/// An event `size` bytes long, delimiter included, as one `data:` line.
+fn event_of(size: usize) -> Vec<u8> {
+    let mut event = b"data: ".to_vec();
+    event.resize(size - 2, b'x');
+    event.extend_from_slice(b"\n\n");
+    event
+}
+
+async fn collect(chunks: Vec<Vec<u8>>, limit: usize) -> Vec<Result<Event, ClientError>> {
+    let chunks: Vec<_> = chunks.into_iter().map(|c| Ok(Bytes::from(c))).collect();
+    events(futures_util::stream::iter(chunks), limit)
+        .collect()
+        .await
+}
+
+#[tokio::test]
+async fn an_event_exactly_at_the_cap_is_accepted() {
+    let out = collect(vec![event_of(100)], 100).await;
+    assert_eq!(out.len(), 1);
+    assert_eq!(out[0].as_ref().unwrap().data.len(), 92);
+}
+
+#[tokio::test]
+async fn an_event_one_byte_over_the_cap_is_refused_and_ends_the_stream() {
+    // A second, small event follows in the same chunk: it must not arrive.
+    let mut body = event_of(101);
+    body.extend_from_slice(b"data: after\n\n");
+    let out = collect(vec![body], 100).await;
+    assert_eq!(out.len(), 1, "{out:?}");
+    assert!(matches!(
+        out[0],
+        Err(ClientError::EventTooLarge { limit: 100 })
+    ));
+}
+
+#[tokio::test]
+async fn an_oversize_event_split_across_chunks_is_refused() {
+    let body = event_of(101);
+    let (a, b) = body.split_at(60);
+    let out = collect(
+        vec![a.to_vec(), b.to_vec(), b"data: after\n\n".to_vec()],
+        100,
+    )
+    .await;
+    assert_eq!(out.len(), 1, "{out:?}");
+    assert!(matches!(out[0], Err(ClientError::EventTooLarge { .. })));
+}
+
+#[tokio::test]
+async fn an_endless_line_with_no_delimiter_ends_with_the_error() {
+    let endless = futures_util::stream::repeat_with(|| Ok(Bytes::from_static(&[b'x'; 100])));
+    let mut stream = Box::pin(events(endless, 1024));
+    let first = tokio::time::timeout(std::time::Duration::from_secs(5), stream.next())
+        .await
+        .expect("the reader must stop buffering, not hang");
+    assert!(matches!(
+        first,
+        Some(Err(ClientError::EventTooLarge { limit: 1024 }))
+    ));
+    assert!(stream.next().await.is_none(), "nothing after the refusal");
+}
+
+#[tokio::test]
+async fn an_endless_event_of_many_short_lines_ends_with_the_error() {
+    let endless = futures_util::stream::repeat_with(|| Ok(Bytes::from_static(b"data: x\n")));
+    let mut stream = Box::pin(events(endless, 1024));
+    let first = tokio::time::timeout(std::time::Duration::from_secs(5), stream.next())
+        .await
+        .expect("the reader must stop buffering, not hang");
+    assert!(matches!(
+        first,
+        Some(Err(ClientError::EventTooLarge { .. }))
+    ));
+    assert!(stream.next().await.is_none());
+}
+
+#[tokio::test]
+async fn the_cap_is_per_event_not_cumulative() {
+    let out = collect(vec![event_of(100), event_of(100), event_of(100)], 100).await;
+    assert_eq!(out.len(), 3);
+    assert!(out.iter().all(Result::is_ok));
 }

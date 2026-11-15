@@ -33,6 +33,22 @@ final class CratestackSubscriptionException implements Exception {
   String toString() => 'CratestackSubscriptionException($code: $message)';
 }
 
+/// The default cap on one SSE event: 1 MiB.
+const int cratestackDefaultMaxEventBytes = 1024 * 1024;
+
+/// One SSE event outgrew the per-event byte cap, so the subscription ended
+/// and its request was cancelled. [limit] is the cap that was exceeded.
+final class CratestackEventTooLargeException
+    extends CratestackSubscriptionException {
+  CratestackEventTooLargeException(this.limit)
+      : super(
+          code: 'event_too_large',
+          message: 'subscription event exceeds the $limit-byte limit',
+        );
+
+  final int limit;
+}
+
 /// One event of an `@@subscribe` model's feed.
 final class CratestackModelEvent<T> {
   const CratestackModelEvent({
@@ -150,6 +166,7 @@ Stream<Object?> cratestackSubscribeSse(
   String? query, {
   Map<String, String>? headers,
   void Function()? onReady,
+  int maxEventBytes = cratestackDefaultMaxEventBytes,
 }) {
   final abort = Completer<void>();
   late final StreamController<Object?> controller;
@@ -164,6 +181,7 @@ Stream<Object?> cratestackSubscribeSse(
           headers,
           onReady,
           abort.future,
+          maxEventBytes,
         )) {
           if (controller.isClosed) {
             return;
@@ -173,6 +191,9 @@ Stream<Object?> cratestackSubscribeSse(
       } on CratestackTransportAborted {
         // The listener cancelled.
       } catch (error, stackTrace) {
+        if (!abort.isCompleted) {
+          abort.complete();
+        }
         if (!controller.isClosed) {
           controller.addError(error, stackTrace);
         }
@@ -198,6 +219,7 @@ Stream<Object?> _cratestackSseItems(
   Map<String, String>? headers,
   void Function()? onReady,
   Future<void> abort,
+  int maxEventBytes,
 ) async* {
   final response = await transport.send(
     CratestackHttpRequest(
@@ -231,12 +253,32 @@ Stream<Object?> _cratestackSseItems(
     );
   }
   var buffer = '';
-  await for (final chunk in response.body.cast<List<int>>().transform(utf8.decoder)) {
+  // UTF-8 bytes buffered for the event still being read, and where to resume
+  // looking for its delimiter (a `\n\n` can straddle two chunks).
+  var pending = 0;
+  var searchFrom = 0;
+  final decoded = StringBuffer();
+  final decoder = utf8.decoder.startChunkedConversion(
+    StringConversionSink.fromStringSink(decoded),
+  );
+  await for (final chunk in response.body.cast<List<int>>()) {
+    decoder.add(chunk);
+    pending += chunk.length;
+    final text = decoded.toString();
+    decoded.clear();
     // Normalized after joining, so a `\r\n` split across two chunks is one.
-    buffer = (buffer + chunk).replaceAll('\r\n', '\n');
-    for (var end = buffer.indexOf('\n\n'); end >= 0; end = buffer.indexOf('\n\n')) {
+    buffer = (buffer + text).replaceAll('\r\n', '\n');
+    var consumed = false;
+    for (var end = buffer.indexOf('\n\n', searchFrom);
+        end >= 0;
+        end = buffer.indexOf('\n\n', searchFrom)) {
       final block = buffer.substring(0, end);
+      if (utf8.encode(block).length + 2 > maxEventBytes) {
+        throw CratestackEventTooLargeException(maxEventBytes);
+      }
       buffer = buffer.substring(end + 2);
+      searchFrom = 0;
+      consumed = true;
       final event = _cratestackSseEvent(block);
       if (event == null) {
         continue;
@@ -256,6 +298,13 @@ Stream<Object?> _cratestackSseItems(
           );
       }
     }
+    if (consumed) {
+      pending = utf8.encode(buffer).length;
+    }
+    if (pending > maxEventBytes) {
+      throw CratestackEventTooLargeException(maxEventBytes);
+    }
+    searchFrom = buffer.isEmpty ? 0 : buffer.length - 1;
   }
 }
 

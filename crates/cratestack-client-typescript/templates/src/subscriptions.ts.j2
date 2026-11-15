@@ -28,7 +28,14 @@ export interface SubscriptionClientOptions {
     url: string;
     serverCertificateHashes?: { algorithm: "sha-256"; value: BufferSource }[];
   };
+  /** The most UTF-8 bytes one SSE event may span, delimiter included.
+   *  Default `1048576` (1 MiB). A longer event, or one that never ends,
+   *  throws `CratestackEventTooLargeError` and drops the connection. */
+  maxEventBytes?: number;
 }
+
+/** The default `SubscriptionClientOptions.maxEventBytes`: 1 MiB. */
+export const DEFAULT_MAX_EVENT_BYTES = 1024 * 1024;
 
 /** What a generated client's runtime offers a subscription. */
 export interface SubscriptionHost {
@@ -70,6 +77,14 @@ export class CratestackSubscriptionError extends Error {
   ) {
     super(message);
     this.name = "CratestackSubscriptionError";
+  }
+}
+
+/** One SSE event outgrew `maxEventBytes`; the stream was cancelled. */
+export class CratestackEventTooLargeError extends CratestackSubscriptionError {
+  constructor(readonly limit: number) {
+    super("event_too_large", `subscription event exceeds the ${limit}-byte limit`);
+    this.name = "CratestackEventTooLargeError";
   }
 }
 
@@ -229,17 +244,29 @@ async function* openSse(
     const body = (await response.json().catch(() => ({}))) as { code?: string; message?: string; details?: unknown };
     throw new CratestackSubscriptionError(body.code ?? "unknown", body.message ?? response.statusText, body.details, response.status);
   }
-  const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
+  const limit = host.subscriptions?.maxEventBytes ?? DEFAULT_MAX_EVENT_BYTES;
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  const encoder = new TextEncoder();
   let buffer = "";
+  // UTF-8 bytes buffered for the event still being read, and where to resume
+  // looking for its delimiter (a `\n\n` can straddle two chunks).
+  let pending = 0;
+  let searchFrom = 0;
   try {
     for (;;) {
       const { value, done } = await reader.read();
       if (done) return;
-      buffer += value.replace(/\r\n/g, "\n");
+      buffer += decoder.decode(value, { stream: true }).replace(/\r\n/g, "\n");
+      pending += value.byteLength;
       let end: number;
-      while ((end = buffer.indexOf("\n\n")) >= 0) {
+      let consumed = false;
+      while ((end = buffer.indexOf("\n\n", searchFrom)) >= 0) {
         const block = buffer.slice(0, end);
+        if (encoder.encode(block).length + 2 > limit) throw new CratestackEventTooLargeError(limit);
         buffer = buffer.slice(end + 2);
+        searchFrom = 0;
+        consumed = true;
         const event = parseEvent(block);
         if (event === undefined) continue;
         const frame = JSON.parse(event.data) as { next?: unknown; err?: { code: string; message: string; details?: unknown } };
@@ -249,6 +276,9 @@ async function* openSse(
           throw new CratestackSubscriptionError(frame.err.code, frame.err.message, frame.err.details);
         }
       }
+      if (consumed) pending = encoder.encode(buffer).length;
+      if (pending > limit) throw new CratestackEventTooLargeError(limit);
+      searchFrom = Math.max(0, buffer.length - 1);
     }
   } finally {
     await reader.cancel().catch(() => undefined);
