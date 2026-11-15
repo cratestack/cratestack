@@ -155,17 +155,40 @@ async fn the_cap_is_per_event_not_cumulative() {
 }
 
 #[tokio::test]
+async fn several_events_each_under_the_cap_in_one_chunk_are_all_delivered() {
+    // The cap is per event, not per chunk: three events of exactly the cap
+    // in one chunk are 300 bytes against a limit of 100.
+    let out = collect(vec![event_of(100).repeat(3)], 100).await;
+    assert_eq!(out.len(), 3, "{out:?}");
+    assert!(out.iter().all(Result::is_ok));
+}
+
+/// Time to parse `size` bytes of nothing but `unit` delimiters in one chunk.
+async fn blank_run(unit: &[u8], size: usize) -> std::time::Duration {
+    let body = unit.repeat(size / unit.len());
+    let started = std::time::Instant::now();
+    let out = collect(vec![body, b"data: end\n\n".to_vec()], 1 << 20).await;
+    let took = started.elapsed();
+    assert_eq!(out.len(), 1, "{out:?}");
+    assert_eq!(out[0].as_ref().unwrap().data, "end");
+    took
+}
+
+#[tokio::test]
 async fn a_run_of_blank_lines_in_one_chunk_is_parsed_in_linear_time() {
-    // 256 KiB of nothing but delimiters: 131072 empty blocks in one chunk.
-    // Draining and re-searching per block took minutes (cratestack#1379
-    // review); linear parsing takes milliseconds even in a debug build.
+    // Draining and re-searching per block was quadratic (cratestack#1379
+    // review). Quadrupling the input must not cost 16 times as much: the
+    // ratio fails a quadratic parser at 8 KiB / 32 KiB in seconds,
+    // where a fixed ceiling on a big input took minutes to trip.
     for unit in [&b"\n"[..], &b"\r\n"[..]] {
-        let body = unit.repeat((256 << 10) / unit.len());
-        let started = std::time::Instant::now();
-        let out = collect(vec![body, b"data: end\n\n".to_vec()], 1 << 20).await;
-        let took = started.elapsed();
-        assert_eq!(out.len(), 1, "{out:?}");
-        assert_eq!(out[0].as_ref().unwrap().data, "end");
-        assert!(took.as_secs() < 2, "quadratic parsing: {took:?}");
+        let small = blank_run(unit, 8 << 10).await;
+        let large = blank_run(unit, 32 << 10).await;
+        assert!(large.as_secs() < 10, "too slow: {large:?}");
+        // The floor keeps timer noise on a tiny `small` from tripping it.
+        let floor = std::time::Duration::from_millis(5);
+        assert!(
+            large.as_secs_f64() < 8.0 * small.max(floor).as_secs_f64(),
+            "quadratic parsing: {small:?} for 8 KiB, {large:?} for 32 KiB"
+        );
     }
 }

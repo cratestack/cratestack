@@ -135,22 +135,15 @@ final {{ provider_prefix }}AdapterProvider = Provider<CratestackRpcAdapter>((ref
 {% endif %}
 
 {% if has_subscriptions %}
-/// The `retry:` of every generated subscription stream provider. Riverpod 3
-/// retries a provider that fails (up to 10 times, with backoff) unless it
-/// failed with an `Error` or a `ProviderException`; this keeps that default
-/// except for [CratestackEventTooLargeException], which is not transient:
+/// The `retry:` of every generated subscription stream provider. It defers
+/// to Riverpod's own default retry (`ProviderContainer.defaultRetry`) except
+/// for [CratestackEventTooLargeException], which is not transient:
 /// the same server would send the same oversized event again, so retrying
 /// would only reconnect and download it again. That error reaches the
 /// provider's `AsyncError` at once, and `ref.invalidate` retries by hand.
 Duration? cratestackSubscriptionRetry(int retryCount, Object error) {
-  if (retryCount >= 10 ||
-      error is Error ||
-      error is ProviderException ||
-      error is CratestackEventTooLargeException) {
-    return null;
-  }
-  final milliseconds = 200 * (1 << retryCount);
-  return Duration(milliseconds: milliseconds > 6400 ? 6400 : milliseconds);
+  if (error is CratestackEventTooLargeException) return null;
+  return ProviderContainer.defaultRetry(retryCount, error);
 }
 
 /// How the client subscribes (slice S6). Override it to set the
