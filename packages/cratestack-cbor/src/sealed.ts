@@ -9,6 +9,10 @@
 // holds no crypto and no canonical form: the signature, the hash, the query
 // and the AAD are the `CoseClient`'s (Rust). What is left is header plumbing.
 import { type CoseCallBinding, type CoseClient, CoseFailure } from "@cratestack/ts-types";
+import { SealRequired } from "./sealed-required.js";
+
+export { SealRequired } from "./sealed-required.js";
+export { createSealedFetch } from "./sealed-rest.js";
 
 /** The `CoseClient` a call is sealed with, or `undefined` to send it unsealed
  *  (an anonymous call, an op the client does not seal). A function picks per
@@ -20,7 +24,7 @@ export type CoseClientSource =
   | ((call: { readonly route: string; readonly method: string }) => CoseClient | undefined);
 
 /** One resolved route: what the call is bound to besides its bytes. */
-interface SealedRoute {
+export interface SealedRoute {
   readonly route: string;
   readonly pathParams: readonly string[];
   readonly contractSha: Uint8Array;
@@ -30,11 +34,14 @@ const CBOR = "application/cbor";
 const NO_BODY_STATUS = new Set([101, 204, 205, 304]);
 const PAYLOAD_TYPE_HEADER = "cratestack-payload-type";
 
-const hexBytes = (hex: string): Uint8Array =>
+export const hexBytes = (hex: string): Uint8Array =>
   Uint8Array.from(hex.match(/../g) ?? [], (byte) => Number.parseInt(byte, 16));
 
-const pick = (source: CoseClientSource, route: string, method: string): CoseClient | undefined =>
-  typeof source === "function" ? source({ route, method }) : source;
+export const pick = (
+  source: CoseClientSource,
+  route: string,
+  method: string,
+): CoseClient | undefined => (typeof source === "function" ? source({ route, method }) : source);
 
 async function bodyBytes(body: BodyInit | null | undefined): Promise<Uint8Array> {
   if (body === null || body === undefined) return new Uint8Array();
@@ -48,7 +55,7 @@ async function bodyBytes(body: BodyInit | null | undefined): Promise<Uint8Array>
 const mediaTypeOf = (value: string): string => value.split(";", 1)[0]?.trim().toLowerCase() ?? "";
 
 /** The URL a `fetch` was given, whatever shape it came in. */
-const urlOf = (input: RequestInfo | URL): URL =>
+export const urlOf = (input: RequestInfo | URL): URL =>
   new URL(input instanceof Request ? input.url : input.toString());
 
 /**
@@ -64,7 +71,7 @@ const urlOf = (input: RequestInfo | URL): URL =>
  *   server's `415` or `426`) is returned untouched, a hint and never proof. An
  *   unsigned *success* is never believed: it rejects.
  */
-async function sealedFetch(
+export async function sealedFetch(
   fetchFn: typeof fetch,
   cose: CoseClient,
   target: SealedRoute,
@@ -152,7 +159,10 @@ type RpcSealLink = <R extends RpcSealRequest, T>(
  * An `RpcLink` that seals every unary and batch call of a generated RPC client:
  * the route is the op id (`batch` for `/rpc/batch`), the contract digest is
  * `OP_CONTRACTS[route]`. An op with no contract, or one `cose` declines
- * (`undefined`), goes out unsealed. `stream()` is not a link of this chain and
+ * (`undefined`), goes out unsealed unless `requireSealed` is `true`; then the
+ * call is refused locally, before any `fetch`, with a {@link SealRequired}
+ * naming the route (use it where a silent downgrade to plaintext is worse than
+ * a failed call). `requireSealed` defaults to `false`. `stream()` is not a link of this chain and
  * is never sealed (chain-mode streams are not implemented).
  *
  * ```ts
@@ -167,12 +177,18 @@ type RpcSealLink = <R extends RpcSealRequest, T>(
 export function createSealedLink(options: {
   cose: CoseClientSource;
   contracts: OpContracts;
+  requireSealed?: boolean;
 }): RpcSealLink {
   return (request, next) => {
     const route = request.kind === "batch" ? "batch" : request.opId;
     const client = pick(options.cose, route, "POST");
     const contract = options.contracts[route];
     if (client === undefined || contract === undefined) {
+      if (options.requireSealed === true) {
+        return Promise.reject(
+          new SealRequired(route, contract === undefined ? "no-contract" : "declined"),
+        );
+      }
       return next(request);
     }
     const target: SealedRoute = { route, pathParams: [], contractSha: hexBytes(contract) };
@@ -180,96 +196,4 @@ export function createSealedLink(options: {
       sealedFetch(request.fetchFn, client, target, input, init)) as typeof fetch;
     return next({ ...request, fetchFn: sealedFetchFn });
   };
-}
-
-function trimTrailingSlashes(value: string): string {
-  let end = value.length;
-  while (end > 0 && value.charCodeAt(end - 1) === 47) {
-    end--;
-  }
-  return value.slice(0, end);
-}
-
-interface RestTemplate {
-  readonly key: string;
-  readonly method: string;
-  readonly template: string;
-  readonly pattern: RegExp;
-  readonly literals: number;
-  readonly contractSha: Uint8Array;
-}
-
-/** `"<METHOD> <template>"` keys of `OP_CONTRACTS` as matchers over a path. */
-function restTemplates(contracts: OpContracts): RestTemplate[] {
-  const out: RestTemplate[] = [];
-  for (const [key, contract] of Object.entries(contracts)) {
-    const space = key.indexOf(" ");
-    if (space < 0) continue;
-    const template = key.slice(space + 1);
-    const segments = template.split("/");
-    const pattern = new RegExp(
-      `^${segments
-        .map((segment) =>
-          /^\{[^}]+\}$/.test(segment) ? "([^/]+)" : segment.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
-        )
-        .join("/")}$`,
-    );
-    out.push({
-      key,
-      method: key.slice(0, space),
-      template,
-      pattern,
-      literals: segments.filter((segment) => !/^\{[^}]+\}$/.test(segment)).length,
-      contractSha: hexBytes(contract),
-    });
-  }
-  // The most literal template wins (`/widgets/search` before `/widgets/{id}`).
-  return out.sort((a, b) => b.literals - a.literals);
-}
-
-/**
- * A `fetch` that seals every call of a generated REST client, for
- * `CratestackRuntime`'s `fetch` option. The route template and path parameters
- * come from matching the URL path (after `basePath`, the runtime's own) against
- * the `"<METHOD> <template>"` keys of `OP_CONTRACTS`; a call that matches none,
- * or that `cose` declines (`undefined`), goes out unsealed.
- *
- * ```ts
- * const runtime = new CratestackRuntime(origin, {
- *   fetch: createSealedFetch({ cose, contracts: OP_CONTRACTS, basePath: "/api" }),
- * });
- * ```
- */
-export function createSealedFetch(options: {
-  cose: CoseClientSource;
-  contracts: OpContracts;
-  basePath?: string;
-  fetch?: typeof fetch;
-}): typeof fetch {
-  const templates = restTemplates(options.contracts);
-  const basePath = trimTrailingSlashes(options.basePath ?? "");
-  const underlying = options.fetch ?? fetch.bind(globalThis);
-  return (async (input: RequestInfo | URL, init?: RequestInit) => {
-    const url = urlOf(input);
-    const method = (
-      init?.method ?? (input instanceof Request ? input.method : "GET")
-    ).toUpperCase();
-    const path =
-      basePath !== "" && url.pathname.startsWith(basePath)
-        ? url.pathname.slice(basePath.length)
-        : url.pathname;
-    for (const candidate of templates) {
-      const match = candidate.method === method ? candidate.pattern.exec(path) : null;
-      if (match === null) continue;
-      const client = pick(options.cose, candidate.key, method);
-      if (client === undefined) break;
-      const target: SealedRoute = {
-        route: candidate.template,
-        pathParams: match.slice(1).map(decodeURIComponent),
-        contractSha: candidate.contractSha,
-      };
-      return sealedFetch(underlying, client, target, input, init);
-    }
-    return underlying(input, init);
-  }) as typeof fetch;
 }
