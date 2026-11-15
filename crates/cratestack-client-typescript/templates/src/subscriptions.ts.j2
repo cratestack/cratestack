@@ -15,6 +15,7 @@
 // thrown, never a reason to fall back.
 
 import { openSocketSubscription, openWebTransportSubscription, SocketUnreachable } from "./subscription-sockets.js";
+import { openSse } from "./subscription-sse.js";
 
 export type SubscriptionTransport = "auto" | "webtransport" | "websocket" | "sse";
 
@@ -28,7 +29,16 @@ export interface SubscriptionClientOptions {
     url: string;
     serverCertificateHashes?: { algorithm: "sha-256"; value: BufferSource }[];
   };
+  /** The most UTF-8 bytes one SSE event may span, counted after `\r\n` is
+   *  normalized to `\n` and including the terminating blank line (so a CRLF
+   *  stream may carry up to one more byte per line than the cap).
+   *  Default `1048576` (1 MiB). A longer event, or one that never ends,
+   *  throws `CratestackEventTooLargeError` and drops the connection. */
+  maxEventBytes?: number;
 }
+
+/** The default `SubscriptionClientOptions.maxEventBytes`: 1 MiB. */
+export const DEFAULT_MAX_EVENT_BYTES = 1024 * 1024;
 
 /** What a generated client's runtime offers a subscription. */
 export interface SubscriptionHost {
@@ -70,6 +80,14 @@ export class CratestackSubscriptionError extends Error {
   ) {
     super(message);
     this.name = "CratestackSubscriptionError";
+  }
+}
+
+/** One SSE event outgrew `maxEventBytes`; the stream was cancelled. */
+export class CratestackEventTooLargeError extends CratestackSubscriptionError {
+  constructor(readonly limit: number) {
+    super("event_too_large", `subscription event exceeds the ${limit}-byte limit`);
+    this.name = "CratestackEventTooLargeError";
   }
 }
 
@@ -212,55 +230,4 @@ function rememberWebTransportFailure(url: string): void {
 
 function failureKey(url: string): string {
   return `cratestack.webtransport.failed:${new URL(url).origin}`;
-}
-
-/** SSE over `fetch` (not `EventSource`, which cannot send headers). */
-async function* openSse(
-  host: SubscriptionHost,
-  target: SubscriptionTarget,
-  headers: Headers,
-  signal: AbortSignal | undefined,
-): AsyncGenerator<Frame> {
-  headers.set("Accept", "text/event-stream");
-  const init: RequestInit = { headers };
-  if (signal !== undefined) init.signal = signal;
-  const response = await host.fetchFn(resolveUrl(host, target.ssePath, target.sseQuery), init);
-  if (!response.ok || response.body === null) {
-    const body = (await response.json().catch(() => ({}))) as { code?: string; message?: string; details?: unknown };
-    throw new CratestackSubscriptionError(body.code ?? "unknown", body.message ?? response.statusText, body.details, response.status);
-  }
-  const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
-  let buffer = "";
-  try {
-    for (;;) {
-      const { value, done } = await reader.read();
-      if (done) return;
-      buffer += value.replace(/\r\n/g, "\n");
-      let end: number;
-      while ((end = buffer.indexOf("\n\n")) >= 0) {
-        const block = buffer.slice(0, end);
-        buffer = buffer.slice(end + 2);
-        const event = parseEvent(block);
-        if (event === undefined) continue;
-        const frame = JSON.parse(event.data) as { next?: unknown; err?: { code: string; message: string; details?: unknown } };
-        if (event.name === "ready") yield { kind: "ready" };
-        else if (event.name === "message") yield { kind: "item", value: frame.next };
-        else if (event.name === "error" && frame.err) {
-          throw new CratestackSubscriptionError(frame.err.code, frame.err.message, frame.err.details);
-        }
-      }
-    }
-  } finally {
-    await reader.cancel().catch(() => undefined);
-  }
-}
-
-function parseEvent(block: string): { name: string; data: string } | undefined {
-  let name = "message";
-  const data: string[] = [];
-  for (const line of block.split("\n")) {
-    if (line.startsWith("event:")) name = line.slice(6).trim();
-    else if (line.startsWith("data:")) data.push(line.slice(5).replace(/^ /, ""));
-  }
-  return data.length > 0 ? { name, data: data.join("\n") } : undefined;
 }

@@ -6,7 +6,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 // The class takes the default package name (`cratestack-client`).
 import { CratestackClientClient as CratestackClient } from "./src/client.js";
-import { CratestackSubscriptionError } from "./src/subscriptions.js";
+import { CratestackEventTooLargeError, CratestackSubscriptionError } from "./src/subscriptions.js";
 
 const encoder = new TextEncoder();
 
@@ -94,6 +94,130 @@ describe("SSE", () => {
       }
     }).rejects.toThrow("subscription lagged");
     expect(calls[0]).toContain("/rpc/subscribe/procedure.lines?args=%7B%22roomId%22%3A%22r1%22%7D");
+  });
+});
+
+/** A `fetch` answering with `chunks`, then `x` forever, nothing but left open, or a clean end. */
+function sseChunks(chunks: (string | Uint8Array)[], tail: "close" | "endless" | "idle" = "close"): { fetch: typeof fetch; state: { cancelled: boolean; sent: number } } {
+  const state = { cancelled: false, sent: 0 };
+  const fetchFn = (async () => {
+    let i = 0;
+    const body = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        if (i < chunks.length) {
+          const chunk = chunks[i++]!;
+          controller.enqueue(typeof chunk === "string" ? encoder.encode(chunk) : chunk);
+        } else if (tail === "endless") {
+          controller.enqueue(encoder.encode("x".repeat(100)));
+        } else if (tail === "close") {
+          controller.close();
+        }
+        state.sent++;
+      },
+      cancel() {
+        state.cancelled = true;
+      },
+    });
+    return new Response(body, { headers: { "content-type": "text/event-stream" } });
+  }) as typeof fetch;
+  return { fetch: fetchFn, state };
+}
+
+const READY = 'event: ready\ndata: {"id":1,"ready":{}}\n\n';
+
+/** A `message` event exactly `size` bytes long, its `\n\n` included. */
+function messageOf(size: number): string {
+  const head = "event: message\ndata: ";
+  const tail = "\n\n";
+  return head + "x".repeat(size - head.length - tail.length) + tail;
+}
+
+async function drain(client: CratestackClient): Promise<{ items: unknown[]; error: unknown }> {
+  const items: unknown[] = [];
+  try {
+    for await (const item of client.procedures.lines({ args: { roomId: "r1" } })) items.push(item);
+  } catch (error) {
+    return { items, error };
+  }
+  return { items, error: undefined };
+}
+
+describe("SSE event size cap", () => {
+  const LIMIT = 200;
+  const client = (fetch: typeof globalThis.fetch) =>
+    new CratestackClient("http://api.test", { fetch, subscriptions: { transport: "sse", maxEventBytes: LIMIT } });
+
+  it("ends an endless event with no delimiter, cancelling the connection", async () => {
+    const { fetch, state } = sseChunks([READY], "endless");
+    const { error } = await drain(client(fetch));
+    expect(error).toBeInstanceOf(CratestackEventTooLargeError);
+    expect((error as CratestackEventTooLargeError).limit).toBe(LIMIT);
+    expect((error as CratestackEventTooLargeError).code).toBe("event_too_large");
+    expect(state.cancelled).toBe(true);
+    expect(state.sent).toBeLessThan(20);
+  });
+
+  it("accepts an event exactly at the cap", async () => {
+    // `{"id":2,"next":...}` cannot be padded to size, so the at-cap event is a
+    // comment-only block: it parses to nothing but is measured like any other.
+    const atCap = `: ${"x".repeat(LIMIT - 4)}\n\n`;
+    expect(atCap.length).toBe(LIMIT);
+    const good = `event: message\ndata: {"id":2,"next":{"body":"ok"}}\n\n`;
+    const { fetch } = sseChunks([READY, atCap, good]);
+    const { items, error } = await drain(client(fetch));
+    expect(error).toBeUndefined();
+    expect(items).toEqual([{ body: "ok" }]);
+  });
+
+  it("refuses an event one byte over the cap and delivers nothing after it", async () => {
+    const over = `: ${"x".repeat(LIMIT - 3)}\n\n`;
+    expect(over.length).toBe(LIMIT + 1);
+    const good = `event: message\ndata: {"id":2,"next":{"body":"after"}}\n\n`;
+    const { fetch, state } = sseChunks([READY, over + good], "idle");
+    const { items, error } = await drain(client(fetch));
+    expect(error).toBeInstanceOf(CratestackEventTooLargeError);
+    expect(items).toEqual([]);
+    expect(state.cancelled).toBe(true);
+  });
+
+  it("reads CRLF events split at every byte position exactly", async () => {
+    const stream = encoder.encode(
+      'event: ready\r\ndata: {"id":1,"ready":{}}\r\n\r\n' +
+        'event: message\r\ndata: {"id":2,"next":{"body":"caf\u00e9"}}\r\n\r\n' +
+        'event: message\r\ndata: {"id":3,"next":{"body":"b"}}\r\n\r\n',
+    );
+    for (let at = 1; at < stream.length; at++) {
+      const { fetch } = sseChunks([stream.slice(0, at), stream.slice(at)]);
+      const { items, error } = await drain(client(fetch));
+      expect(error, `split at byte ${at}`).toBeUndefined();
+      expect(items, `split at byte ${at}`).toEqual([{ body: "caf\u00e9" }, { body: "b" }]);
+    }
+  });
+
+  it("gives the same typed error for a ready event over the cap and for a model feed", async () => {
+    const bigReady = `event: ready\ndata: ${"x".repeat(LIMIT)}\n\n`;
+    expect((await drain(client(sseChunks([bigReady]).fetch))).error).toBeInstanceOf(CratestackEventTooLargeError);
+    const { fetch } = sseChunks([READY, `: ${"x".repeat(LIMIT)}\n\n`]);
+    let error: unknown;
+    try {
+      for await (const _ of client(fetch).notes.subscribe()) {
+        // never reached
+      }
+    } catch (caught) {
+      error = caught;
+    }
+    expect(error).toBeInstanceOf(CratestackEventTooLargeError);
+  });
+
+  it("counts bytes, not characters, and the default is 1 MiB", async () => {
+    const wide = `: ${"é".repeat(100)}\n\n`; // 204 bytes, 104 characters
+    const { fetch } = sseChunks([READY, wide]);
+    expect((await drain(client(fetch))).error).toBeInstanceOf(CratestackEventTooLargeError);
+    const big = sseChunks([READY, messageOf(1024 * 1024 + 1)]);
+    const unset = new CratestackClient("http://api.test", { fetch: big.fetch, subscriptions: { transport: "sse" } });
+    const result = await drain(unset);
+    expect(result.error).toBeInstanceOf(CratestackEventTooLargeError);
+    expect((result.error as CratestackEventTooLargeError).limit).toBe(1024 * 1024);
   });
 });
 

@@ -26,6 +26,11 @@ pub(crate) const SUBSCRIPTION_TEMPLATE_SPECS: &[TemplateSpec] = &[
         default_source: include_str!("../templates/src/subscriptions.ts.j2"),
     },
     TemplateSpec {
+        template_name: "subscription-sse.ts.j2",
+        output_path: OutputPath::Fixed("src/subscription-sse.ts"),
+        default_source: include_str!("../templates/src/subscription-sse.ts.j2"),
+    },
+    TemplateSpec {
         template_name: "subscription-sockets.ts.j2",
         output_path: OutputPath::Fixed("src/subscription-sockets.ts"),
         default_source: include_str!("../templates/src/subscription-sockets.ts.j2"),

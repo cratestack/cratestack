@@ -57,6 +57,11 @@ pub enum RpcClientError {
     Codec(#[from] CratestackError),
     #[error("invalid response: {0}")]
     InvalidResponse(String),
+    /// RPC parity for [`ClientError::EventTooLarge`] (cratestack#1379): one
+    /// SSE event of a subscription outgrew the configured cap, so the
+    /// subscription ended and its connection was dropped. `limit` is the cap.
+    #[error("subscription event exceeds the {limit}-byte limit")]
+    EventTooLarge { limit: usize },
     #[error("bad input: {0}")]
     BadInput(String),
     /// The signed transport failed (cratestack#1007).
@@ -107,6 +112,7 @@ pub(crate) fn client_error_to_rpc(error: ClientError) -> RpcClientError {
         ClientError::Codec(error) => RpcClientError::Codec(error),
         ClientError::InvalidResponse(message) => RpcClientError::InvalidResponse(message),
         ClientError::BadInput(message) => RpcClientError::BadInput(message),
+        ClientError::EventTooLarge { limit } => RpcClientError::EventTooLarge { limit },
         ClientError::Envelope(error) => RpcClientError::Envelope(error),
         ClientError::State(message) => RpcClientError::InvalidResponse(message),
         ClientError::Remote {
