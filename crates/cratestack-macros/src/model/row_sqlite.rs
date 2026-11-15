@@ -8,7 +8,7 @@ use quote::quote;
 
 use super::row_sqlite_enum::enum_decode_expr;
 
-use crate::shared::{ident, scalar_model_fields, to_snake_case};
+use crate::shared::{ident, scalar_model_fields};
 
 /// Emit `impl FromRusqliteRow for Model` only.
 /// **Embedded-side composer use only — must not appear in server output.**
@@ -68,7 +68,7 @@ fn partial_sqlite_row_field_tokens(
     enum_names: &BTreeSet<&str>,
 ) -> proc_macro2::TokenStream {
     let field_ident = ident(&field.name);
-    let sql_name = to_snake_case(&field.name);
+    let sql_name = field.sql_column_name();
     let expr = sqlite_row_field_decode_expr(field, enum_names);
     quote! {
         #field_ident: if selected.iter().any(|c| *c == #sql_name) {

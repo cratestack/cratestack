@@ -6,7 +6,7 @@ use cratestack_core::{Field, Model, TypeArity};
 
 use quote::quote;
 
-use crate::shared::{find_model, ident, pluralize, to_snake_case};
+use crate::shared::{find_model, ident, to_snake_case};
 
 #[derive(Clone)]
 pub(crate) struct RelationLink {
@@ -33,8 +33,8 @@ pub(crate) fn relation_link(
             relation_field.name, model.name, relation_field.ty.name,
         )
     })?;
-    let parent_table = pluralize(&to_snake_case(&model.name));
-    let related_table = pluralize(&to_snake_case(&target_model.name));
+    let parent_table = model.sql_table_name();
+    let related_table = target_model.sql_table_name();
     let relation = super::parse::parse_relation_attribute(relation_field).ok_or_else(|| {
         format!(
             "relation field `{}` on `{}` must declare @relation(fields:[...],references:[...])",
@@ -82,9 +82,9 @@ pub(crate) fn relation_link(
 
     Ok(RelationLink {
         parent_table,
-        parent_column: to_snake_case(&local_field.name),
+        parent_column: local_field.sql_column_name(),
         related_table,
-        related_column: to_snake_case(&target_field.name),
+        related_column: target_field.sql_column_name(),
         is_to_many: relation_field.ty.arity == TypeArity::List,
     })
 }

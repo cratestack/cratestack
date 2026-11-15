@@ -7,7 +7,7 @@
 use cratestack_core::{Field, Model, TypeArity};
 
 use crate::relation::{RelationLink, relation_link};
-use crate::shared::{find_model, is_relation_field, model_name_set, to_snake_case};
+use crate::shared::{find_model, is_relation_field, model_name_set};
 
 use super::predicates::find_model_field;
 
@@ -48,7 +48,7 @@ pub(super) fn resolve_relation_policy_field<'a>(
             return Ok(Some(RelationPolicyField {
                 relations,
                 target_field: field,
-                target_column: to_snake_case(&field.name),
+                target_column: field.sql_column_name(),
             }));
         }
 

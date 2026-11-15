@@ -9,7 +9,7 @@ use crate::relation::collect_allowed_sort_keys;
 use crate::shared::{
     is_generated_on_create, is_pii_field, is_primary_key, is_readonly_field, is_sensitive_field,
     is_server_only_field, is_version_field, model_name_set, relation_model_fields,
-    response_model_fields, scalar_model_fields, to_snake_case,
+    response_model_fields, scalar_model_fields,
 };
 
 pub(super) struct ColumnLists {
@@ -28,7 +28,7 @@ pub(super) fn collect_column_lists(model: &Model, models: &[Model]) -> Result<Co
         .into_iter()
         .map(|field| {
             let rust_name = &field.name;
-            let sql_name = to_snake_case(&field.name);
+            let sql_name = field.sql_column_name();
             quote! {
                 ::cratestack::ModelColumn {
                     rust_name: #rust_name,
@@ -65,7 +65,7 @@ pub(super) fn collect_column_lists(model: &Model, models: &[Model]) -> Result<Co
         .into_iter()
         .filter(|field| is_pii_field(field))
         .map(|field| {
-            let column = to_snake_case(&field.name);
+            let column = field.sql_column_name();
             quote! { #column }
         })
         .collect();
@@ -73,7 +73,7 @@ pub(super) fn collect_column_lists(model: &Model, models: &[Model]) -> Result<Co
         .into_iter()
         .filter(|field| is_sensitive_field(field))
         .map(|field| {
-            let column = to_snake_case(&field.name);
+            let column = field.sql_column_name();
             quote! { #column }
         })
         .collect();
@@ -94,7 +94,7 @@ pub(super) fn collect_column_lists(model: &Model, models: &[Model]) -> Result<Co
         .filter(|f| !is_readonly_field(f) && !is_server_only_field(f))
         .filter(|f| !is_generated_on_create(f))
         .map(|field| {
-            let column = to_snake_case(&field.name);
+            let column = field.sql_column_name();
             quote! { #column }
         })
         .collect();

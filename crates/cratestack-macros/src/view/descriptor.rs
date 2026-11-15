@@ -106,7 +106,11 @@ pub(crate) fn generate_view_descriptor(
         .sources
         .iter()
         .map(|source| {
-            let name = crate::shared::pluralize(&to_snake_case(&source.name));
+            // A mapped source model is stored under its `@@map` name.
+            let name = crate::shared::find_model(models, &source.name).map_or_else(
+                || pluralize(&to_snake_case(&source.name)),
+                Model::sql_table_name,
+            );
             quote! { #name }
         })
         .collect();

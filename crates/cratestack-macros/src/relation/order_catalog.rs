@@ -49,7 +49,7 @@ pub(crate) fn generate_model_order_catalog(
         .into_iter()
         .map(|field| {
             let api_name = &field.name;
-            let column = to_snake_case(&field.name);
+            let column = field.sql_column_name();
             quote! { (#api_name, #column) }
         })
         .collect::<Vec<_>>();

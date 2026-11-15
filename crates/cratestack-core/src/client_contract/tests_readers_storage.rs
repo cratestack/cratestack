@@ -13,9 +13,44 @@ use super::tests_readers::readers_of;
 
 /// `(helper, files that call it)`.
 const STORAGE_READERS: &[(&str, &[&str])] = &[
-    ("sql_table_name", &[]),
-    ("sql_column_name", &[]),
-    ("sql_column_of", &[]),
+    (
+        "sql_table_name",
+        &[
+            "cratestack-macros/src/model/descriptor.rs",
+            "cratestack-macros/src/relation/types.rs",
+            "cratestack-macros/src/view/descriptor.rs",
+        ],
+    ),
+    (
+        "sql_column_name",
+        &[
+            "cratestack-macros/src/model/descriptor.rs",
+            "cratestack-macros/src/model/descriptor/columns.rs",
+            "cratestack-macros/src/model/descriptor/defaults.rs",
+            "cratestack-macros/src/model/descriptor/embedded.rs",
+            "cratestack-macros/src/model/descriptor/generated.rs",
+            "cratestack-macros/src/model/descriptor/unique.rs",
+            "cratestack-macros/src/model/field_module.rs",
+            "cratestack-macros/src/model/row_pg.rs",
+            "cratestack-macros/src/model/row_sqlite.rs",
+            "cratestack-macros/src/policy/model/comparison.rs",
+            "cratestack-macros/src/policy/model/in_list.rs",
+            "cratestack-macros/src/policy/model/relation_path.rs",
+            "cratestack-macros/src/policy/model/term.rs",
+            "cratestack-macros/src/relation/flat.rs",
+            "cratestack-macros/src/relation/order_catalog.rs",
+            "cratestack-macros/src/relation/types.rs",
+            "cratestack-macros/src/shared/sql.rs",
+            "cratestack-macros/src/transport/subscription_module/model_feed.rs",
+        ],
+    ),
+    (
+        "sql_column_of",
+        &[
+            "cratestack-macros/src/model/descriptor/unique.rs",
+            "cratestack-macros/src/policy/model/term.rs",
+        ],
+    ),
 ];
 
 /// Paths no reader of a storage name may be in: they build routes, wire

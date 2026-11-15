@@ -54,9 +54,9 @@ pub(super) fn generate(
         .into_iter()
         .filter(|field| !is_server_only_field(field) && policy_comparable(field, enum_names))
         .collect();
-    let policy_columns = policy_fields.iter().map(|field| to_snake_case(&field.name));
+    let policy_columns = policy_fields.iter().map(|field| field.sql_column_name());
     let policy_values = policy_fields.iter().map(|field| {
-        let column = to_snake_case(&field.name);
+        let column = field.sql_column_name();
         let field_ident = ident(&field.name);
         let value = sql_value_tokens(
             quote! { record.#field_ident.clone() },

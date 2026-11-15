@@ -8,7 +8,7 @@ use cratestack_core::schema::default_functions::{BuiltinDefault, DefaultValue, c
 use cratestack_core::schema::default_markers::default_inner;
 use quote::quote;
 
-use crate::shared::{model_name_set, scalar_model_fields, to_snake_case};
+use crate::shared::{model_name_set, scalar_model_fields};
 
 pub(super) fn collect_generated_defaults(
     model: &Model,
@@ -30,7 +30,7 @@ pub(super) fn collect_generated_defaults(
                 BuiltinDefault::Uuid => quote! { ::cratestack::GeneratedValue::UuidText },
                 BuiltinDefault::Cuid => quote! { ::cratestack::GeneratedValue::Cuid },
             };
-            let column = to_snake_case(&field.name);
+            let column = field.sql_column_name();
             Some(quote! {
                 ::cratestack::GeneratedDefault { column: #column, value: #value }
             })

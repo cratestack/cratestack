@@ -111,7 +111,7 @@ pub(super) fn parse_policy_term(
             "boolean policy check `{term}` is only supported for required Boolean fields"
         ));
     }
-    let column = to_snake_case(term);
+    let column = field_decl.sql_column_name();
     Ok(quote! {
         ::cratestack::ReadPredicate::FieldIsTrue {
             column: #column,
@@ -166,7 +166,10 @@ fn parse_auth_relation_equality(
         ));
     }
 
-    let column = to_snake_case(&relation_attribute.fields[0]);
+    let local = &relation_attribute.fields[0];
+    let column = model
+        .sql_column_of(local)
+        .unwrap_or_else(|| to_snake_case(local));
     Ok(quote! {
         ::cratestack::ReadPredicate::FieldEqAuth {
             column: #column,

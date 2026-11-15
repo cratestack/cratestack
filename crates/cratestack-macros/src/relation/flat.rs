@@ -177,7 +177,7 @@ pub(crate) fn generate_model_path_types(
 fn generate_scalar_field_module(field: &Field) -> proc_macro2::TokenStream {
     let module_ident = ident(&field.name);
     let field_type = rust_type_tokens(&field.ty);
-    let column = to_snake_case(&field.name);
+    let column = field.sql_column_name();
     let mut methods = Vec::new();
 
     filter_builders::append_required_builder_methods(&mut methods, field, &field_type, &column);
