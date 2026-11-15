@@ -2,8 +2,8 @@
 
 use cratestack_core::{ClientOp, ModelVerb, OpTarget, Procedure, Schema, client_ops};
 use cratestack_policy::{
-    analyse_op_policy, audit_model_attributes, audit_procedure_attributes, model_rule_expression,
-    model_verb_policy_slots, procedure_rule_expression,
+    PolicyDialect, analyse_op_policy, audit_model_attributes, audit_procedure_attributes,
+    model_rule_expression, model_verb_policy_slot, procedure_rule_expression,
 };
 use serde::Serialize;
 
@@ -33,6 +33,10 @@ pub(super) fn rows(schema: &Schema, digest: impl Fn(&str) -> String) -> Vec<OpRo
 
 fn row(op: ClientOp<'_>, contract_digest: String) -> OpRow {
     let ClientOp { key, target, .. } = op;
+    let dialect = match target {
+        OpTarget::Model(..) => PolicyDialect::Model,
+        _ => PolicyDialect::Procedure,
+    };
     let (kind, rules, audit) = match target {
         OpTarget::Procedure(procedure) => (
             "procedure".to_owned(),
@@ -60,7 +64,7 @@ fn row(op: ClientOp<'_>, contract_digest: String) -> OpRow {
     let OpRules { allow, deny } = rules;
     let allow_text: Vec<&str> = allow.valid.iter().map(String::as_str).collect();
     let deny_text: Vec<&str> = deny.valid.iter().map(String::as_str).collect();
-    let mut verdict = analyse_op_policy(&allow_text, &deny_text);
+    let mut verdict = analyse_op_policy(dialect, &allow_text, &deny_text);
     // A directive whose own shape is invalid (the macros reject it) has no
     // expression to analyse: report its text, and for an `@allow` treat the
     // op as anonymous like any other rule that is not understood.
@@ -150,14 +154,10 @@ fn procedure_rules(procedure: &Procedure) -> OpRules {
 }
 
 /// The model rules that decide `verb`: the slots the generated descriptor
-/// reads for it, from `cratestack_policy::model_verb_policy_slots`, the same
+/// reads for it, from `cratestack_policy::model_verb_policy_slot`, the same
 /// table the macros lower from (`subscribe` reads `detail`, like `get`).
 fn model_rules(attributes: &[cratestack_core::Attribute], verb: ModelVerb) -> OpRules {
-    let actions: Vec<&str> = model_verb_policy_slots(verb)
-        .iter()
-        .flat_map(|slot| slot.actions().iter().copied())
-        .collect();
-    let actions = actions.as_slice();
+    let actions = model_verb_policy_slot(verb).actions();
     OpRules::collect(
         attributes.iter().map(|a| a.raw.as_str()),
         |raw, directive| model_rule_expression(raw, directive, actions),

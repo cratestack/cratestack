@@ -38,8 +38,21 @@
 //! for, is [`Term::Unanalysed`].
 
 use crate::syntax::{
-    AUTH_IS_NULL_TERM, AUTH_NOT_NULL_TERM, is_auth_is_system_term, parse_builtin_policy_call,
+    ModelTerm, ProcedureTerm, parse_string_literal, read_model_term, read_procedure_term,
 };
+
+/// Which policy dialect a term is written in: a model's `@@allow`/`@@deny`
+/// or a procedure's/query's `@allow`/`@deny`. The two split a term
+/// differently (only the model dialect has `in [..]` and `auth() ==
+/// <relation>`), and each is read by its own shared reader.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum PolicyDialect {
+    /// `@@allow` / `@@deny` on a model.
+    Model,
+    /// `@allow` / `@deny` on a procedure, query or subscription.
+    Procedure,
+}
 
 /// What one term means for the caller it needs.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -63,35 +76,65 @@ fn known(anon: Anon) -> Term {
     Term::Known { anon, role: None }
 }
 
-pub(super) fn classify_term(term: &str) -> Term {
+pub(super) fn classify_term(term: &str, dialect: PolicyDialect) -> Term {
+    match dialect {
+        PolicyDialect::Model => classify_model_term(term),
+        PolicyDialect::Procedure => classify_procedure_term(term),
+    }
+}
+
+fn classify_model_term(term: &str) -> Term {
+    match read_model_term(term) {
+        ModelTerm::AuthNotNull | ModelTerm::AuthIsSystem => known(Anon::AlwaysFalse),
+        ModelTerm::AuthIsNull => known(Anon::MaybeTrue),
+        ModelTerm::Builtin(call) => classify_call(call),
+        ModelTerm::AuthRelation(relation) => classify_comparison("auth()", relation),
+        ModelTerm::In { lhs, .. } => {
+            if is_path(lhs) {
+                known(Anon::MaybeTrue)
+            } else {
+                Term::Unanalysed
+            }
+        }
+        ModelTerm::Comparison { lhs, rhs, .. } => classify_comparison(lhs, rhs),
+        ModelTerm::Bare(term) => classify_bare(term),
+    }
+}
+
+fn classify_procedure_term(term: &str) -> Term {
+    match read_procedure_term(term) {
+        ProcedureTerm::AuthNotNull | ProcedureTerm::AuthIsSystem | ProcedureTerm::False => {
+            known(Anon::AlwaysFalse)
+        }
+        ProcedureTerm::AuthIsNull | ProcedureTerm::True => known(Anon::MaybeTrue),
+        ProcedureTerm::Builtin(call) => classify_call(call),
+        ProcedureTerm::Comparison { lhs, rhs, .. } => classify_comparison(lhs, rhs),
+        ProcedureTerm::Bare(term) => classify_bare(term),
+    }
+}
+
+fn classify_call(call: Result<(&str, &str), String>) -> Term {
+    match call {
+        Ok(("hasRole", role)) => Term::Known {
+            anon: Anon::AlwaysFalse,
+            role: Some(role.to_owned()),
+        },
+        Ok(("inTenant", _)) => known(Anon::AlwaysFalse),
+        _ => Term::Unanalysed,
+    }
+}
+
+/// A term with no operator: a boolean field or relation path reads the row
+/// or the input, not the caller. `true` and `false` are the constants; any
+/// other shape (one that names `auth()`, say) is not understood.
+fn classify_bare(term: &str) -> Term {
     match term {
-        AUTH_NOT_NULL_TERM | "false" => return known(Anon::AlwaysFalse),
-        AUTH_IS_NULL_TERM | "true" => return known(Anon::MaybeTrue),
-        _ => {}
+        "false" => known(Anon::AlwaysFalse),
+        "true" => known(Anon::MaybeTrue),
+        _ if term.contains("auth()") => Term::Unanalysed,
+        _ if is_path(term) => known(Anon::MaybeTrue),
+        _ => Term::Unanalysed,
     }
-    if is_auth_is_system_term(term) {
-        return known(Anon::AlwaysFalse);
-    }
-    if let Some(call) = parse_builtin_policy_call(term) {
-        return match call {
-            Ok(("hasRole", role)) => Term::Known {
-                anon: Anon::AlwaysFalse,
-                role: Some(role.to_owned()),
-            },
-            Ok(("inTenant", _)) => known(Anon::AlwaysFalse),
-            _ => Term::Unanalysed,
-        };
-    }
-    if let Some((lhs, rhs)) = term.split_once("==").or_else(|| term.split_once("!=")) {
-        return classify_comparison(lhs.trim(), rhs.trim());
-    }
-    if term.contains("auth()") {
-        return Term::Unanalysed;
-    }
-    if is_membership(term) || is_path(term) {
-        return known(Anon::MaybeTrue);
-    }
-    Term::Unanalysed
 }
 
 fn classify_comparison(lhs: &str, rhs: &str) -> Term {
@@ -106,7 +149,7 @@ fn classify_comparison(lhs: &str, rhs: &str) -> Term {
     // other side's path: `none` and `every` turn it true (module docs).
     let negates_leaf = [lhs, rhs]
         .into_iter()
-        .filter(|side| !on_auth(side))
+        .filter(|side| !on_auth(side) && parse_string_literal(side).is_none())
         .flat_map(|side| side.split('.'))
         .any(|segment| matches!(segment.trim(), "none" | "every"));
     known(if negates_leaf {
@@ -114,18 +157,6 @@ fn classify_comparison(lhs: &str, rhs: &str) -> Term {
     } else {
         Anon::AlwaysFalse
     })
-}
-
-/// `field in [A, B]` / `field not in [A, B]` (cratestack#666).
-fn is_membership(term: &str) -> bool {
-    let Some((field, list)) = term
-        .split_once(" in [")
-        .or_else(|| term.split_once(" not in ["))
-    else {
-        return false;
-    };
-    let field = field.trim();
-    list.ends_with(']') && !field.is_empty() && is_path(field.trim_end_matches(" not"))
 }
 
 /// A bare boolean field or relation path: `published`, `author.active`.

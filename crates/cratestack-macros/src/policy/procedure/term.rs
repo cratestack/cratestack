@@ -6,7 +6,7 @@
 use cratestack_core::{TypeArity, TypeDecl};
 use quote::quote;
 
-use crate::policy::auth::{is_auth_is_system_term, parse_builtin_policy_call};
+use cratestack_policy::{ProcedureTerm, read_procedure_term};
 
 use super::comparison::parse_procedure_comparison;
 use super::resolver::resolve_procedure_field;
@@ -18,50 +18,31 @@ pub(super) fn parse_procedure_policy_term(
     types: &[TypeDecl],
     auth: Option<&cratestack_core::AuthBlock>,
 ) -> Result<proc_macro2::TokenStream, String> {
-    if term == cratestack_policy::AUTH_NOT_NULL_TERM {
-        return Ok(quote! { ::cratestack::ProcedurePredicate::AuthNotNull });
-    }
-
-    if term == cratestack_policy::AUTH_IS_NULL_TERM {
-        return Ok(quote! { ::cratestack::ProcedurePredicate::AuthIsNull });
-    }
-
-    // A bare boolean literal as the WHOLE clause, e.g. `@allow(true)`.
-    // Checked before field resolution below, which would otherwise treat
-    // `true`/`false` as an unresolved input-field name and fail with
-    // "unknown procedure input field `true`" — a comparison RHS like
-    // `auth() == true` already supports bool literals via
-    // `parse_procedure_literal`, but that path only runs once `==`/`!=`
-    // has been split out, which a bare `true`/`false` term never contains.
-    if term == "true" {
-        return Ok(quote! { ::cratestack::ProcedurePredicate::Literal(true) });
-    }
-
-    if term == "false" {
-        return Ok(quote! { ::cratestack::ProcedurePredicate::Literal(false) });
-    }
-
-    // `auth().isSystem()` (cratestack#486, wired to this dialect by
-    // cratestack#867's review). Must be recognised *before*
-    // `parse_builtin_policy_call`, which finds the first `(` in the term
-    // — for `auth().isSystem()` that is `auth`'s, so it would otherwise
-    // report "policy function `auth` requires a string literal argument"
-    // instead of lowering the term. Exactly the mis-diagnosis the review
-    // hit. Mirrors `policy/model/term.rs`'s ordering for the same reason.
-    if is_auth_is_system_term(term) {
-        return Ok(quote! { ::cratestack::ProcedurePredicate::AuthIsSystem });
-    }
-
-    if let Some(function) = parse_builtin_policy_call(term) {
-        return parse_builtin_procedure_policy_term(function?);
-    }
-
-    if let Some((lhs, rhs)) = term.split_once("==") {
-        return parse_procedure_comparison(lhs.trim(), rhs.trim(), subject, types, auth, false);
-    }
-
-    if let Some((lhs, rhs)) = term.split_once("!=") {
-        return parse_procedure_comparison(lhs.trim(), rhs.trim(), subject, types, auth, true);
+    // The shape of the term is `cratestack_policy::read_procedure_term`'s, the
+    // reader `cratestack contract ops` classifies from. `auth().isSystem()`
+    // is recognised before the builtin-call shape (cratestack#867's review),
+    // and a bare `true`/`false` is the whole clause, not an input field.
+    match read_procedure_term(term) {
+        ProcedureTerm::AuthNotNull => {
+            return Ok(quote! { ::cratestack::ProcedurePredicate::AuthNotNull });
+        }
+        ProcedureTerm::AuthIsNull => {
+            return Ok(quote! { ::cratestack::ProcedurePredicate::AuthIsNull });
+        }
+        ProcedureTerm::True => {
+            return Ok(quote! { ::cratestack::ProcedurePredicate::Literal(true) });
+        }
+        ProcedureTerm::False => {
+            return Ok(quote! { ::cratestack::ProcedurePredicate::Literal(false) });
+        }
+        ProcedureTerm::AuthIsSystem => {
+            return Ok(quote! { ::cratestack::ProcedurePredicate::AuthIsSystem });
+        }
+        ProcedureTerm::Builtin(call) => return parse_builtin_procedure_policy_term(call?),
+        ProcedureTerm::Comparison { lhs, rhs, negate } => {
+            return parse_procedure_comparison(lhs, rhs, subject, types, auth, negate);
+        }
+        ProcedureTerm::Bare(_) => {}
     }
 
     let field_decl = resolve_procedure_field(subject, types, term)?;

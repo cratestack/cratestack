@@ -24,38 +24,6 @@ use super::literal::parse_policy_literal;
 use super::predicates::{find_model_field, generate_scalar_in_predicate};
 use super::relation_path::resolve_relation_policy_field;
 
-/// Recognise `lhs in [...]` / `lhs not in [...]`, returning the
-/// left-hand side, the bracket contents, and whether it was negated.
-///
-/// Anchored on the first `[` and the term's final `]` rather than on a
-/// substring search for `" in "`, so a value containing the keyword
-/// (`purpose in ["shipped in transit"]`) cannot be mis-split.
-pub(super) fn split_in_term(term: &str) -> Option<(&str, &str, bool)> {
-    let open = term.find('[')?;
-    let (head, list) = term.split_at(open);
-    let list = list.strip_prefix('[')?.strip_suffix(']')?;
-
-    let head = strip_keyword(head.trim_end(), "in")?;
-    match strip_keyword(head, "not") {
-        Some(lhs) => Some((lhs, list, true)),
-        None => Some((head, list, false)),
-    }
-}
-
-/// Strip a trailing whole-word `keyword`, returning what precedes it.
-///
-/// The whitespace check is load-bearing: without it a field named
-/// `join` would strip to `jo` and be reported as an unknown model
-/// field, which is a confusing way to say "this is not an `in` term".
-fn strip_keyword<'a>(head: &'a str, keyword: &str) -> Option<&'a str> {
-    let rest = head.strip_suffix(keyword)?;
-    if !rest.ends_with(char::is_whitespace) {
-        return None;
-    }
-    let rest = rest.trim_end();
-    (!rest.is_empty()).then_some(rest)
-}
-
 pub(super) fn parse_model_in_comparison(
     lhs: &str,
     list_source: &str,
@@ -143,7 +111,8 @@ fn split_list_elements<'a>(source: &'a str, lhs: &str) -> Result<Vec<&'a str>, S
 
 #[cfg(test)]
 mod tests {
-    use super::{split_in_term, split_list_elements};
+    use super::split_list_elements;
+    use cratestack_policy::split_in_term;
 
     #[test]
     fn splits_a_plain_in_term() {
@@ -161,7 +130,7 @@ mod tests {
         );
     }
 
-    /// Decisive test for the whitespace guard in [`strip_keyword`]: a
+    /// Decisive test for the whitespace guard in `cratestack_policy::split_in_term`: a
     /// field whose name merely *ends* in `in` is not an `in` term.
     #[test]
     fn a_field_named_join_is_not_an_in_term() {

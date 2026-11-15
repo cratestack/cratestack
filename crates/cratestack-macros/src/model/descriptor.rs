@@ -51,7 +51,7 @@ pub(crate) fn generate_model_descriptor(
     let owner = format!("model `{}`", model.name);
     let slots = ["list", "read", "detail", "create", "update", "delete"];
     audit_model_policies(&owner, model, &slots)?;
-    // The slot each verb reads is `cratestack_policy::model_verb_policy_slots`'s
+    // The slot each verb reads is `cratestack_policy::model_verb_policy_slot`'s
     // table, shared with `cratestack contract ops` (cratestack#1388).
     use cratestack_policy::ModelPolicySlot::{Create, Delete, Detail, List, Update};
     let allow = |slot: cratestack_policy::ModelPolicySlot| {

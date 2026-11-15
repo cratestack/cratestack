@@ -170,3 +170,31 @@ model CaSomeItem {
   @@allow("create", auth() != null)
   @@map("ca_some_item")
 }
+
+// A string literal is a value, never an operator (second-round review): the
+// server renders `label IN (..)` for these, so an anonymous caller reads rows.
+model CaInLit {
+  id Int @id
+  published Boolean
+  ownerId Int
+  label String
+
+  @@allow("read", label in ["== auth().id", "public"])
+  @@allow("create", auth() != null)
+  @@emit(created)
+  @@subscribe
+  @@map("ca_in_lit")
+}
+
+model CaNotInLit {
+  id Int @id
+  published Boolean
+  ownerId Int
+  label String
+
+  @@allow("read", label not in ["!= auth().tier"])
+  @@allow("create", auth() != null)
+  @@emit(created)
+  @@subscribe
+  @@map("ca_not_in_lit")
+}

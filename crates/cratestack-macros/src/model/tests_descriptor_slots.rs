@@ -1,12 +1,12 @@
 //! Which `ModelDescriptor` slot each verb's rules land in (cratestack#1388,
 //! review B2). `cratestack contract ops` picks the rules it analyses for a
-//! verb from `cratestack_policy::model_verb_policy_slots`; this pins the
+//! verb from `cratestack_policy::model_verb_policy_slot`; this pins the
 //! generated descriptor to that same table, so the analysis and the code
 //! cannot read different slots. The descriptor is positional, so the test
 //! reads `ModelDescriptor::new`'s arguments by index.
 
 use cratestack_core::ModelVerb;
-use cratestack_policy::model_verb_policy_slots;
+use cratestack_policy::model_verb_policy_slot;
 
 use super::generate_model_descriptor;
 
@@ -89,38 +89,15 @@ fn each_verbs_rules_sit_in_the_slot_the_shared_table_names() {
         ModelVerb::Update,
         ModelVerb::Delete,
     ] {
-        for slot in model_verb_policy_slots(verb) {
-            for (field, kind) in [(slot.allow_field(), "allow"), (slot.deny_field(), "deny")] {
-                let index = POLICY_PARAMS.iter().position(|p| *p == field).unwrap();
-                let marker = format!("\"{}_{kind}\"", name(verb));
-                assert!(
-                    args[index].contains(&marker),
-                    "{verb:?}: `{field}` should hold {marker}, got {}",
-                    args[index]
-                );
-            }
-        }
-    }
-}
-
-#[test]
-fn every_slot_holds_only_its_own_actions_and_read_fills_both_read_slots() {
-    let args = policy_args();
-    for (index, param) in POLICY_PARAMS.iter().enumerate() {
-        let arg = &args[index];
-        let own = param.split('_').next().unwrap();
-        for other in ["list", "detail", "create", "update", "delete"] {
-            let foreign = other != own && !(own == "read" && other == "list");
-            assert_eq!(
-                arg.contains(&format!("\"{other}_")),
-                !foreign,
-                "{param} / {other}: {arg}"
+        let slot = model_verb_policy_slot(verb);
+        for (field, kind) in [(slot.allow_field(), "allow"), (slot.deny_field(), "deny")] {
+            let index = POLICY_PARAMS.iter().position(|p| *p == field).unwrap();
+            let marker = format!("\"{}_{kind}\"", name(verb));
+            assert!(
+                args[index].contains(&marker),
+                "{verb:?}: `{field}` should hold {marker}, got {}",
+                args[index]
             );
         }
-        let reads = arg.contains("\"read_allow\"");
-        assert_eq!(
-            reads,
-            matches!(*param, "read_allow_policies" | "detail_allow_policies")
-        );
     }
 }

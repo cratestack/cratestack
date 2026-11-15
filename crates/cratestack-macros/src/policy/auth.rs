@@ -1,10 +1,8 @@
 use cratestack_core::{Field, TypeDecl};
 
-// The term recognisers live in `cratestack-policy` so the contract analysis
+// The term readers live in `cratestack-policy` so the contract analysis
 // reads terms exactly as these dialects do.
-pub(super) use cratestack_policy::{
-    is_auth_is_system_term, parse_builtin_policy_call, parse_string_literal,
-};
+pub(super) use cratestack_policy::parse_string_literal;
 
 pub(crate) fn find_auth_field<'a>(
     auth: Option<&'a cratestack_core::AuthBlock>,

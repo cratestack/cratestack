@@ -74,15 +74,20 @@ impl ModelPolicySlot {
     }
 }
 
-/// The slots whose rules decide `verb`: the one table the macros and the
+/// The slot whose rules decide `verb`: the one table the macros and the
 /// contract analysis both read. See the [module docs](self).
-pub const fn model_verb_policy_slots(verb: ModelVerb) -> &'static [ModelPolicySlot] {
+///
+/// Exactly one slot per verb, by its type rather than by convention: a
+/// consumer cannot read the first of several and another the union, so the
+/// generated feed and `cratestack contract ops` cannot disagree on which
+/// rules a verb is decided by.
+pub const fn model_verb_policy_slot(verb: ModelVerb) -> ModelPolicySlot {
     match verb {
-        ModelVerb::List => &[ModelPolicySlot::List],
-        ModelVerb::Get | ModelVerb::Subscribe => &[ModelPolicySlot::Detail],
-        ModelVerb::Create => &[ModelPolicySlot::Create],
-        ModelVerb::Update => &[ModelPolicySlot::Update],
-        ModelVerb::Delete => &[ModelPolicySlot::Delete],
+        ModelVerb::List => ModelPolicySlot::List,
+        ModelVerb::Get | ModelVerb::Subscribe => ModelPolicySlot::Detail,
+        ModelVerb::Create => ModelPolicySlot::Create,
+        ModelVerb::Update => ModelPolicySlot::Update,
+        ModelVerb::Delete => ModelPolicySlot::Delete,
     }
 }
 
@@ -102,8 +107,32 @@ mod tests {
             (ModelVerb::Delete, Delete),
         ];
         for (verb, slot) in table {
-            assert_eq!(model_verb_policy_slots(verb), [slot], "{verb:?}");
+            assert_eq!(model_verb_policy_slot(verb), slot, "{verb:?}");
         }
+    }
+
+    /// `model_verb_policy_slot` returns one slot, so `policy_fields_of` (the
+    /// generated feed) and the CLI's analysed rules cannot take different
+    /// ones; this pins that each verb's slot reads the actions its table row
+    /// documents, and that the two verbs sharing `Detail` agree.
+    #[test]
+    fn every_verb_has_one_slot_and_get_and_subscribe_share_it() {
+        for verb in [
+            ModelVerb::List,
+            ModelVerb::Get,
+            ModelVerb::Subscribe,
+            ModelVerb::Create,
+            ModelVerb::Update,
+            ModelVerb::Delete,
+        ] {
+            let slot = model_verb_policy_slot(verb);
+            assert!(!slot.actions().is_empty(), "{verb:?}");
+            assert_ne!(slot.allow_field(), slot.deny_field(), "{verb:?}");
+        }
+        assert_eq!(
+            model_verb_policy_slot(ModelVerb::Get),
+            model_verb_policy_slot(ModelVerb::Subscribe)
+        );
     }
 
     #[test]

@@ -1,7 +1,7 @@
 use super::*;
 
 fn op(allow: &[&str], deny: &[&str]) -> OpPolicyAnalysis {
-    analyse_op_policy(allow, deny)
+    analyse_op_policy(PolicyDialect::Model, allow, deny)
 }
 
 #[test]

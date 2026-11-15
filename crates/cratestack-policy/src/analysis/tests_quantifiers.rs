@@ -4,10 +4,10 @@
 //! true for every row, and `every` is vacuously true with no related rows,
 //! so neither may be reported as needing a principal.
 
-use super::analyse_op_policy;
+use super::{PolicyDialect, analyse_op_policy};
 
 fn requires(rule: &str) -> bool {
-    let verdict = analyse_op_policy(&[rule], &[]);
+    let verdict = analyse_op_policy(PolicyDialect::Model, &[rule], &[]);
     assert!(
         verdict.unanalysed.is_empty(),
         "{rule}: {:?}",

@@ -8,10 +8,19 @@
 //! For each model and each of `list`, `get` and `subscribe`, an anonymous
 //! caller is run against real Postgres and the outcome is compared with the
 //! verdict of `cratestack_policy`'s analysis applied to the rules the verb's
-//! slot holds (`model_verb_policy_slots`, the table the macros generate from).
+//! slot holds (`model_verb_policy_slot`, the table the macros generate from).
 //! `subscribe` is judged by what the open feed delivers, not by whether it
 //! opened: a relation policy opens (it is undecidable until a row exists)
 //! and then decides each event.
+//!
+//! What this proves, and what it cannot: it pins the analysis against the
+//! rules *as the macros lower them and the server runs them* (a term read
+//! differently by the analysis and the macros, such as a literal holding an
+//! operator, fails here). It does **not** independently check the shared
+//! verb-to-slot table: a wrong `model_verb_policy_slot` entry moves the
+//! generated feed and the analysis together, so both still agree. That table
+//! is pinned by the unit tests in `cratestack-policy` (`slots.rs`) and the
+//! macros' `tests_descriptor_slots`.
 //!
 //! Postgres-backed: run it with `CRATESTACK_REQUIRE_DB=1`, or a missing
 //! database is a skip that still prints `ok`.
@@ -27,7 +36,9 @@ use cratestack::include_server_schema;
 use cratestack::{AuthProvider, CratestackContext, CratestackError, RequestContext, Value};
 use cratestack_codec_cbor::CborCodec;
 use cratestack_core::ModelVerb;
-use cratestack_policy::{analyse_op_policy, model_rule_expression, model_verb_policy_slots};
+use cratestack_policy::{
+    PolicyDialect, analyse_op_policy, model_rule_expression, model_verb_policy_slot,
+};
 use tokio::time::timeout;
 use tower::util::ServiceExt;
 
@@ -63,19 +74,16 @@ impl cratestack_schema::procedures::ProcedureRegistry for NoProcedures {}
 /// What `cratestack contract ops` says about `model`'s `verb`: the policy
 /// crate's analysis over the rules the verb's slot holds.
 fn requires_principal(model: &cratestack_core::Model, verb: ModelVerb) -> bool {
-    let actions: Vec<&str> = model_verb_policy_slots(verb)
-        .iter()
-        .flat_map(|slot| slot.actions().iter().copied())
-        .collect();
+    let actions = model_verb_policy_slot(verb).actions();
     let rules = |directive: &str| -> Vec<&str> {
         model
             .attributes
             .iter()
-            .filter_map(|a| model_rule_expression(&a.raw, directive, &actions))
+            .filter_map(|a| model_rule_expression(&a.raw, directive, actions))
             .map(|rule| rule.expect("fixture rules are well formed"))
             .collect()
     };
-    let verdict = analyse_op_policy(&rules("@@allow"), &rules("@@deny"));
+    let verdict = analyse_op_policy(PolicyDialect::Model, &rules("@@allow"), &rules("@@deny"));
     assert!(verdict.unanalysed.is_empty(), "{}: {verdict:?}", model.name);
     verdict.requires_principal
 }
@@ -102,6 +110,31 @@ macro_rules! read_anonymously {
                 .is_some();
         }
         (listed, got)
+    }};
+}
+
+/// Create row 101 (with `label`) as a caller who passes every rule's
+/// create-time read.
+macro_rules! create_labelled_as_member {
+    ($db:expr, $accessor:ident, $input:ident) => {{
+        let member = CratestackContext::authenticated([
+            ("id".to_owned(), Value::Int(7)),
+            (
+                "roles".to_owned(),
+                Value::List(vec![Value::String("a".into())]),
+            ),
+        ]);
+        $db.$accessor()
+            .bind(member)
+            .create(cratestack_schema::$input {
+                id: 101,
+                published: true,
+                ownerId: 7,
+                label: "public".to_owned(),
+            })
+            .run()
+            .await
+            .expect("row created");
     }};
 }
 
@@ -157,9 +190,19 @@ async fn delivered(response: Response, window: Duration) -> usize {
         .count()
 }
 
-const PARENT_TABLES: [&str; 10] = [
-    "ca_open", "ca_null", "ca_role", "ca_split", "ca_owner", "ca_and", "ca_or", "ca_none",
-    "ca_every", "ca_some",
+const PARENT_TABLES: [&str; 12] = [
+    "ca_open",
+    "ca_null",
+    "ca_role",
+    "ca_split",
+    "ca_owner",
+    "ca_and",
+    "ca_or",
+    "ca_none",
+    "ca_every",
+    "ca_some",
+    "ca_in_lit",
+    "ca_not_in_lit",
 ];
 
 #[tokio::test]
@@ -178,6 +221,11 @@ async fn an_op_the_analysis_says_needs_a_principal_gives_an_anonymous_caller_not
         ));
         statements.push(format!(
             "INSERT INTO {table} VALUES (1, TRUE, 1), (2, TRUE, 2)"
+        ));
+    }
+    for table in ["ca_in_lit", "ca_not_in_lit"] {
+        statements.push(format!(
+            "ALTER TABLE {table} ADD COLUMN label TEXT NOT NULL DEFAULT 'public'"
         ));
     }
     for table in ["ca_none", "ca_every", "ca_some"] {
@@ -206,8 +254,18 @@ async fn an_op_the_analysis_says_needs_a_principal_gives_an_anonymous_caller_not
     );
 
     let models = [
-        "CaOpen", "CaNull", "CaRole", "CaSplit", "CaOwner", "CaAnd", "CaOr", "CaNone", "CaEvery",
+        "CaOpen",
+        "CaNull",
+        "CaRole",
+        "CaSplit",
+        "CaOwner",
+        "CaAnd",
+        "CaOr",
+        "CaNone",
+        "CaEvery",
         "CaSome",
+        "CaInLit",
+        "CaNotInLit",
     ];
     let mut feeds = Vec::new();
     for model in models {
@@ -223,6 +281,8 @@ async fn an_op_the_analysis_says_needs_a_principal_gives_an_anonymous_caller_not
     create_as_member!(db, ca_none, CreateCaNoneInput);
     create_as_member!(db, ca_every, CreateCaEveryInput);
     create_as_member!(db, ca_some, CreateCaSomeInput);
+    create_labelled_as_member!(db, ca_in_lit, CreateCaInLitInput);
+    create_labelled_as_member!(db, ca_not_in_lit, CreateCaNotInLitInput);
 
     let window = Duration::from_millis(800);
     let counts = cratestack::futures::future::join_all(
@@ -244,6 +304,8 @@ async fn an_op_the_analysis_says_needs_a_principal_gives_an_anonymous_caller_not
         ("CaNone", read_anonymously!(db, ca_none)),
         ("CaEvery", read_anonymously!(db, ca_every)),
         ("CaSome", read_anonymously!(db, ca_some)),
+        ("CaInLit", read_anonymously!(db, ca_in_lit)),
+        ("CaNotInLit", read_anonymously!(db, ca_not_in_lit)),
     ]);
 
     let schema = cratestack_parser::parse_schema(
@@ -273,5 +335,5 @@ async fn an_op_the_analysis_says_needs_a_principal_gives_an_anonymous_caller_not
             checked += 1;
         }
     }
-    assert_eq!(checked, 30);
+    assert_eq!(checked, 36);
 }

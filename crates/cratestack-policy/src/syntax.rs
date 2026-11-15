@@ -8,10 +8,18 @@
 
 mod ast;
 mod directive;
+mod model_term;
+mod procedure_term;
+mod scan;
 mod terms;
+#[cfg(test)]
+mod tests_ast;
 
 pub use ast::{PolicyAst, parse_policy_ast};
 pub use directive::{authorize_attribute_inner, model_rule_expression, procedure_rule_expression};
+pub use model_term::{ModelTerm, read_model_term, split_in_term};
+pub use procedure_term::{ProcedureTerm, read_procedure_term};
+pub use scan::{find_unquoted, split_comparison};
 pub use terms::{
     AUTH_IS_NULL_TERM, AUTH_NOT_NULL_TERM, is_auth_is_system_term, parse_builtin_policy_call,
     parse_string_literal,

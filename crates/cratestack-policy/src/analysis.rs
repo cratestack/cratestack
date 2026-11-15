@@ -41,6 +41,8 @@ mod term;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]
+mod tests_literals;
+#[cfg(test)]
 mod tests_quantifiers;
 #[cfg(test)]
 mod tests_runtime_agreement;
@@ -49,6 +51,8 @@ use std::collections::BTreeSet;
 
 use crate::syntax::{PolicyAst, parse_policy_ast};
 use term::{Anon, Term, classify_term};
+
+pub use term::PolicyDialect;
 
 /// The verdict for one op. See the [module docs](self).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -63,9 +67,13 @@ pub struct OpPolicyAnalysis {
     pub unanalysed: Vec<String>,
 }
 
-/// Analyse the expressions of an op's `@allow` and `@deny` rules (the text
+/// Analyse the expressions of an op's (written in `dialect`) `@allow` and `@deny` rules (the text
 /// inside the parentheses, as the macros see it).
-pub fn analyse_op_policy(allow: &[&str], deny: &[&str]) -> OpPolicyAnalysis {
+pub fn analyse_op_policy(
+    dialect: PolicyDialect,
+    allow: &[&str],
+    deny: &[&str],
+) -> OpPolicyAnalysis {
     let mut roles = BTreeSet::new();
     let mut unanalysed = Vec::new();
     let mut any_allow_anonymous = false;
@@ -75,7 +83,11 @@ pub fn analyse_op_policy(allow: &[&str], deny: &[&str]) -> OpPolicyAnalysis {
         .map(|rule| (true, *rule))
         .chain(deny.iter().map(|rule| (false, *rule)))
     {
-        let mut found = Found::default();
+        let mut found = Found {
+            dialect,
+            roles: BTreeSet::new(),
+            holds_anonymously: false,
+        };
         let understood = parse_policy_ast(rule)
             .map(|ast| found.walk(&ast))
             .is_ok_and(|(_, understood)| understood);
@@ -95,8 +107,8 @@ pub fn analyse_op_policy(allow: &[&str], deny: &[&str]) -> OpPolicyAnalysis {
     }
 }
 
-#[derive(Default)]
 struct Found {
+    dialect: PolicyDialect,
     roles: BTreeSet<String>,
     holds_anonymously: bool,
 }
@@ -112,7 +124,7 @@ impl Found {
 
     fn node(&mut self, ast: &PolicyAst) -> (Anon, bool) {
         match ast {
-            PolicyAst::Term(text) => match classify_term(text) {
+            PolicyAst::Term(text) => match classify_term(text, self.dialect) {
                 Term::Known { anon, role } => {
                     self.roles.extend(role);
                     (anon, true)

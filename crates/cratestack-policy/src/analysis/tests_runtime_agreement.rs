@@ -6,7 +6,7 @@
 
 use cratestack_core::{CratestackContext, Value};
 
-use super::analyse_op_policy;
+use super::{PolicyDialect, analyse_op_policy};
 use crate::{
     ProcedureArgs, ProcedurePolicy, ProcedurePolicyExpr, ProcedurePolicyLiteral as Lit,
     ProcedurePredicate as P, authorize_procedure,
@@ -95,7 +95,7 @@ fn the_verdict_for_each_term_matches_what_the_evaluator_does_for_an_anonymous_ca
         ),
     ];
     for (term, predicate) in rows {
-        let verdict = analyse_op_policy(&[term], &[]);
+        let verdict = analyse_op_policy(PolicyDialect::Procedure, &[term], &[]);
         assert!(verdict.unanalysed.is_empty(), "{term}");
         assert_eq!(
             verdict.requires_principal,

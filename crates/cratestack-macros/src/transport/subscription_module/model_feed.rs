@@ -160,14 +160,12 @@ pub(super) fn generate(
 }
 
 /// The descriptor fields `verb`'s rules sit in, from the one verb-to-slot
-/// table (`cratestack_policy::model_verb_policy_slots`).
+/// table (`cratestack_policy::model_verb_policy_slot`: one slot per verb, by type, so the
+/// CLI's analysis and this cannot read different ones).
 pub(super) fn policy_fields_of(
     verb: cratestack_core::ModelVerb,
 ) -> (proc_macro2::Ident, proc_macro2::Ident) {
-    let slot = cratestack_policy::model_verb_policy_slots(verb)
-        .first()
-        .copied()
-        .expect("every verb reads a policy slot");
+    let slot = cratestack_policy::model_verb_policy_slot(verb);
     (ident(slot.allow_field()), ident(slot.deny_field()))
 }
 

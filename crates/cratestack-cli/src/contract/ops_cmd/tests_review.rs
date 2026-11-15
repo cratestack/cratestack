@@ -88,22 +88,59 @@ fn subscribe_reads_the_detail_slot_like_get_not_the_list_slot() {
     }
 }
 
+/// The keys of the first JSON object that starts at or after `from` in
+/// `text`, in document order, read without a map so order survives. Only the
+/// object's own keys: nesting is skipped, and string contents never count.
+fn first_object_keys(text: &str, from: usize) -> Vec<String> {
+    let start = from + text[from..].find('{').expect("an object follows");
+    let (mut depth, mut keys) = (0usize, Vec::new());
+    let (mut in_string, mut escaped, mut current) = (false, false, String::new());
+    let mut chars = text[start..].chars().peekable();
+    while let Some(ch) = chars.next() {
+        if in_string {
+            match (escaped, ch) {
+                (true, _) => escaped = false,
+                (false, '\\') => escaped = true,
+                (false, '"') => {
+                    in_string = false;
+                    // A key is a string at depth 1 followed by `:`.
+                    while chars.next_if(|c| c.is_whitespace()).is_some() {}
+                    if depth == 1 && chars.peek() == Some(&':') {
+                        keys.push(std::mem::take(&mut current));
+                    }
+                    current.clear();
+                }
+                (false, c) => current.push(c),
+            }
+            continue;
+        }
+        match ch {
+            '"' => in_string = true,
+            '{' | '[' => depth += 1,
+            '}' | ']' => {
+                depth -= 1;
+                if depth == 0 {
+                    return keys;
+                }
+            }
+            _ => {}
+        }
+    }
+    panic!("unterminated object in {text}");
+}
+
 #[test]
 fn the_json_keys_come_out_in_the_documented_order() {
     let schema = cratestack_parser::parse_schema(SUB).unwrap();
     let text = ops_report(&schema, Path::new("s.cstack"), true).unwrap();
-    let order = |keys: &[&str], from: usize| {
-        let mut at = from;
-        for key in keys {
-            let found = text[at..]
-                .find(&format!("\"{key}\":"))
-                .unwrap_or_else(|| panic!("`{key}` out of order in {text}"));
-            at += found + key.len();
-        }
-    };
-    order(&["ok", "schema", "transport", "ops"], 0);
-    order(
-        &[
+    assert_eq!(
+        first_object_keys(&text, 0),
+        ["ok", "schema", "transport", "ops"]
+    );
+    let ops_at = text.find("\"ops\"").unwrap();
+    assert_eq!(
+        first_object_keys(&text, text[ops_at..].find('[').unwrap() + ops_at),
+        [
             "key",
             "kind",
             "allow",
@@ -113,7 +150,7 @@ fn the_json_keys_come_out_in_the_documented_order() {
             "unanalysed",
             "contract_digest",
         ],
-        text.find("\"ops\"").unwrap(),
+        "every op row's keys, in the documented order"
     );
 }
 
