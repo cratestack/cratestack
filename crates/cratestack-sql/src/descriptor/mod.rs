@@ -4,6 +4,7 @@ use std::marker::PhantomData;
 use cratestack_core::ModelEventKind;
 use cratestack_policy::ReadPolicy;
 
+mod column_lookup;
 mod defaults;
 mod embedded_defaults;
 mod model_impls;

@@ -1,0 +1,47 @@
+// Fixture for `@@map` / `@map` storage names (cratestack#1375). Every table and
+// column below is stored under a name other than the derived one; the routes
+// (`/map_banks`), wire fields (`displayName`) and op ids stay as written. The
+// tests create the tables by hand, under the mapped names.
+
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+auth Operator {
+  id Int
+}
+
+model MapBank {
+  id Int @id @map("bank_id")
+  code String @unique @map("bank_code")
+  displayName String @map("display_name")
+  ssn String @pii @map("ssn_enc")
+  taxRef String @sensitive @map("tax_ref")
+  region String
+  version Int @version @map("rev")
+  deposits MapDeposit[] @relation(fields:[id],references:[bankId])
+
+  @@map("map_bank")
+  @@audit
+  @@paged
+  @@allow("read", auth() != null && displayName != "hidden")
+  @@allow("create", auth() != null)
+  @@allow("update", auth() != null)
+  @@allow("delete", auth() != null)
+}
+
+model MapDeposit {
+  id Int @id
+  bankId Int @map("bank_ref")
+  memo String @map("memo_text")
+  amount Int @map("amount_minor")
+  bank MapBank @relation(fields:[bankId],references:[id])
+
+  @@map("map_deposit")
+  @@unique([bankId, memo])
+  @@allow("read", auth() != null)
+  @@allow("create", auth() != null)
+  @@allow("update", auth() != null)
+  @@allow("delete", auth() != null)
+}
