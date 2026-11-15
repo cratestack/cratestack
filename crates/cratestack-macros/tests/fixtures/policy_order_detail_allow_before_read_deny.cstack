@@ -1,0 +1,13 @@
+// Two faulty policy attributes: main reports `alsobogus` (the detail allow is lowered before the read deny).
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+model User {
+  id Int @id
+  banned Boolean
+
+  @@deny("read", bogus)
+  @@allow("detail", alsobogus)
+}

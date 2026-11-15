@@ -60,11 +60,20 @@ pub(crate) fn generate_model_descriptor(
     let deny = |slot: cratestack_policy::ModelPolicySlot| {
         generate_denies_for_actions(model, models, types, enums, auth, slot.actions())
     };
-    let (read_policies, read_deny_policies) = (allow(List)?, deny(List)?);
-    let (detail_policies, detail_deny_policies) = (allow(Detail)?, deny(Detail)?);
-    let (create_policies, create_deny_policies) = (allow(Create)?, deny(Create)?);
-    let (update_policies, update_deny_policies) = (allow(Update)?, deny(Update)?);
-    let (delete_policies, delete_deny_policies) = (allow(Delete)?, deny(Delete)?);
+    // Lowered in main's order (all of list/detail/create/update/delete's allows,
+    // with create/update/delete each followed by its deny, then the read and
+    // detail denies), so a schema with two faulty attributes reports the same
+    // first error it always did.
+    let read_policies = allow(List)?;
+    let detail_policies = allow(Detail)?;
+    let create_policies = allow(Create)?;
+    let create_deny_policies = deny(Create)?;
+    let update_policies = allow(Update)?;
+    let update_deny_policies = deny(Update)?;
+    let delete_policies = allow(Delete)?;
+    let delete_deny_policies = deny(Delete)?;
+    let read_deny_policies = deny(List)?;
+    let detail_deny_policies = deny(Detail)?;
 
     let create_defaults = collect_create_defaults(model, models, types, auth)?;
     let generated_defaults = collect_generated_defaults(model, models);

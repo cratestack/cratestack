@@ -18,6 +18,8 @@ mod tests_policy_audit;
 #[cfg(test)]
 mod tests_policy_audit_selectors;
 #[cfg(test)]
+mod tests_policy_order;
+#[cfg(test)]
 mod tests_validation;
 mod type_tokens;
 mod types;

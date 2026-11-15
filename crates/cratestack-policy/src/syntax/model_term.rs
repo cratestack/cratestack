@@ -67,6 +67,11 @@ pub fn read_model_term(term: &str) -> ModelTerm<'_> {
     if let Some(relation) = term.strip_prefix("auth() ==") {
         return ModelTerm::AuthRelation(relation.trim());
     }
+    // Kept as on main, but not reachable: a term ending in `== auth()` holds
+    // a `(` and ends in `)`, which is the shape `parse_builtin_policy_call`
+    // takes above (`author == auth()` reads as a call named `author == auth`
+    // with no argument), so it never gets here. Left in place so the reader
+    // stays identical to main's.
     if let Some(relation) = term.strip_suffix("== auth()") {
         return ModelTerm::AuthRelation(relation.trim());
     }

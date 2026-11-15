@@ -11,6 +11,7 @@ use cratestack_core::{Model, Procedure, TypeDecl};
 
 use super::authorizer::{generate_procedure_model_authorizer, parse_procedure_model_authorizer};
 use crate::policy::{parse_procedure_allow_expression, parse_procedure_deny_expression};
+use cratestack_policy::{PROCEDURE_POLICY_NAMES, check_attribute, check_count, policy_names_in};
 
 /// `@allow` expressions, `@deny` expressions, and one
 /// `authorize_with_db` check per `@authorize`.
@@ -18,6 +19,12 @@ pub(super) struct ProcedurePolicies<'a> {
     pub(super) allow: Vec<&'a str>,
     pub(super) deny: Vec<&'a str>,
     pub(super) authorizers: Vec<proc_macro2::TokenStream>,
+}
+
+impl ProcedurePolicies<'_> {
+    fn len(&self) -> usize {
+        self.allow.len() + self.deny.len() + self.authorizers.len()
+    }
 }
 
 pub(super) fn collect_procedure_policies<'a>(
@@ -31,12 +38,15 @@ pub(super) fn collect_procedure_policies<'a>(
         deny: Vec::new(),
         authorizers: Vec::new(),
     };
-    // The audit is `cratestack_policy::audit_procedure_attributes`, the one
-    // `cratestack contract ops` also runs, so the two cannot drift on which
-    // attributes read as a dropped policy. It runs first; the loop below only
-    // lowers.
-    cratestack_policy::audit_procedure_attributes(&owner, &procedure.attributes)?;
+    // The checks are `cratestack_policy`'s, the ones `cratestack contract ops`
+    // also runs (`audit_procedure_attributes`), so the two cannot drift on
+    // which attributes read as a dropped policy. They run per attribute, after
+    // it is lowered, exactly as on main, so that a schema with two faulty
+    // attributes reports the same first error it always did.
+    let mut named = 0;
     for attribute in &procedure.attributes {
+        named += policy_names_in(&attribute.raw, PROCEDURE_POLICY_NAMES);
+        let before = policies.len();
         if let Some(expression) = parse_procedure_allow_expression(&attribute.raw) {
             policies.allow.push(expression?);
         }
@@ -53,6 +63,13 @@ pub(super) fn collect_procedure_policies<'a>(
                     types,
                 )?);
         }
+        check_attribute(
+            &owner,
+            attribute,
+            PROCEDURE_POLICY_NAMES,
+            policies.len() - before,
+        )?;
     }
+    check_count(&owner, named, policies.len())?;
     Ok(policies)
 }
