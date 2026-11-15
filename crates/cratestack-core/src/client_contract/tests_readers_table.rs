@@ -19,7 +19,7 @@ pub(super) const READERS: &[(&str, &[&str])] = &[
             "cratestack-macros/src/axum/policy_attr.rs",
             "cratestack-macros/src/include/mcp_gate.rs",
             "cratestack-macros/src/policy/model.rs",
-            "cratestack-macros/src/policy/model/audit.rs",
+            "cratestack-policy/src/audit.rs",
         ],
     ),
     (
@@ -27,7 +27,7 @@ pub(super) const READERS: &[(&str, &[&str])] = &[
         &[
             "cratestack-cli/src/contract/ops_cmd/collect.rs",
             "cratestack-macros/src/policy/model.rs",
-            "cratestack-macros/src/policy/model/audit.rs",
+            "cratestack-policy/src/audit.rs",
         ],
     ),
     (
@@ -41,6 +41,7 @@ pub(super) const READERS: &[(&str, &[&str])] = &[
             "cratestack-macros/src/include/mcp_gate.rs",
             "cratestack-macros/src/include/server/query_guard.rs",
             "cratestack-macros/src/policy/procedure.rs",
+            "cratestack-policy/src/audit.rs",
         ],
     ),
     (
@@ -48,11 +49,15 @@ pub(super) const READERS: &[(&str, &[&str])] = &[
         &[
             "cratestack-cli/src/contract/ops_cmd/collect.rs",
             "cratestack-macros/src/policy/procedure.rs",
+            "cratestack-policy/src/audit.rs",
         ],
     ),
     (
         "@authorize",
-        &["cratestack-macros/src/procedure/authorizer.rs"],
+        &[
+            "cratestack-macros/src/procedure/authorizer.rs",
+            "cratestack-policy/src/syntax/directive.rs",
+        ],
     ),
     ("@@index", &["cratestack-migrate/src/convert/indexes.rs"]),
     (

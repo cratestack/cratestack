@@ -1,0 +1,172 @@
+// Fixture for `tests/contract_ops_agreement.rs` (cratestack#1388): models
+// whose rules are the cases `cratestack contract ops` must classify, run
+// against a real anonymous caller. Every model is subscribable and creatable
+// by a member so the test can drive an event through each feed.
+
+transport rpc
+
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+auth Caller {
+  id Int
+}
+
+model CaOpen {
+  id Int @id
+  published Boolean
+  ownerId Int
+
+  @@allow("read", published)
+  @@allow("create", auth() != null)
+  @@emit(created)
+  @@subscribe
+  @@map("ca_open")
+}
+
+model CaNull {
+  id Int @id
+  published Boolean
+  ownerId Int
+
+  @@allow("read", auth() == null)
+  @@allow("create", auth() != null)
+  @@emit(created)
+  @@subscribe
+  @@map("ca_null")
+}
+
+model CaRole {
+  id Int @id
+  published Boolean
+  ownerId Int
+
+  @@allow("read", hasRole("a"))
+  @@allow("create", auth() != null)
+  @@emit(created)
+  @@subscribe
+  @@map("ca_role")
+}
+
+model CaSplit {
+  id Int @id
+  published Boolean
+  ownerId Int
+
+  @@allow("list", hasRole("a"))
+  @@allow("detail", auth() == null)
+  @@allow("create", auth() != null)
+  @@emit(created)
+  @@subscribe
+  @@map("ca_split")
+}
+
+model CaOwner {
+  id Int @id
+  published Boolean
+  ownerId Int
+
+  @@allow("read", ownerId == auth().id)
+  @@allow("create", auth() != null)
+  @@emit(created)
+  @@subscribe
+  @@map("ca_owner")
+}
+
+model CaAnd {
+  id Int @id
+  published Boolean
+  ownerId Int
+
+  @@allow("read", auth() != null && published)
+  @@allow("create", auth() != null)
+  @@emit(created)
+  @@subscribe
+  @@map("ca_and")
+}
+
+model CaOr {
+  id Int @id
+  published Boolean
+  ownerId Int
+
+  @@allow("read", published || hasRole("a"))
+  @@allow("create", auth() != null)
+  @@emit(created)
+  @@subscribe
+  @@map("ca_or")
+}
+
+model CaNone {
+  id Int @id
+  published Boolean
+  ownerId Int
+  items CaNoneItem[] @relation(fields:[id],references:[parentId])
+
+  @@allow("read", items.none.userId == auth().id)
+  @@allow("create", auth() != null)
+  @@emit(created)
+  @@subscribe
+  @@map("ca_none")
+}
+
+model CaNoneItem {
+  id Int @id
+  parentId Int
+  userId Int
+  parent CaNone @relation(fields:[parentId],references:[id])
+
+  @@allow("read", auth() != null)
+  @@allow("create", auth() != null)
+  @@map("ca_none_item")
+}
+
+model CaEvery {
+  id Int @id
+  published Boolean
+  ownerId Int
+  items CaEveryItem[] @relation(fields:[id],references:[parentId])
+
+  @@allow("read", items.every.userId == auth().id)
+  @@allow("create", auth() != null)
+  @@emit(created)
+  @@subscribe
+  @@map("ca_every")
+}
+
+model CaEveryItem {
+  id Int @id
+  parentId Int
+  userId Int
+  parent CaEvery @relation(fields:[parentId],references:[id])
+
+  @@allow("read", auth() != null)
+  @@allow("create", auth() != null)
+  @@map("ca_every_item")
+}
+
+model CaSome {
+  id Int @id
+  published Boolean
+  ownerId Int
+  items CaSomeItem[] @relation(fields:[id],references:[parentId])
+
+  @@allow("read", items.some.userId == auth().id)
+  @@allow("create", auth() != null)
+  @@emit(created)
+  @@subscribe
+  @@map("ca_some")
+}
+
+model CaSomeItem {
+  id Int @id
+  parentId Int
+  userId Int
+  parent CaSome @relation(fields:[parentId],references:[id])
+
+  @@allow("read", auth() != null)
+  @@allow("create", auth() != null)
+  @@map("ca_some_item")
+}

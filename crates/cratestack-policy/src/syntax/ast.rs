@@ -3,10 +3,15 @@
 //! predicate, and by [`crate::analysis`], which classifies each one, so the
 //! two read every rule's structure the same way.
 
+/// A parsed policy expression.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum PolicyAst {
+    /// One opaque term (`hasRole("a")`, `x == 1`, `auth() != null`).
     Term(String),
+    /// `a && b && ..`: every child must hold.
     And(Vec<PolicyAst>),
+    /// `a || b || ..`: any child may hold.
     Or(Vec<PolicyAst>),
 }
 

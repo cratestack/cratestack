@@ -11,7 +11,7 @@ mod directive;
 mod terms;
 
 pub use ast::{PolicyAst, parse_policy_ast};
-pub use directive::{model_rule_expression, procedure_rule_expression};
+pub use directive::{authorize_attribute_inner, model_rule_expression, procedure_rule_expression};
 pub use terms::{
     AUTH_IS_NULL_TERM, AUTH_NOT_NULL_TERM, is_auth_is_system_term, parse_builtin_policy_call,
     parse_string_literal,

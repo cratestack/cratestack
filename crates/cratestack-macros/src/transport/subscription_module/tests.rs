@@ -135,3 +135,15 @@ fn extension_websocket_adds_the_route_at_the_transports_path() {
     assert!(generate(true).contains("websocket :: router (config . default_path (\"/rpc/ws\")"));
     assert!(generate(false).contains("default_path (\"/$ws\")"));
 }
+
+/// cratestack#1388 review B2: a feed decides on the `detail` slot (what
+/// `get` reads), at open and per event, not the `list` one.
+#[test]
+fn a_feed_reads_the_detail_slot_of_the_descriptor() {
+    let code = generate(FEED, false).unwrap();
+    assert!(
+        code.contains("(descriptor . detail_allow_policies , descriptor . detail_deny_policies)"),
+        "{code}"
+    );
+    assert!(!code.contains("descriptor . read_allow_policies"), "{code}");
+}

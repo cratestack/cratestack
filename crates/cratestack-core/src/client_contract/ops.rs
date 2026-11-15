@@ -11,8 +11,11 @@ use crate::schema::{Model, Procedure, Schema, TransportStyle};
 
 /// The declaration an op is about.
 #[derive(Debug, Clone, Copy)]
+#[non_exhaustive]
 pub enum OpTarget<'a> {
+    /// A model's CRUD or subscribe verb.
     Model(&'a Model, ModelVerb),
+    /// A `procedure` (or `query`).
     Procedure(&'a Procedure),
     /// A `subscription procedure` (slice S4).
     SubscriptionProcedure(&'a Procedure),
@@ -20,9 +23,11 @@ pub enum OpTarget<'a> {
 
 /// One client-facing op.
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub struct ClientOp<'a> {
     /// The RPC `op_id`, or `"<METHOD> <route template>"` on REST.
     pub key: String,
+    /// The declaration the op is about.
     pub target: OpTarget<'a>,
 }
 

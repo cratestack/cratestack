@@ -53,6 +53,7 @@ use term::parse_policy_term;
 
 pub(crate) use audit::audit_model_policies;
 
+#[cfg(test)]
 pub(crate) fn generate_policies_for_action(
     model: &Model,
     models: &[Model],
@@ -73,17 +74,6 @@ pub(crate) fn generate_policies_for_actions(
     actions: &[&str],
 ) -> Result<Vec<proc_macro2::TokenStream>, String> {
     generate_policy_rules_for_actions(model, models, types, enums, auth, actions, "@@allow")
-}
-
-pub(crate) fn generate_denies_for_action(
-    model: &Model,
-    models: &[Model],
-    types: &[TypeDecl],
-    enums: &[EnumDecl],
-    auth: Option<&cratestack_core::AuthBlock>,
-    action: &str,
-) -> Result<Vec<proc_macro2::TokenStream>, String> {
-    generate_denies_for_actions(model, models, types, enums, auth, &[action])
 }
 
 pub(crate) fn generate_denies_for_actions(

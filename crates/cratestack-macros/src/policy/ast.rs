@@ -35,5 +35,8 @@ where
                 .collect::<Result<Vec<_>, _>>()?;
             Ok(quote! { #or_path(&[#(#generated),*]) })
         }
+        // `PolicyAst` is `#[non_exhaustive]`: a node kind this lowering has
+        // no tokens for is a compile error, not a silently dropped rule.
+        _ => Err("unsupported policy expression node".to_owned()),
     }
 }

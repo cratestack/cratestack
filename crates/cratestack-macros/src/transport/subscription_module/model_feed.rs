@@ -50,6 +50,8 @@ pub(super) fn generate(
     let open_ident = ident(&format!("open_{model_snake}"));
     let query_expr = ident(&format!("build_{model_snake}_query_expr"));
     let descriptor = ident(&format!("{}_MODEL", model_snake.to_uppercase()));
+    // The slot `subscribe` reads, from the table `contract ops` shares.
+    let (allow_field, deny_field) = policy_fields_of(cratestack_core::ModelVerb::Subscribe);
     let policy_fields: Vec<&Field> = scalar_model_fields(model, model_names)
         .into_iter()
         .filter(|field| !is_server_only_field(field) && policy_comparable(field, enum_names))
@@ -89,7 +91,7 @@ pub(super) fn generate(
                 record_columns,
                 descriptor.allowed_fields,
             )?;
-            let (allow, deny) = (descriptor.detail_allow_policies, descriptor.detail_deny_policies);
+            let (allow, deny) = (descriptor.#allow_field, descriptor.#deny_field);
             let missing = ::cratestack::__private::missing_policy_columns(allow, deny, record_columns);
             if !missing.is_empty() {
                 ::cratestack::tracing::error!(
@@ -155,6 +157,18 @@ pub(super) fn generate(
         open_ident,
         function,
     }))
+}
+
+/// The descriptor fields `verb`'s rules sit in, from the one verb-to-slot
+/// table (`cratestack_policy::model_verb_policy_slots`).
+pub(super) fn policy_fields_of(
+    verb: cratestack_core::ModelVerb,
+) -> (proc_macro2::Ident, proc_macro2::Ident) {
+    let slot = cratestack_policy::model_verb_policy_slots(verb)
+        .first()
+        .copied()
+        .expect("every verb reads a policy slot");
+    (ident(slot.allow_field()), ident(slot.deny_field()))
 }
 
 /// The fields that go into the record a policy and a feed filter are decided

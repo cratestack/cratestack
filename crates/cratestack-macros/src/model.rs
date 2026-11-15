@@ -41,6 +41,8 @@ mod tests_bigint;
 #[cfg(test)]
 mod tests_bigint_rows;
 #[cfg(test)]
+mod tests_descriptor_slots;
+#[cfg(test)]
 mod tests_storage_map;
 #[cfg(test)]
 mod tests_uuid;

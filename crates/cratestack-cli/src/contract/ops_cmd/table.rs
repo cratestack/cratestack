@@ -1,27 +1,29 @@
 //! The human-readable table of `contract ops`.
 
+use std::borrow::Cow;
+
 use super::OpRow;
 
 pub(super) fn render(rows: &[OpRow]) -> String {
-    let mut lines = vec![[
-        "OP".to_owned(),
-        "KIND".to_owned(),
-        "PRINCIPAL".to_owned(),
-        "ROLES".to_owned(),
-        "NOTE".to_owned(),
+    let mut lines: Vec<[Cow<'_, str>; 5]> = vec![[
+        "OP".into(),
+        "KIND".into(),
+        "PRINCIPAL".into(),
+        "ROLES".into(),
+        "NOTE".into(),
     ]];
     for row in rows {
         lines.push([
-            row.key.clone(),
-            row.kind.clone(),
+            row.key.as_str().into(),
+            row.kind.as_str().into(),
             if row.requires_principal {
                 "required"
             } else {
                 "no"
             }
-            .to_owned(),
-            row.roles.join(","),
-            note(row),
+            .into(),
+            row.roles.join(",").into(),
+            note(row).into(),
         ]);
     }
     let widths: [usize; 5] = std::array::from_fn(|column| {

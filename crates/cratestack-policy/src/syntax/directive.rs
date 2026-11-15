@@ -62,3 +62,14 @@ fn parse_rule_action(inner: &str) -> Option<(&str, &str)> {
     let remainder = rest[end + quote.len_utf8()..].trim_start();
     Some((action, remainder))
 }
+
+/// The text between the parentheses of an `@authorize(...)` attribute, or
+/// `None` when `raw` is not in that exact shape.
+pub fn authorize_attribute_inner(raw: &str) -> Option<&str> {
+    Some(
+        raw.trim()
+            .strip_prefix("@authorize(")?
+            .strip_suffix(')')?
+            .trim(),
+    )
+}

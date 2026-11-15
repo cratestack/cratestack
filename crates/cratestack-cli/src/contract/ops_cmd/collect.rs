@@ -1,7 +1,10 @@
 //! One row per op: the rules written on its declaration, analysed.
 
 use cratestack_core::{ClientOp, ModelVerb, OpTarget, Procedure, Schema, client_ops};
-use cratestack_policy::{analyse_op_policy, model_rule_expression, procedure_rule_expression};
+use cratestack_policy::{
+    analyse_op_policy, audit_model_attributes, audit_procedure_attributes, model_rule_expression,
+    model_verb_policy_slots, procedure_rule_expression,
+};
 use serde::Serialize;
 
 /// One op of `contract ops`. Field order is the document's.
@@ -20,22 +23,41 @@ pub(crate) struct OpRow {
 /// Every op of `schema`, sorted by key, each with its digest from `digest`.
 pub(super) fn rows(schema: &Schema, digest: impl Fn(&str) -> String) -> Vec<OpRow> {
     client_ops(schema)
-        .iter()
-        .map(|op| row(op, digest(&op.key)))
+        .into_iter()
+        .map(|op| {
+            let contract_digest = digest(&op.key);
+            row(op, contract_digest)
+        })
         .collect()
 }
 
-fn row(op: &ClientOp<'_>, contract_digest: String) -> OpRow {
-    let (kind, OpRules { allow, deny }) = match op.target {
-        OpTarget::Procedure(procedure) => ("procedure".to_owned(), procedure_rules(procedure)),
-        OpTarget::SubscriptionProcedure(procedure) => {
-            ("subscription".to_owned(), procedure_rules(procedure))
-        }
+fn row(op: ClientOp<'_>, contract_digest: String) -> OpRow {
+    let ClientOp { key, target, .. } = op;
+    let (kind, rules, audit) = match target {
+        OpTarget::Procedure(procedure) => (
+            "procedure".to_owned(),
+            procedure_rules(procedure),
+            procedure_audit(procedure),
+        ),
+        OpTarget::SubscriptionProcedure(procedure) => (
+            "subscription".to_owned(),
+            procedure_rules(procedure),
+            procedure_audit(procedure),
+        ),
         OpTarget::Model(model, verb) => (
             format!("model.{}", verb.as_str()),
             model_rules(&model.attributes, verb),
+            model_audit(model),
+        ),
+        // An op kind this build does not know how to read: reported, never
+        // classified, so a consumer refuses it.
+        _ => (
+            "unknown".to_owned(),
+            OpRules::default(),
+            Err("op kind not understood by this build".to_owned()),
         ),
     };
+    let OpRules { allow, deny } = rules;
     let allow_text: Vec<&str> = allow.valid.iter().map(String::as_str).collect();
     let deny_text: Vec<&str> = deny.valid.iter().map(String::as_str).collect();
     let mut verdict = analyse_op_policy(&allow_text, &deny_text);
@@ -44,16 +66,42 @@ fn row(op: &ClientOp<'_>, contract_digest: String) -> OpRow {
     // op as anonymous like any other rule that is not understood.
     verdict.unanalysed.extend(allow.malformed.iter().cloned());
     verdict.unanalysed.extend(deny.malformed.iter().cloned());
+    // The macros' own attribute audit refuses a rule it would drop (a
+    // mis-spaced `@allow (x)`); the analysis cannot see that rule at all, so
+    // the owner's verdict is not to be trusted: anonymous and listed.
+    let audit_failed = audit.is_err();
+    if let Err(message) = audit {
+        verdict.unanalysed.push(message);
+    }
     OpRow {
-        key: op.key.clone(),
+        key,
         kind,
-        requires_principal: verdict.requires_principal && allow.malformed.is_empty(),
+        requires_principal: verdict.requires_principal
+            && allow.malformed.is_empty()
+            && !audit_failed,
         allow: allow.valid,
         deny: deny.valid,
         roles: verdict.roles,
         unanalysed: verdict.unanalysed,
         contract_digest,
     }
+}
+
+fn procedure_audit(procedure: &Procedure) -> Result<(), String> {
+    audit_procedure_attributes(
+        &format!("procedure `{}`", procedure.name),
+        &procedure.attributes,
+    )
+}
+
+fn model_audit(model: &cratestack_core::Model) -> Result<(), String> {
+    // Every action the descriptor generates a slot for, as the macros audit.
+    let actions = ["list", "read", "detail", "create", "update", "delete"];
+    audit_model_attributes(
+        &format!("model `{}`", model.name),
+        &model.attributes,
+        &actions,
+    )
 }
 
 /// The `@allow` and `@deny` rules of one op.
@@ -63,6 +111,7 @@ struct Rules {
     malformed: Vec<String>,
 }
 
+#[derive(Default)]
 struct OpRules {
     allow: Rules,
     deny: Rules,
@@ -101,16 +150,14 @@ fn procedure_rules(procedure: &Procedure) -> OpRules {
 }
 
 /// The model rules that decide `verb`: the slots the generated descriptor
-/// reads for it (`macros/src/model/descriptor.rs`). `subscribe` filters its
-/// events by the read policy, so it takes the `list` slot.
+/// reads for it, from `cratestack_policy::model_verb_policy_slots`, the same
+/// table the macros lower from (`subscribe` reads `detail`, like `get`).
 fn model_rules(attributes: &[cratestack_core::Attribute], verb: ModelVerb) -> OpRules {
-    let actions: &[&str] = match verb {
-        ModelVerb::List | ModelVerb::Subscribe => &["list", "read"],
-        ModelVerb::Get => &["detail", "read"],
-        ModelVerb::Create => &["create"],
-        ModelVerb::Update => &["update"],
-        ModelVerb::Delete => &["delete"],
-    };
+    let actions: Vec<&str> = model_verb_policy_slots(verb)
+        .iter()
+        .flat_map(|slot| slot.actions().iter().copied())
+        .collect();
+    let actions = actions.as_slice();
     OpRules::collect(
         attributes.iter().map(|a| a.raw.as_str()),
         |raw, directive| model_rule_expression(raw, directive, actions),
