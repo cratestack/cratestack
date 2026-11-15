@@ -7,7 +7,7 @@
 //!
 //! The HS256 envelope that used to live here was
 //! deprecated in 0.19.6 and removed in 0.20.0 (cratestack#1357). COSE_Mac0
-//! (`cratestack_cose::CoseEnvelope` in `CoseMode::Mac0`) replaces them.
+//! (`cratestack_cose::CoseEnvelope` in `CoseMode::Mac0`) replaces it.
 
 mod keys;
 

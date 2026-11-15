@@ -9,8 +9,7 @@
 use chrono::{DateTime, Utc};
 use cratestack_core::{CratestackError, REQUEST_NONCE_LEN, RequestNonce};
 
-/// The default clock skew, the same 300 s the removed HS256 envelope
-/// (0.20.0) and the signed-request verifier used (`ENVELOPE_DEFAULT_CLOCK_SKEW_SECS`).
+/// The default clock skew: 300 s either side of the verifier's clock.
 pub const DEFAULT_SKEW_SECS: u64 = 300;
 
 /// The length of the random `cti` the default source produces (§5).

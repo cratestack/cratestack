@@ -385,7 +385,7 @@ future, `model.User.list @stream`).
 - Subprotocol offers: `cratestack.rpc.v1+cbor`, `cratestack.rpc.v1+json`.
   Server picks one. WS close 1002 if none acceptable.
 - Authentication: the upgrade request is HMAC-signed via the existing
-  `HmacEnvelope` mechanism. Frames inside the established session are
+  `HmacEnvelope` mechanism[^hmac-removed]. Frames inside the established session are
   **not** individually signed — the channel is authenticated at upgrade.
   Re-keying / session expiry: server emits
   `Error { code: "unauthenticated" }` on affected ids and closes; client
@@ -686,3 +686,5 @@ serializes a byte-identical frame to what it produced before they existed.
 `RpcGetInput` gained `#[derive(Default)]` so callers can use
 `..Default::default()`. No wire-format-version bump was needed for any
 addition.
+
+[^hmac-removed]: `HmacEnvelope` was deprecated in 0.19.6 and removed in 0.20.0 (cratestack#1357); the upgrade request is now signed with COSE_Mac0 (`CoseEnvelope`, ADR 0006).

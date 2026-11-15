@@ -183,7 +183,7 @@ Accepts `read_committed` / `read committed`, `repeatable_read` / `repeatable rea
 
 ## Key and replay primitives
 
-`KeyProvider` resolves signing keys by `kid`, and `NonceStore` records already-seen request nonces so replays are rejected. Production multi-replica deployments back the `NonceStore` with Redis so replay rejection holds cluster-wide. The HS256 envelope that used these was deprecated in 0.19.6 (cratestack#1018) and removed in 0.20.0 (cratestack#1357). COSE_Mac0 (`cratestack_cose::CoseEnvelope` in `CoseMode::Mac0`, ADR 0006) replaces them, loading keys from a `KeyProvider` through `cratestack_cose::KeyProviderMacKeys`.
+`KeyProvider` resolves signing keys by `kid`, and `NonceStore` records already-seen request nonces so replays are rejected. Production multi-replica deployments back the `NonceStore` with Redis so replay rejection holds cluster-wide. The HS256 envelope that used these was deprecated in 0.19.6 (cratestack#1018) and removed in 0.20.0 (cratestack#1357). COSE_Mac0 (`cratestack_cose::CoseEnvelope` in `CoseMode::Mac0`, ADR 0006) replaces it, loading keys from a `KeyProvider` through `cratestack_cose::KeyProviderMacKeys`.
 
 ## Envelope seam (ADR 0006)
 
