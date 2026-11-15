@@ -34,13 +34,26 @@ impl Oidc {
         let htu = format!("{ORIGIN}{}", canonical.path);
         let proof = key.proof(canonical.method, &htu, Some(token));
         let mut headers = HeaderMap::new();
-        let authorization = format!("DPoP {token}");
         headers.insert(
             "authorization",
-            HeaderValue::from_str(&authorization).expect("ASCII"),
+            HeaderValue::from_str(&format!("DPoP {token}")).expect("ASCII"),
         );
         headers.insert("dpop", HeaderValue::from_str(&proof).expect("ASCII"));
         headers.into()
+    }
+    fn provider_with(&self, require_dpop: bool) -> Provider {
+        let config = ValidationConfig::builder()
+            .jwks_url(self.jwks_url.clone())
+            .issuer(ISSUER)
+            .audience(CLIENT)
+            .algorithms(vec![Algorithm::EdDSA])
+            .require_dpop(require_dpop)
+            .dpop_resource_origin(ORIGIN)
+            .build();
+        let replay = Arc::new(MemoryStore::<DpopJtiRecord>::new());
+        Provider(Arc::new(
+            JwtStrategy::new(config).with_dpop_replay_store(replay),
+        ))
     }
 }
 
@@ -48,18 +61,7 @@ impl Fixture for Oidc {
     type Provider = Provider;
 
     fn provider(&self) -> Provider {
-        let config = ValidationConfig::builder()
-            .jwks_url(self.jwks_url.clone())
-            .issuer(ISSUER)
-            .audience(CLIENT)
-            .algorithms(vec![Algorithm::EdDSA])
-            .require_dpop(true)
-            .dpop_resource_origin(ORIGIN)
-            .build();
-        let replay = Arc::new(MemoryStore::<DpopJtiRecord>::new());
-        Provider(Arc::new(
-            JwtStrategy::new(config).with_dpop_replay_store(replay),
-        ))
+        self.provider_with(true)
     }
 
     fn subject(&self, who: Who) -> String {
@@ -116,7 +118,7 @@ async fn amr_acr_and_the_key_binding_reach_the_principal() {
     use serde_json::json;
     use std::collections::HashMap;
 
-    async fn eval(op: &Op, key: &DpopKey, token: String) -> CratestackContext {
+    async fn eval(op: &Op, key: &DpopKey, token: String, dpop: bool) -> CratestackContext {
         let fixture = Oidc {
             jwks_url: op.jwks_url.clone(),
             user: (token.clone(), key.clone()),
@@ -124,16 +126,17 @@ async fn amr_acr_and_the_key_binding_reach_the_principal() {
             attacker: key.clone(),
         };
         let canonical = support::procedure_call("/$procs/whoAmI");
-        let credentials = fixture.sign(Who::User, &canonical);
-        let request = RequestContext {
+        let cred = fixture.sign(Who::User, &canonical);
+        let req = RequestContext {
             method: canonical.method,
             path: canonical.path,
             query: None,
-            headers: &credentials.headers,
+            headers: &cred.headers,
             body: &canonical.body,
-            extensions: &credentials.extensions,
+            extensions: &cred.extensions,
         };
-        fixture.provider().authenticate(&request).await.unwrap()
+        let provider = fixture.provider_with(dpop);
+        provider.authenticate(&req).await.unwrap()
     }
 
     let op = Op::start().await;
@@ -143,7 +146,7 @@ async fn amr_acr_and_the_key_binding_reach_the_principal() {
         ("acr", "aal2"),
         ("auth_time", "1700000123"),
     ];
-    let ctx = eval(&op, &key, op.issue("usr-ada", &attrs, &key).await).await;
+    let ctx = eval(&op, &key, op.issue("usr-ada", &attrs, &key).await, true).await;
     assert_eq!(ctx.amr(), Some(vec!["pwd"]));
     assert_eq!(ctx.acr(), Some("urn:authkestra:acr:single-factor"));
     assert_eq!(ctx.auth_time(), Some(1_700_000_123));
@@ -151,34 +154,46 @@ async fn amr_acr_and_the_key_binding_reach_the_principal() {
     assert!(!jkt.is_empty());
 
     let identity = Identity {
-        provider_id: "op".to_owned(),
-        external_id: "usr-ada".to_owned(),
+        provider_id: "op".into(),
+        external_id: "usr-ada".into(),
         email: None,
-        username: Some("usr-ada".to_owned()),
+        username: Some("usr-ada".into()),
         attributes: HashMap::from([
-            ("amr".to_owned(), "hwk user".to_owned()),
-            ("acr".to_owned(), "aal2".to_owned()),
-            ("auth_time".to_owned(), "1111111111".to_owned()),
+            ("amr".into(), "hwk user".into()),
+            ("acr".into(), "aal2".into()),
+            ("auth_time".into(), "1111111111".into()),
         ]),
     };
-    let mint = |mut extra: HashMap<String, serde_json::Value>| {
-        extra.insert("cnf".to_owned(), json!({ "jkt": jkt }));
+    let mint = |entries: &[(&str, serde_json::Value)]| {
+        let mut extra = HashMap::from([("cnf".into(), json!({ "jkt": jkt }))]);
+        extra.extend(entries.iter().map(|(k, v)| ((*k).into(), v.clone())));
         op.tokens
             .issue_user_token_with_extra(
                 identity.clone(),
                 600,
-                Some("openid".to_owned()),
-                Some(CLIENT.to_owned()),
+                Some("openid".into()),
+                Some(CLIENT.into()),
                 extra,
             )
             .expect("minted token")
     };
-    let top_time = HashMap::from([("auth_time".to_owned(), json!(2_222_222_222_i64))]);
-    let override_ctx = eval(&op, &key, mint(top_time)).await;
+    let tok = mint(&[("auth_time", json!(2_222_222_222_i64))]);
+    let override_ctx = eval(&op, &key, tok, true).await;
     assert_eq!(override_ctx.amr(), Some(vec!["hwk", "user"]));
     assert_eq!(override_ctx.acr(), Some("aal2"));
     assert_eq!(override_ctx.auth_time(), Some(2_222_222_222));
 
-    let fallback_ctx = eval(&op, &key, mint(HashMap::new())).await;
+    let fallback_ctx = eval(&op, &key, mint(&[]), true).await;
     assert_eq!(fallback_ctx.auth_time(), Some(1_111_111_111));
+
+    // Malformed or null top-level claims stay `None` (`require_dpop(false)` skips `CnfClaim`).
+    for (dpop, amr, acr, auth_time) in [
+        (true, json!("pwd"), json!(null), json!(null)),
+        (false, json!("pwd"), json!(42), json!("not-an-int")),
+        (false, json!(["pwd", 1]), json!(false), json!(1.5)),
+    ] {
+        let tok = mint(&[("amr", amr), ("acr", acr), ("auth_time", auth_time)]);
+        let bad = eval(&op, &key, tok, dpop).await;
+        assert_eq!((bad.amr(), bad.acr(), bad.auth_time()), (None, None, None));
+    }
 }

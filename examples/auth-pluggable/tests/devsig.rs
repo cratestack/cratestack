@@ -96,9 +96,12 @@ impl Devsig {
         let mut headers = HeaderMap::new();
         headers.insert(
             "x-attestation",
-            HeaderValue::from_str(&attestation).unwrap(),
+            HeaderValue::from_str(&attestation).expect("ASCII"),
         );
-        headers.insert("x-signature", HeaderValue::from_str(&signature).unwrap());
+        headers.insert(
+            "x-signature",
+            HeaderValue::from_str(&signature).expect("ASCII"),
+        );
         headers.into()
     }
 }
@@ -181,6 +184,7 @@ async fn the_device_signature_provider_passes_the_suite() {
         .authenticate(&request)
         .await
         .expect("accepted");
-    assert!(ctx.auth_time().is_some_and(|ts| ts > 0));
+    assert_eq!(ctx.auth_time(), None);
+    assert_eq!(ctx.amr(), Some(vec!["pop"]));
     suite(fixture).await;
 }

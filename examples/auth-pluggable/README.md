@@ -38,8 +38,8 @@ principal contract alone (`ctx.subject()`, `ctx.roles()`), which every provider 
 | `sub` | `svc:<keyId>`, or `cose:<thumbprint>` | the attestation's `sub` | the token's `sub` |
 | `roles` | `admin` for configured keys, else `caller` | `att.roles` | the identity's `roles` attribute |
 | `cnf.jkt` | — (service keys carry no key binding) | the device key's thumbprint | the DPoP key's thumbprint |
-| `auth_time` | — | the verified `X-Signature` `iat` (`signed_at`) | the token's top-level `auth_time` claim (fallback: identity attribute) |
-| `amr`, `acr` | — | — | the token's top-level `amr` / `acr` claims (fallback: identity attributes) |
+| `auth_time` | — | — | the token's top-level `auth_time` claim (fallback: identity attribute) |
+| `amr`, `acr` | — | `amr`: `["pop"]` (device key possession), `acr`: — | the token's top-level `amr` / `acr` claims (fallback: identity attributes) |
 | a refusal | `401`, `signature verification failed` | `401`, `{"error": "<devsig code>"}` | `401`, `{"error": "invalid_token"}` and `WWW-Authenticate: DPoP error="invalid_token"` |
 
 ## Run it
@@ -65,14 +65,16 @@ checks that the example itself does, so the check can fail. Authkestra is pinned
 The epic set "under ~50 lines each" as a signal, not a gate. `inhouse.rs` is 45 lines. The two
 Authkestra providers are longer because each does work its library leaves to the integrator:
 
-- **`devsig.rs` (74 lines)** builds `authkestra_devsig::SignedRequest` from the `RequestContext`,
-  maps `DeviceIdentity` (including `signed_at` → `auth_time`) onto `CratestackContext`, and maps
-  `VerifyError::code()` onto an `AuthRefusal` member. Authkestra's own axum adapter answers a
+- **`devsig.rs` (72 lines)** builds `authkestra_devsig::SignedRequest` from the `RequestContext`,
+  maps `DeviceIdentity` (setting `amr = ["pop"]` and leaving `auth_time` unset, since `signed_at`
+  is the per-request signature time rather than user authentication) onto `CratestackContext`, and
+  maps `VerifyError::code()` onto an `AuthRefusal` member. Authkestra's own axum adapter answers a
   refusal with a plain-text body; a device-signature client sorts refusals by a JSON `error` code
   (renew on `attestation_expired`, sign out on `key_not_bound`), which the provider sets.
-- **`oidc.rs` (107 lines)** rebuilds `http::request::Parts` from the `RequestContext` (what
+- **`oidc.rs` (106 lines)** rebuilds `http::request::Parts` from the `RequestContext` (what
   `JwtStrategy::authenticate` takes) and maps the token's top-level `amr`, `acr`, and `auth_time`
-  claims (with `identity.attributes` fallback) onto the principal contract.
+  claims (falling back to `identity.attributes` only when a top-level claim is absent) onto the
+  principal contract.
 
 ## Findings for Authkestra (cratestack#1245)
 
