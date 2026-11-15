@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.20.0 (2026-11-15)
+
 ### `cratestack --require-version` refuses a mismatched binary (cratestack#1372)
 
 Additive, non-breaking. The `cratestack` binary gains a global `--require-version <REQ>` flag and a `CRATESTACK_REQUIRE_VERSION` environment variable. Before any subcommand runs, the binary's own version is checked against `REQ`; if it does not satisfy it, the CLI prints the running version, the requirement and the executable path (with a hint that another install may be earlier on `PATH`) to stderr and exits 1. `REQ` uses Cargo's `VersionReq` syntax (`=0.20.0`, `>=0.19.6, <0.21`), except that a bare version such as `0.20.0` means exactly `=0.20.0`, not caret. An unparsable `REQ` is an error. The flag wins over the env var; an empty env var is ignored. Use it in CI and scripts to fail loudly when a stale install shadows the pinned one.

@@ -1,5 +1,10 @@
 ## Unreleased
 
+## 0.20.0 (2026-11-15)
+
+- No functional changes. Version kept in lockstep with the CrateStack
+  workspace, which every published CrateStack artifact shares.
+
 ## 0.19.8 (2026-11-15)
 
 - Keystore callback signer for the COSE transport (cratestack#1151):
