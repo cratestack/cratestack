@@ -1076,6 +1076,8 @@ jobs:
       - uses: actions/checkout@v7
       - name: Exact sibling-pin check
         run: ./.ci/sibling-pins-check.sh
+      - name: Sibling-pin guard fixture tests
+        run: ./.ci/sibling-pins-tests.sh
 
   # File-length ceiling check. `CLAUDE.md` declares a ~200-line-per-file
   # convention; until this job existed nothing enforced it, and it had

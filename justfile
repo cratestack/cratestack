@@ -1883,12 +1883,17 @@ verify-layering:
 verify-lints-optin:
 	./.ci/lints-workspace-check.sh
 
-# Every `cratestack-*` requirement in `[workspace.dependencies]` and in a
-# published member must be exact (`=x.y.z`), so one consumer build resolves
-# one CrateStack version (cratestack#1390). Manifest-only; `just bump` keeps
-# the `=`.
+# Every `cratestack` / `cratestack-*` requirement in `[workspace.dependencies]`
+# and in a published workspace member must be exact (`=x.y.z`), so one
+# consumer build resolves one CrateStack version (cratestack#1390).
+# Manifest-only; `just bump` keeps the `=`.
 check-sibling-pins:
 	./.ci/sibling-pins-check.sh
+
+# Fixture tests for the guard above: every non-exact shape must fail it,
+# workspace inheritance, unpublished members and exact pins must pass it.
+sibling-pins-test:
+	./.ci/sibling-pins-tests.sh
 
 # Multi-file schema rebuild proof (cratestack#919, design §10 and §15) — real
 # `cargo` builds: editing any file of a split schema rebuilds the consuming
@@ -4467,7 +4472,12 @@ bump NEW:
 	# Exact sibling pins (cratestack#1390): the workspace entries read
 	# `version = "=X"`, so the optional `=` is captured and re-emitted. Without
 	# it the pattern would not match `"=X"` at all and the pins would silently
-	# stay on the old release; `just check-sibling-pins` is the guard.
+	# stay on the old release. `just check-sibling-pins` checks only the SHAPE
+	# of each pin (`=x.y.z`), not its value, so it would not catch that; the
+	# guard against a stale value is the `cargo metadata` that refreshes
+	# `Cargo.lock` further down in this recipe: a pin left on the old version
+	# no longer matches the bumped sibling, so it fails to resolve ("failed to
+	# select a version for the requirement `=X`").
 	find . -name Cargo.toml \
 	  -not -path './target/*' \
 	  -not -path '*/node_modules/*' \

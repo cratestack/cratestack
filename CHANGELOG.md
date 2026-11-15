@@ -6,8 +6,8 @@
 
 Release hygiene, non-breaking for a consumer that already moved every `cratestack-*` pin together. Every `cratestack-*` crate now requires its siblings as `=x.y.z`, not a caret, so one consumer build resolves exactly one CrateStack version. Before, a consumer pinning `cratestack-client = "=0.20.0"` could still resolve `cratestack-core` and `cratestack-policy` at 0.20.1 beside 0.20.0 of everything else, and `cratestack-macros` 0.20.0 then generated code against a core API it was not built with.
 
-- **Upgrading.** Move all your `cratestack-*` pins to the same version in one change. A pin on one facade now carries its siblings along, but a second, different pin on another `cratestack-*` crate in the same graph is a resolution error rather than a silent mix.
-- **Maintainers.** `just bump` keeps the `=`. New CI job `sibling-pins` (`just check-sibling-pins`, `.ci/sibling-pins-check.sh`) fails on any caret `cratestack-*` requirement in `[workspace.dependencies]` or a published member manifest.
+- **Upgrading.** Move all your `cratestack-*` pins to the same version in one change: edit the pins, then run `cargo update`. `cargo update -p <one sibling>` on its own now fails, because the siblings require each other exactly, so the whole family moves together. What newly fails to resolve is an older facade pinned beside a newer sibling (for example `cratestack-client` 0.20.0 next to `cratestack-core` 0.20.1) instead of silently resolving a mix.
+- **Maintainers.** `just bump` keeps the `=`. New CI job `sibling-pins` (`just check-sibling-pins`, `.ci/sibling-pins-check.sh`) fails on any non-exact `cratestack` / `cratestack-*` requirement (caret, tilde, range, bare version, renamed dependency, target-specific table) in `[workspace.dependencies]` or a published workspace member manifest, and its fixture tests run beside it (`just sibling-pins-test`, `.ci/sibling-pins-tests.sh`). The guard checks the shape of a pin, not its value; a stale value fails at the `cargo metadata` inside `just bump`.
 
 ## 0.20.1 (2026-11-15)
 
