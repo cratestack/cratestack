@@ -10,7 +10,7 @@
 //! and never from here.
 
 use super::model::{Field, Model};
-use super::sql_reserved_words::is_sql_reserved_word;
+use super::sql_reserved_words::{is_sql_reserved_word, is_sql_system_column};
 use crate::route_naming::{pluralize, to_snake_case};
 
 /// The one argument shape a map marker takes, for error messages.
@@ -86,6 +86,12 @@ pub fn validate_sql_identifier(name: &str, kind: StorageNameKind) -> Result<(), 
         return Err(format!(
             "`{name}` is a reserved SQL word and generated SQL does not quote names; \
              choose another {word} name"
+        ));
+    }
+    if kind == StorageNameKind::Column && is_sql_system_column(name) {
+        return Err(format!(
+            "`{name}` is a PostgreSQL system column that every table has; choose another \
+             column name"
         ));
     }
     if kind == StorageNameKind::Table

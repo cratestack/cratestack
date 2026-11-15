@@ -165,3 +165,22 @@ fn a_mapped_model_has_the_routes_and_op_keys_of_an_unmapped_one() {
         Some("model.Bank.list")
     );
 }
+
+#[test]
+fn a_column_may_not_be_a_postgres_system_column_or_a_boolean_literal() {
+    for name in ["xmin", "xmax", "cmin", "cmax", "ctid", "oid", "tableoid"] {
+        let error = validate_sql_identifier(name, StorageNameKind::Column).unwrap_err();
+        assert!(
+            error.contains(name) && error.contains("system column"),
+            "{error}"
+        );
+    }
+    for name in ["true", "false", "values"] {
+        for kind in [StorageNameKind::Table, StorageNameKind::Column] {
+            assert!(validate_sql_identifier(name, kind).is_err(), "{name}");
+        }
+    }
+    // A table may be called `oid`-like names: system columns are per column.
+    assert!(validate_sql_identifier("ctid", StorageNameKind::Table).is_ok());
+    assert!(validate_sql_identifier("xmin_value", StorageNameKind::Column).is_ok());
+}
