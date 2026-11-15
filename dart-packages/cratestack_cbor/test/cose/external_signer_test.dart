@@ -139,6 +139,43 @@ void main() {
       }
     });
 
+    test('a callback that throws after a delay is CoseSignerFailed', () async {
+      final envelope = await envelopeFor((_) async {
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+        throw StateError('secret keystore detail');
+      });
+      await expectLater(
+        seal(envelope),
+        throwsA(
+          isA<CoseSignerFailed>().having(
+            (e) => e.message,
+            'message',
+            allOf(isNot(contains('secret')), contains('threw')),
+          ),
+        ),
+      );
+    });
+
+    test('an error thrown after the callback answered leaks nowhere', () async {
+      final envelope = await envelopeFor((_) async {
+        // Errors with no listener, raised once the answer is already out.
+        Timer(
+          const Duration(milliseconds: 30),
+          () => throw StateError('secret keystore detail'),
+        );
+        unawaited(
+          Future<void>.delayed(const Duration(milliseconds: 40)).then(
+            (_) => throw StateError('secret keystore detail'),
+          ),
+        );
+        return const SignOutcome.cancelled();
+      });
+      await expectLater(seal(envelope), throwsA(isA<CoseSignerCancelled>()));
+      // Past both throws: an escaped error would fail this test, or the
+      // next, as an uncaught async error.
+      await Future<void>.delayed(const Duration(milliseconds: 150));
+    });
+
     test('a callback slower than the timeout is CoseSignerTimedOut', () async {
       final finished = Completer<void>();
       final envelope = await envelopeFor(
