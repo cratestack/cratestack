@@ -61,6 +61,10 @@ async fn configuration_faults_at_connect_are_bad_request() {
     assert_bad_request(&unknown_role, &url);
     let bogus_guc = connect_error(from(&format!("{url}?options=-c%20bogus_guc%3D1"))).await;
     assert_bad_request(&bogus_guc, &url);
+    assert!(
+        bogus_guc.public_message().contains("unknown setting"),
+        "{bogus_guc:?}"
+    );
     let bad_value = connect_error(from(&url).session_setting("statement_timeout", "abc")).await;
     assert_bad_request(&bad_value, &url);
     // A postmaster-context setting cannot be a session setting at all.

@@ -69,7 +69,8 @@ impl PgPoolConfig {
     ///   `55P02`, which includes a `postmaster`/`sighup` setting), a TLS
     ///   negotiation failure, or an invalid sqlx configuration.
     /// - `Unavailable`: the database could not be reached (`Io`,
-    ///   `PoolTimedOut`, `PoolClosed`, `WorkerCrashed`).
+    ///   `PoolTimedOut`, `PoolClosed`, `WorkerCrashed`) or is going away or
+    ///   restarting (SQLSTATE `57P01`, `57P02`, `57P03`, class `08`).
     /// - Anything else goes through [`cratestack_error_from_sqlx`].
     pub async fn connect(&self) -> Result<PgPool, CratestackError> {
         let options = self.connect_options()?;
@@ -92,10 +93,21 @@ pub(super) fn classify_connect_error(error: sqlx::Error) -> CratestackError {
                 bad("database does not exist (invalid catalog name)")
             }
             Some("55P02") => bad("a configured session setting cannot be set at connection start"),
-            Some("42704") => bad("a configured session setting is unknown to the server"),
+            Some("42704") => {
+                bad("unknown setting: a configured session setting is not known to the server")
+            }
             Some(code) if code.starts_with("22") || code.starts_with("42") => {
                 bad("the server rejected a configured session setting or its value")
             }
+            // Transient: the server is shutting down or restarting (57P01 admin
+            // shutdown, 57P02 crash shutdown, 57P03 cannot connect now) or the
+            // connection broke (class 08). Retrying can succeed.
+            Some(code) if matches!(code, "57P01" | "57P02" | "57P03") || code.starts_with("08") => {
+                CratestackError::Unavailable("database unavailable".to_owned())
+            }
+            // 55000 (object not in prerequisite state, e.g. `allow_connections
+            // false`) is deliberately not listed: it is an operator-set state
+            // that does not clear by retrying, so it keeps the generic mapping.
             _ => cratestack_error_from_sqlx(error),
         },
         sqlx::Error::Configuration(_) => bad("database connection configuration is invalid"),

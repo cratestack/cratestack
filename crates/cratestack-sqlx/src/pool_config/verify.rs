@@ -78,8 +78,8 @@ impl PgPoolConfig {
             if actual.as_deref() != Some(canonical.as_str()) {
                 return Err(CratestackError::Unavailable(format!(
                     "the server reports {} for `{name}`, expected `{canonical}` (a pooler \
-                     dropping startup options, or a server/role/database-level override, \
-                     can cause this)",
+                     that drops or rewrites startup options, a server that ignores them, \
+                     or a value the server normalises differently can cause this)",
                     actual.map_or("<unset>".to_owned(), |a| format!("`{a}`")),
                 )));
             }

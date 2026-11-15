@@ -190,10 +190,16 @@ async fn verify_settings_handles_unset_unknown_and_unchangeable_settings() {
     // Fixed at connection start (backend) and at server start (postmaster).
     for name in ["log_disconnections", "shared_buffers"] {
         let error = verify(name, "on").await.expect_err(name);
-        assert!(
-            matches!(error, CratestackError::BadRequest(_)),
-            "{name}: {error:?}"
-        );
+        let CratestackError::BadRequest(message) = &error else {
+            panic!("{name}: expected BadRequest, got {error:?}");
+        };
+        let expected = if name == "log_disconnections" {
+            "cannot be verified after connection start"
+        } else {
+            "cannot be a session setting"
+        };
+        assert!(message.contains(expected), "{name}: {message}");
+        assert!(message.contains(name), "{message}");
         assert_eq!(error.status_code().as_u16(), 400);
     }
 }

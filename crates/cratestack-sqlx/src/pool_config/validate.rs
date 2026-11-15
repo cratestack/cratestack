@@ -36,14 +36,53 @@ pub(super) fn parse_url(url: &str) -> Result<PgConnectOptions, CratestackError> 
         bad("database URL is invalid; expected \
              postgres://user:password@host:port/database (check scheme, host and port)")
     })?;
-    // Session settings are appended after the URL's `options`; a trailing
-    // backslash would escape the separating space and merge the two.
-    if options.get_options().is_some_and(|o| o.ends_with('\\')) {
+    // Session settings are appended after the URL's `options`; an unpaired
+    // trailing backslash (an odd run of them) would escape the separating
+    // space and merge the two. An even run is escaped backslashes: fine.
+    let trailing = options
+        .get_options()
+        .map_or(0, |o| o.chars().rev().take_while(|&c| c == '\\').count());
+    if trailing % 2 == 1 {
         return Err(bad(
-            "database URL `options` value must not end in a backslash",
+            "database URL `options` value must not end in an unpaired backslash",
         ));
     }
+    if let Some(name) = options.get_options().and_then(sqlx_owned_in_options) {
+        return Err(bad(&format!(
+            "database URL `options` sets `{name}`, which sqlx sets itself at startup, after any \
+             -c option, so the URL value would be silently ignored"
+        )));
+    }
     Ok(options)
+}
+
+/// The first sqlx-owned name a URL `options` string tries to set, through
+/// `-c name=v`, `-cname=v` or `--name=v`.
+fn sqlx_owned_in_options(options: &str) -> Option<&'static str> {
+    let mut after_c = false;
+    for token in options.split_whitespace() {
+        let assignment = if after_c {
+            Some(token)
+        } else if token == "-c" {
+            None
+        } else {
+            token
+                .strip_prefix("--")
+                .or_else(|| token.strip_prefix("-c"))
+        };
+        after_c = token == "-c";
+        let Some(assignment) = assignment else {
+            continue;
+        };
+        let name = assignment.split('=').next().unwrap_or_default();
+        if let Some(owned) = SQLX_OWNED
+            .iter()
+            .find(|owned| name.eq_ignore_ascii_case(owned))
+        {
+            return Some(owned);
+        }
+    }
+    None
 }
 
 /// Settings sqlx sends itself as startup parameters, which the server applies

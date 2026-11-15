@@ -29,7 +29,9 @@
 //! startup parameters, which the server applies after `-c` options, so a
 //! `-c` for them would silently lose. `session_setting` refuses them
 //! (`BadRequest`, case-insensitive); [`PgPoolConfig::application_name`] is the
-//! supported way to set the one that is useful.
+//! supported way to set the one that is useful. The same five names in a
+//! URL's own `options=` (`-c TimeZone=UTC`, `-cdatestyle=ISO`, `--name=v`) are
+//! refused by `from_url` with `BadRequest`, for the same reason.
 //!
 //! # URL forms
 //!
