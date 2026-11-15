@@ -52,7 +52,7 @@ impl DpopKey {
 
 /// The OP: its signing key, its configuration, and its JWKS URL.
 pub struct Op {
-    tokens: TokenManager,
+    pub tokens: TokenManager,
     config: OpConfig,
     pub jwks_url: String,
 }

@@ -29,9 +29,9 @@ cratestack-codec-json = { path = "../../crates/cratestack-codec-json" }
 cratestack-cose = { path = "../../crates/cratestack-cose", features = ["auth"] }
 # Authkestra, pinned to one commit: a bump is a deliberate PR (cratestack#1245
 # risks table). Only this example depends on it.
-authkestra-devsig = { git = "https://github.com/Authkestra/authkestra", rev = "9d401693621745fd149babc074a7c8dce8adf954" }
-authkestra-engine = { git = "https://github.com/Authkestra/authkestra", rev = "9d401693621745fd149babc074a7c8dce8adf954", features = ["memory"] }
-authkestra-resource = { git = "https://github.com/Authkestra/authkestra", rev = "9d401693621745fd149babc074a7c8dce8adf954" }
+authkestra-devsig = { git = "https://github.com/Authkestra/authkestra", rev = "57285d64a5811e9b98f4c895aca6170e05e01370" }
+authkestra-engine = { git = "https://github.com/Authkestra/authkestra", rev = "57285d64a5811e9b98f4c895aca6170e05e01370", features = ["memory"] }
+authkestra-resource = { git = "https://github.com/Authkestra/authkestra", rev = "57285d64a5811e9b98f4c895aca6170e05e01370" }
 async-trait = "0.1"
 ed25519-dalek = "3"
 # Generated code derives `serde::Serialize` through bare `serde::` paths.
@@ -44,7 +44,7 @@ jsonwebtoken = { version = "11", features = ["rust_crypto"] }
 
 [dev-dependencies]
 cratestack-auth-conformance = { path = "../../crates/cratestack-auth-conformance" }
-authkestra-op = { git = "https://github.com/Authkestra/authkestra", rev = "9d401693621745fd149babc074a7c8dce8adf954" }
+authkestra-op = { git = "https://github.com/Authkestra/authkestra", rev = "57285d64a5811e9b98f4c895aca6170e05e01370" }
 base64 = "0.22"
 chrono = "0.4"
 ed25519-dalek-v2 = { package = "ed25519-dalek", version = "2", features = ["pkcs8", "pem"] }

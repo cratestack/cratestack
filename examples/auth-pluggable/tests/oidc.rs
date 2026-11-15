@@ -34,13 +34,26 @@ impl Oidc {
         let htu = format!("{ORIGIN}{}", canonical.path);
         let proof = key.proof(canonical.method, &htu, Some(token));
         let mut headers = HeaderMap::new();
-        let authorization = format!("DPoP {token}");
         headers.insert(
             "authorization",
-            HeaderValue::from_str(&authorization).expect("ASCII"),
+            HeaderValue::from_str(&format!("DPoP {token}")).expect("ASCII"),
         );
         headers.insert("dpop", HeaderValue::from_str(&proof).expect("ASCII"));
         headers.into()
+    }
+    fn provider_with(&self, require_dpop: bool) -> Provider {
+        let config = ValidationConfig::builder()
+            .jwks_url(self.jwks_url.clone())
+            .issuer(ISSUER)
+            .audience(CLIENT)
+            .algorithms(vec![Algorithm::EdDSA])
+            .require_dpop(require_dpop)
+            .dpop_resource_origin(ORIGIN)
+            .build();
+        let replay = Arc::new(MemoryStore::<DpopJtiRecord>::new());
+        Provider(Arc::new(
+            JwtStrategy::new(config).with_dpop_replay_store(replay),
+        ))
     }
 }
 
@@ -48,18 +61,7 @@ impl Fixture for Oidc {
     type Provider = Provider;
 
     fn provider(&self) -> Provider {
-        let config = ValidationConfig::builder()
-            .jwks_url(self.jwks_url.clone())
-            .issuer(ISSUER)
-            .audience(CLIENT)
-            .algorithms(vec![Algorithm::EdDSA])
-            .require_dpop(true)
-            .dpop_resource_origin(ORIGIN)
-            .build();
-        let replay = Arc::new(MemoryStore::<DpopJtiRecord>::new());
-        Provider(Arc::new(
-            JwtStrategy::new(config).with_dpop_replay_store(replay),
-        ))
+        self.provider_with(true)
     }
 
     fn subject(&self, who: Who) -> String {
@@ -107,41 +109,91 @@ async fn the_oidc_provider_passes_the_suite() {
     .await;
 }
 
-/// The token's authentication facts reach the principal contract.
+/// The token's authentication facts reach the principal contract: top-level
+/// claims override raw `identity.attributes`, and attributes act as fallback.
 #[tokio::test]
 async fn amr_acr_and_the_key_binding_reach_the_principal() {
-    use cratestack::{AuthProvider, RequestContext};
+    use authkestra_engine::Identity;
+    use cratestack::{AuthProvider, CratestackContext, RequestContext};
+    use serde_json::json;
+    use std::collections::HashMap;
+
+    async fn eval(op: &Op, key: &DpopKey, token: String, dpop: bool) -> CratestackContext {
+        let fixture = Oidc {
+            jwks_url: op.jwks_url.clone(),
+            user: (token.clone(), key.clone()),
+            admin: (token, key.clone()),
+            attacker: key.clone(),
+        };
+        let canonical = support::procedure_call("/$procs/whoAmI");
+        let cred = fixture.sign(Who::User, &canonical);
+        let req = RequestContext {
+            method: canonical.method,
+            path: canonical.path,
+            query: None,
+            headers: &cred.headers,
+            body: &canonical.body,
+            extensions: &cred.extensions,
+        };
+        let provider = fixture.provider_with(dpop);
+        provider.authenticate(&req).await.unwrap()
+    }
 
     let op = Op::start().await;
     let key = DpopKey(SigningKey::from_bytes(&[0x04; 32]));
-    let token = op
-        .issue("usr-ada", &[("amr", "hwk user"), ("acr", "aal2")], &key)
-        .await;
-    let fixture = Oidc {
-        jwks_url: op.jwks_url,
-        user: (token.clone(), key.clone()),
-        admin: (token, key.clone()),
-        attacker: key.clone(),
+    let attrs = [
+        ("amr", "password"),
+        ("acr", "aal2"),
+        ("auth_time", "1700000123"),
+    ];
+    let ctx = eval(&op, &key, op.issue("usr-ada", &attrs, &key).await, true).await;
+    assert_eq!(ctx.amr(), Some(vec!["pwd"]));
+    assert_eq!(ctx.acr(), Some("urn:authkestra:acr:single-factor"));
+    assert_eq!(ctx.auth_time(), Some(1_700_000_123));
+    let jkt = ctx.cnf_jkt().expect("cnf.jkt thumbprint").to_owned();
+    assert!(!jkt.is_empty());
+
+    let identity = Identity {
+        provider_id: "op".into(),
+        external_id: "usr-ada".into(),
+        email: None,
+        username: Some("usr-ada".into()),
+        attributes: HashMap::from([
+            ("amr".into(), "hwk user".into()),
+            ("acr".into(), "aal2".into()),
+            ("auth_time".into(), "1111111111".into()),
+        ]),
     };
-    let canonical = support::procedure_call("/$procs/whoAmI");
-    let credentials = fixture.sign(Who::User, &canonical);
-    let request = RequestContext {
-        method: canonical.method,
-        path: canonical.path,
-        query: None,
-        headers: &credentials.headers,
-        body: &canonical.body,
-        extensions: &credentials.extensions,
+    let mint = |entries: &[(&str, serde_json::Value)]| {
+        let mut extra = HashMap::from([("cnf".into(), json!({ "jkt": jkt }))]);
+        extra.extend(entries.iter().map(|(k, v)| ((*k).into(), v.clone())));
+        op.tokens
+            .issue_user_token_with_extra(
+                identity.clone(),
+                600,
+                Some("openid".into()),
+                Some(CLIENT.into()),
+                extra,
+            )
+            .expect("minted token")
     };
-    let ctx = fixture
-        .provider()
-        .authenticate(&request)
-        .await
-        .expect("accepted");
-    assert_eq!(ctx.amr(), Some(vec!["hwk", "user"]));
-    assert_eq!(ctx.acr(), Some("aal2"));
-    assert!(
-        ctx.cnf_jkt().is_some_and(|jkt| !jkt.is_empty()),
-        "cnf.jkt is the DPoP key's thumbprint"
-    );
+    let tok = mint(&[("auth_time", json!(2_222_222_222_i64))]);
+    let override_ctx = eval(&op, &key, tok, true).await;
+    assert_eq!(override_ctx.amr(), Some(vec!["hwk", "user"]));
+    assert_eq!(override_ctx.acr(), Some("aal2"));
+    assert_eq!(override_ctx.auth_time(), Some(2_222_222_222));
+
+    let fallback_ctx = eval(&op, &key, mint(&[]), true).await;
+    assert_eq!(fallback_ctx.auth_time(), Some(1_111_111_111));
+
+    // Malformed or null top-level claims stay `None` (`require_dpop(false)` skips `CnfClaim`).
+    for (dpop, amr, acr, auth_time) in [
+        (true, json!("pwd"), json!(null), json!(null)),
+        (false, json!("pwd"), json!(42), json!("not-an-int")),
+        (false, json!(["pwd", 1]), json!(false), json!(1.5)),
+    ] {
+        let tok = mint(&[("amr", amr), ("acr", acr), ("auth_time", auth_time)]);
+        let bad = eval(&op, &key, tok, dpop).await;
+        assert_eq!((bad.amr(), bad.acr(), bad.auth_time()), (None, None, None));
+    }
 }

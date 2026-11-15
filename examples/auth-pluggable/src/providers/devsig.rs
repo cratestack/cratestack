@@ -46,6 +46,7 @@ impl AuthProvider for Provider {
         let roles = device.attributes["roles"].as_array().into_iter().flatten();
         Ok(CratestackContext::builder(device.subject)
             .roles(roles.filter_map(|role| role.as_str()))
+            .amr(["pop"])
             .cnf_jkt(device.key_thumbprint)
             .claim("device", Value::String(device.device))
             .build())
