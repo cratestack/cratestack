@@ -29,7 +29,7 @@
 use std::pin::Pin;
 
 use axum::body::{Body, Bytes};
-use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
+use axum::http::{HeaderValue, StatusCode, header};
 use axum::response::Response;
 use cratestack_core::CratestackError;
 use cratestack_core::rpc::RpcErrorBody;
@@ -39,34 +39,7 @@ use serde::Serialize;
 
 use crate::transport::StreamedResponseMarker;
 
-const SSE_CONTENT_TYPE: &str = "text/event-stream";
-
-/// `GET /rpc/subscribe/{op_id}` has no upgrade handshake to negotiate a
-/// binary subprotocol like WS does — the client states its intent via a
-/// plain `Accept` header, same as every other HTTP RPC binding. Reject
-/// anything that doesn't ask for SSE up front, before any
-/// `CratestackEventBus` subscription gets registered.
-pub fn validate_subscribe_accept_header(headers: &HeaderMap) -> Result<(), CratestackError> {
-    let Some(accept) = headers.get(header::ACCEPT) else {
-        return Err(CratestackError::NotAcceptable(format!(
-            "subscription endpoint requires Accept: {SSE_CONTENT_TYPE}"
-        )));
-    };
-    let accept = accept
-        .to_str()
-        .map_err(|error| CratestackError::BadRequest(format!("invalid Accept header: {error}")))?;
-    if accept
-        .split(',')
-        .map(str::trim)
-        .any(|value| value == SSE_CONTENT_TYPE || value == "*/*")
-    {
-        Ok(())
-    } else {
-        Err(CratestackError::NotAcceptable(format!(
-            "subscription endpoint requires Accept: {SSE_CONTENT_TYPE}, got {accept}"
-        )))
-    }
-}
+pub(super) const SSE_CONTENT_TYPE: &str = "text/event-stream";
 
 /// Encode `items` as a `text/event-stream` response. `items` ending
 /// (`None` from the underlying `Stream`) always means backpressure

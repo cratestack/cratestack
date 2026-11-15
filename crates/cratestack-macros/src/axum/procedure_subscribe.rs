@@ -19,38 +19,38 @@ pub(crate) fn generate_subscription_procedure_axum(
     let open = ident(&format!("open_procedure_{snake}"));
     let path = cratestack_core::procedure_route::procedure_rest_route_path(procedure);
     let handler_def = quote! {
-        async fn #handler<R, CR, C, Auth>(
-            State(state): State<ProcedureRouterState<R, CR, C, Auth>>,
-            headers: HeaderMap,
-            RawQuery(raw_query): RawQuery,
-            client_ip_ctx: ClientIpContext,
-        ) -> Response
-        where
-            R: super::procedures::ProcedureRegistry,
-            CR: super::computed::ComputedFieldResolver,
-            C: HttpTransport,
-            Auth: AuthProvider,
-        {
-            if let Err(error) = ::cratestack::__private::validate_subscribe_accept_header(&headers) {
-                return ::cratestack::__private::encode_subscribe_error(&error);
+            async fn #handler<R, CR, C, Auth>(
+                State(state): State<ProcedureRouterState<R, CR, C, Auth>>,
+                headers: HeaderMap,
+                RawQuery(raw_query): RawQuery,
+                client_ip_ctx: ClientIpContext,
+            ) -> Response
+            where
+                R: super::procedures::ProcedureRegistry,
+                CR: super::computed::ComputedFieldResolver,
+                C: HttpTransport,
+                Auth: AuthProvider,
+            {
+                let binding = match ::cratestack::__private::negotiate_subscribe_binding(&headers) {
+                    Ok(binding) => binding,
+                    Err(error) => return ::cratestack::__private::encode_subscribe_error(&error),
+                };
+                let request = request_context("GET", #path, raw_query.as_deref(), &headers, &[], &client_ip_ctx.extensions);
+                let ctx = match state.auth_provider.authenticate(&request).await {
+                    Ok(ctx) => ::cratestack::enrich_context_from_envelope(::cratestack::enrich_context_from_headers(ctx, &headers, client_ip_ctx.trusted_proxy.as_ref(), client_ip_ctx.peer), &client_ip_ctx.extensions),
+                    Err(error) => {
+                        let error: CratestackError = error.into();
+                        return ::cratestack::__private::encode_subscribe_error(&error);
+                    }
+                };
+    ::cratestack::__private::serve_subscription(
+                    binding,
+                    super::subscriptions::#open(
+                        &state.db, &state.registry, raw_query, ctx, ::cratestack::__private::SseCodec,
+                    ),
+                ).await
             }
-            let request = request_context("GET", #path, raw_query.as_deref(), &headers, &[], &client_ip_ctx.extensions);
-            let ctx = match state.auth_provider.authenticate(&request).await {
-                Ok(ctx) => ::cratestack::enrich_context_from_envelope(::cratestack::enrich_context_from_headers(ctx, &headers, client_ip_ctx.trusted_proxy.as_ref(), client_ip_ctx.peer), &client_ip_ctx.extensions),
-                Err(error) => {
-                    let error: CratestackError = error.into();
-                    return ::cratestack::__private::encode_subscribe_error(&error);
-                }
-            };
-            match super::subscriptions::#open(
-                &state.db, &state.registry, raw_query, ctx, ::cratestack::__private::SseCodec,
-            )
-            .await {
-                Ok(stream) => ::cratestack::__private::encode_subscription_sse_response(stream),
-                Err(error) => ::cratestack::__private::encode_subscribe_error(&error),
-            }
-        }
-    };
+        };
     let route = quote! { .route(#path, axum::routing::get(#handler)) };
     (handler_def, route)
 }

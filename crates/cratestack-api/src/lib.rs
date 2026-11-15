@@ -193,8 +193,8 @@ pub mod __private {
     /// `subscription procedure` is served through (slice S4), the only
     /// subscriptions a `db = None` schema has.
     pub use cratestack_axum::rpc::{
-        SseCodec, encode_subscribe_error, encode_subscription_sse_response, procedure_feed,
-        procedure_input_query, procedure_query_args, subscribe_input_query,
-        until_credential_expires, validate_subscribe_accept_header,
+        SseCodec, SubscribeBinding, encode_subscribe_error, negotiate_subscribe_binding,
+        procedure_feed, procedure_input_query, procedure_query_args, serve_subscription,
+        subscribe_input_query, until_credential_expires,
     };
 }

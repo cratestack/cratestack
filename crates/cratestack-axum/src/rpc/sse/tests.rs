@@ -1,4 +1,3 @@
-use axum::http::HeaderValue;
 use futures_util::stream;
 
 use super::*;
@@ -13,35 +12,6 @@ async fn body_to_string(response: Response) -> String {
         .await
         .unwrap();
     String::from_utf8(bytes.to_vec()).unwrap()
-}
-
-#[test]
-fn validate_subscribe_accept_header_accepts_exact_match() {
-    let mut headers = HeaderMap::new();
-    headers.insert(header::ACCEPT, HeaderValue::from_static(SSE_CONTENT_TYPE));
-    assert!(validate_subscribe_accept_header(&headers).is_ok());
-}
-
-#[test]
-fn validate_subscribe_accept_header_accepts_wildcard() {
-    let mut headers = HeaderMap::new();
-    headers.insert(header::ACCEPT, HeaderValue::from_static("*/*"));
-    assert!(validate_subscribe_accept_header(&headers).is_ok());
-}
-
-#[test]
-fn validate_subscribe_accept_header_rejects_missing_header() {
-    let headers = HeaderMap::new();
-    let error = validate_subscribe_accept_header(&headers).unwrap_err();
-    assert!(matches!(error, CratestackError::NotAcceptable(_)));
-}
-
-#[test]
-fn validate_subscribe_accept_header_rejects_mismatched_type() {
-    let mut headers = HeaderMap::new();
-    headers.insert(header::ACCEPT, HeaderValue::from_static("application/json"));
-    let error = validate_subscribe_accept_header(&headers).unwrap_err();
-    assert!(matches!(error, CratestackError::NotAcceptable(_)));
 }
 
 #[tokio::test]
