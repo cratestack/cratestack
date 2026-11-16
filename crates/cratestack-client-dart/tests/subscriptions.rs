@@ -103,3 +103,49 @@ fn the_socket_modules_come_only_with_subscriptions() {
     assert!(!without.keys().any(|name| name.contains("subscription_")));
     assert!(!without["pubspec.yaml"].contains("web_socket_channel"));
 }
+
+/// cratestack#1001: `application/cbor-seq` is a pinned binding on every
+/// schema with a subscription, REST and RPC alike; the behaviour is proven by
+/// `fixtures/subscriptions_rpc_cbor_seq_test.dart` under `just verify-dart`.
+#[test]
+fn the_cbor_seq_binding_is_pinned_not_automatic() {
+    for fixture in [
+        "tests/fixtures/subscriptions_rpc.cstack",
+        "../cratestack-pg/tests/fixtures/subscribe_rest.cstack",
+    ] {
+        let (_, runtime) = files(fixture);
+        assert!(
+            runtime.contains("Stream<Object?> cratestackSubscribeCborSeq("),
+            "{fixture}"
+        );
+        assert!(runtime.contains("'Accept': 'application/cbor-seq',"));
+        assert!(runtime.contains("_cratestackSkipCborItem(buffer, offset, 0)"));
+        assert!(runtime.contains("CratestackEventTooLargeException(maxEventBytes)"));
+        assert!(runtime.contains("0xf6"), "the keep-alive null is skipped");
+        assert!(runtime.contains("the subscription body ended in the middle of a frame"));
+    }
+    let schema = cratestack_parser::parse_schema_file("tests/fixtures/subscriptions_rpc.cstack")
+        .expect("parses");
+    let package = generate_package(&schema, &DartGeneratorConfig::default()).expect("renders");
+    let sockets = &package
+        .files
+        .iter()
+        .find(|file| file.file_name == "lib/src/subscription_sockets.dart")
+        .expect("sockets module")
+        .contents;
+    assert!(sockets.contains("  cborSeq,\n}"), "the enum gains a value");
+    assert!(sockets.contains("CratestackSubscriptionTransport.cborSeq => cborSeq(),"));
+    // `auto` is unchanged: it never lands on `cborSeq`.
+    let auto = sockets
+        .split("CratestackSubscriptionTransport.auto when")
+        .nth(1)
+        .expect("auto arm");
+    assert!(!auto.contains("cborSeq()"), "auto must not pick cbor-seq");
+}
+
+#[test]
+fn a_schema_without_subscriptions_has_no_cbor_seq_reader() {
+    let (_, runtime) = files("tests/fixtures/ci_rpc.cstack");
+    assert!(!runtime.contains("cratestackSubscribeCborSeq"));
+    assert!(!runtime.contains("_cratestackSubscriptionRefusal"));
+}

@@ -6,7 +6,8 @@
 // never part of a method's name. `auto` (the default) tries WebTransport
 // (on the web, when [CratestackSubscriptionOptions.webTransportUrl] names
 // the listener), then a WebSocket, then SSE, moving on only when a binding
-// cannot be opened: a refusal is the server's answer and is thrown. A socket
+// cannot be opened: a refusal is the server's answer and is thrown. `cborSeq`
+// is pinned, never fallen back to. A socket
 // does not go through the HTTP transport, so it cannot carry the credentials
 // that transport adds; until [CratestackSubscriptionOptions.credentials] is
 // set, `auto` stays on SSE, which does go through it. A
@@ -27,7 +28,16 @@ import 'subscription_webtransport_stub.dart'
     if (dart.library.js_interop) 'subscription_webtransport_web.dart';
 
 /// Which binding a subscription uses.
-enum CratestackSubscriptionTransport { auto, webTransport, webSocket, sse }
+enum CratestackSubscriptionTransport {
+  auto,
+  webTransport,
+  webSocket,
+  sse,
+
+  /// `application/cbor-seq` over HTTP: the SSE route, answered with CBOR
+  /// frames. Chosen, never part of `auto`.
+  cborSeq,
+}
 
 /// How a client subscribes. Pass it to the generated client's constructor.
 final class CratestackSubscriptionOptions {
@@ -55,7 +65,8 @@ final class CratestackSubscriptionOptions {
   /// the schema's socket path (`/rpc/ws`, or `/$ws` on REST).
   final Uri? webSocketUrl;
 
-  /// The most UTF-8 bytes one SSE event may span (default 1 MiB), counted
+  /// The most bytes one `cborSeq` frame may span, and the most UTF-8 bytes
+  /// one SSE event may span (default 1 MiB), counted
   /// after `\r\n` is normalized to `\n` and including the terminating blank
   /// line, so a CRLF stream may carry up to one more byte per line than the
   /// cap. A longer event, or one that never ends, throws
@@ -162,8 +173,19 @@ Stream<Object?> cratestackSubscribe({
     }
   }
 
+  Stream<Object?> cborSeq() => cratestackSubscribeCborSeq(
+        transport,
+        baseUri,
+        '$basePath${target.ssePath}',
+        target.sseQuery,
+        headers: headers,
+        onReady: onReady,
+        maxEventBytes: options.maxEventBytes,
+      );
+
   return switch (options.transport) {
     CratestackSubscriptionTransport.sse => sse(),
+    CratestackSubscriptionTransport.cborSeq => cborSeq(),
     CratestackSubscriptionTransport.webSocket => _cratestackDeferred(webSocket),
     CratestackSubscriptionTransport.webTransport => _cratestackDeferred(() => webTransport(false)),
     CratestackSubscriptionTransport.auto when options.credentials == null => sse(),

@@ -33,7 +33,7 @@ final class CratestackSubscriptionException implements Exception {
   String toString() => 'CratestackSubscriptionException($code: $message)';
 }
 
-/// The default cap on one SSE event: 1 MiB.
+/// The default cap on one SSE event, or one `application/cbor-seq` frame: 1 MiB.
 const int cratestackDefaultMaxEventBytes = 1024 * 1024;
 
 /// One SSE event outgrew the per-event byte cap, so the subscription ended
@@ -168,21 +168,57 @@ Stream<Object?> cratestackSubscribeSse(
   void Function()? onReady,
   int maxEventBytes = cratestackDefaultMaxEventBytes,
 }) {
+  return _cratestackAbortable(
+    (abort) => _cratestackSseItems(
+      transport,
+      baseUri,
+      path,
+      query,
+      headers,
+      onReady,
+      abort,
+      maxEventBytes,
+    ),
+  );
+}
+
+/// Opens a subscription over `application/cbor-seq` at [path] (with [query])
+/// under [baseUri]: the SSE route, answered with CBOR frames
+/// (cratestack#1001).
+Stream<Object?> cratestackSubscribeCborSeq(
+  CratestackHttpTransport transport,
+  Uri baseUri,
+  String path,
+  String? query, {
+  Map<String, String>? headers,
+  void Function()? onReady,
+  int maxEventBytes = cratestackDefaultMaxEventBytes,
+}) {
+  return _cratestackAbortable(
+    (abort) => _cratestackCborSeqItems(
+      transport,
+      baseUri,
+      path,
+      query,
+      headers,
+      onReady,
+      abort,
+      maxEventBytes,
+    ),
+  );
+}
+
+/// A stream of what [items] yields, which is told to stop (through the
+/// future it is given) when the listener cancels or an error ends it.
+Stream<Object?> _cratestackAbortable(
+  Stream<Object?> Function(Future<void> abort) items,
+) {
   final abort = Completer<void>();
   late final StreamController<Object?> controller;
   controller = StreamController<Object?>(
     onListen: () async {
       try {
-        await for (final item in _cratestackSseItems(
-          transport,
-          baseUri,
-          path,
-          query,
-          headers,
-          onReady,
-          abort.future,
-          maxEventBytes,
-        )) {
+        await for (final item in items(abort.future)) {
           if (controller.isClosed) {
             return;
           }
@@ -212,3 +248,5 @@ Stream<Object?> cratestackSubscribeSse(
 }
 
 {% include "http_runtime/sse_reader.dart.j2" %}
+
+{% include "http_runtime/subscription_cbor_seq.dart.j2" %}

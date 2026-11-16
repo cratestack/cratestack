@@ -27,20 +27,7 @@ Stream<Object?> _cratestackSseItems(
     ),
   );
   if (response.status < 200 || response.status >= 300) {
-    final bytes = await response.bytes();
-    Object? body;
-    try {
-      body = jsonDecode(utf8.decode(bytes));
-    } on FormatException {
-      body = null;
-    }
-    final map = body is Map<String, Object?> ? body : const <String, Object?>{};
-    throw CratestackSubscriptionException(
-      code: map['code'] as String? ?? 'unknown',
-      message: map['message'] as String? ?? 'HTTP ${response.status}',
-      details: map['details'],
-      status: response.status,
-    );
+    throw await _cratestackSubscriptionRefusal(response);
   }
   // The decoded, CRLF-normalized text of the event still being read. It is
   // only ever appended to, never re-normalized, so a `\r` that ends one
