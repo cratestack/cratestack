@@ -23,6 +23,7 @@ pub const FRAMES_ATTRIBUTE: &str = "@frames";
 /// Absent (`None` from [`Procedure::frames`]) means the subscription takes
 /// no part in a signed open.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 #[non_exhaustive]
 pub enum FramesMode {
     /// The open is signed; the frames are not. Integrity of a frame is not
@@ -97,11 +98,31 @@ impl Procedure {
 /// frames mode of each subscription the schema marked. Keyed like
 /// [`crate::OpContracts`]. An op that is not listed is not marked, and a
 /// consumer that finds no row must fail closed.
+///
+/// **Lookup rule.** On RPC the rows are bare op ids (`procedure.<name>`), and
+/// [`crate::find_contract`] matches a bare key for any method, so a lookup
+/// must also require that the resolved route is a subscription
+/// (`is_subscription()`); a unary call to the same op id is not a
+/// subscription open. On REST the row is method-qualified
+/// (`GET /$procs/<name>`) and `is_subscription()` is always false, so the
+/// table cannot change a REST decision.
 pub type SubscriptionFrames = &'static [(&'static str, FramesMode)];
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn frames_mode_serialises_as_its_schema_spelling() {
+        assert_eq!(
+            serde_json::to_string(&FramesMode::Unsigned).unwrap(),
+            "\"unsigned\""
+        );
+        assert_eq!(
+            serde_json::from_str::<FramesMode>("\"unsigned\"").unwrap(),
+            FramesMode::Unsigned
+        );
+    }
 
     #[test]
     fn unsigned_reads_and_the_rest_is_refused() {

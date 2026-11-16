@@ -155,9 +155,10 @@ pub use schema::{
     SelectionQuery, SourceSpan, SubscriptionFrames, Topic, TransportStyle, TypeArity, TypeDecl,
     TypeRef, View, ViewSource, canonical_geometry_subtype, computed_params_type_name,
     field_attribute_name, geometry_subtype_names, is_computed_attribute, is_computed_field,
-    is_primary_key_attribute, is_relation_attribute, model_internal_actions,
+    is_frames_attribute, is_primary_key_attribute, is_relation_attribute, model_internal_actions,
     parse_composite_id_attribute, parse_composite_unique_attribute, parse_computed_params_arg,
-    parse_index_attribute, parse_internal_attribute, scan_sql_placeholders,
+    parse_frames_argument, parse_frames_attribute, parse_index_attribute, parse_internal_attribute,
+    scan_sql_placeholders,
 };
 pub use schema_identity::{schema_digest, schema_digest_hex};
 pub use store::{

@@ -20,7 +20,8 @@
 //!
 //! `ROUTE_TRANSPORTS`, `super::ACCEPTED_CONTRACTS` and
 //! `super::SUBSCRIPTION_FRAMES` resolve where the macro is invoked (the
-//! generated `axum` module): `macro_rules!` hygiene is call-site for everything but local variables, labels and `$crate`.
+//! generated `axum` module): `macro_rules!` hygiene is call-site for
+//! everything but local variables, labels and `$crate`.
 
 /// Not public API: invoked only through a facade's `__envelope_layer_fn!`.
 #[doc(hidden)]

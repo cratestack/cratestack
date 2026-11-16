@@ -61,6 +61,12 @@ impl EnvelopeLayerBuilder {
     /// so a subscription under a required envelope is refused as before.
     /// The default is empty, which a later reader must treat as "no
     /// subscription may open signed" (fail closed).
+    ///
+    /// **Lookup rule** for that reader: on RPC the rows are bare op ids and
+    /// `find_contract` matches a bare key for any method, so a lookup must
+    /// also require that the route is a subscription (`is_subscription()`).
+    /// On REST the row is method-qualified (`GET /$procs/<name>`) and
+    /// `is_subscription()` is always false, so the table is inert there.
     pub fn subscriptions(mut self, table: SubscriptionFrames) -> Self {
         self.subscriptions = table;
         self

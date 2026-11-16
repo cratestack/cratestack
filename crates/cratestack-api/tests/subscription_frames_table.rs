@@ -6,6 +6,9 @@
 
 use cratestack::FramesMode;
 
+#[cfg(feature = "cose")]
+mod cose_support;
+
 mod rpc {
     cratestack::include_server_schema!("tests/fixtures/subscription_frames_rpc.cstack", db = None);
 }
@@ -58,4 +61,36 @@ fn every_listed_key_is_an_op_the_schema_has_and_a_contract_row_exists() {
 #[test]
 fn a_schema_with_no_mark_emits_an_empty_table() {
     assert!(unmarked::cratestack_schema::SUBSCRIPTION_FRAMES.is_empty());
+}
+
+/// The generated `envelope_layer(..)` hands the table to the layer: dropping
+/// `.subscriptions(super::SUBSCRIPTION_FRAMES)` from the emitted body leaves
+/// the layer's count at zero (the layer's `Debug` reports it).
+#[cfg(feature = "cose")]
+#[test]
+fn the_generated_envelope_layer_stores_the_table() {
+    use cose_support::{AUDIENCE, server_envelope};
+    use cratestack::envelope_layer::EnvelopeMode;
+
+    let layer = rpc::cratestack_schema::axum::envelope_layer(
+        server_envelope(),
+        EnvelopeMode::Required,
+        AUDIENCE,
+    )
+    .build()
+    .expect("layer");
+    let shown = format!("{layer:?}");
+    assert!(
+        shown.contains("unsigned_frames_subscriptions: 1"),
+        "{shown}"
+    );
+
+    let rest = rest::cratestack_schema::axum::envelope_layer(
+        server_envelope(),
+        EnvelopeMode::Required,
+        AUDIENCE,
+    )
+    .build()
+    .expect("layer");
+    assert!(format!("{rest:?}").contains("unsigned_frames_subscriptions: 1"));
 }
