@@ -39,13 +39,15 @@ pub fn until_stream_deadline<T: Send + 'static>(
             if ended {
                 return None;
             }
-            match select(items.next(), sleep.as_mut()).await {
-                Either::Left((Some(item), _)) => {
+            // The clock first: `select` polls its first argument first, so a
+            // source that is always ready cannot starve the deadline.
+            match select(sleep.as_mut(), items.next()).await {
+                Either::Left(((), _)) => Some((Err(lifetime_over()), (items, sleep, true))),
+                Either::Right((Some(item), _)) => {
                     let ended = item.is_err();
                     Some((item, (items, sleep, ended)))
                 }
-                Either::Left((None, _)) => None,
-                Either::Right(((), _)) => Some((Err(lifetime_over()), (items, sleep, true))),
+                Either::Right((None, _)) => None,
             }
         },
     ))

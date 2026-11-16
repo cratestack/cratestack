@@ -43,3 +43,18 @@ async fn items_before_the_deadline_pass_and_none_means_no_deadline() {
         "a stream that ends first ends without the error"
     );
 }
+
+/// A source that is always ready must not starve the deadline: a passed
+/// deadline ends the stream before another item is yielded.
+#[tokio::test(start_paused = true)]
+async fn a_busy_source_cannot_starve_the_deadline() {
+    let busy: SubscriptionStream<serde_json::Value> =
+        Box::pin(stream::repeat_with(|| Ok(serde_json::json!(1))));
+    let passed = Some(SignedStreamDeadline(Instant::now()));
+    let mut items = until_stream_deadline(busy, passed);
+    match items.next().await {
+        Some(Err(CratestackError::Unavailable(message))) => assert_eq!(message, "stream lifetime"),
+        other => panic!("expected the lifetime error first, got {other:?}"),
+    }
+    assert!(items.next().await.is_none(), "nothing after the end");
+}
