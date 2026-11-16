@@ -16,6 +16,8 @@ Additive, non-breaking. `cratestack contract ops --schema <file> [--json]` is a 
 
 **Transport parity.** Read-only tooling; no request surface changes. MCP is exempt (ADR 0002 D5).
 
+## 0.20.2 (2026-11-15)
+
 ### Published crates require their siblings exactly (cratestack#1390)
 
 Release hygiene, non-breaking for a consumer that already moved every `cratestack-*` pin together. Every `cratestack-*` crate now requires its siblings as `=x.y.z`, not a caret, so one consumer build resolves exactly one CrateStack version. Before, a consumer pinning `cratestack-client = "=0.20.0"` could still resolve `cratestack-core` and `cratestack-policy` at 0.20.1 beside 0.20.0 of everything else, and `cratestack-macros` 0.20.0 then generated code against a core API it was not built with.
