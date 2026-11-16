@@ -158,8 +158,13 @@ function isCborSeq(contentType: string | null): boolean {
   return (contentType ?? "").split(";")[0]?.trim().toLowerCase() === SUBSCRIPTION_CBOR_SEQ_CONTENT_TYPE;
 }
 
+/** A CBOR map, as the codec decodes it: a plain object. Not an array, a byte
+ *  string, a `Date`, a `Map`, or any other class instance a decoder might
+ *  make of a tagged item. */
 function isFrame(value: unknown): value is ServerFrame {
-  return typeof value === "object" && value !== null && !Array.isArray(value) && !(value instanceof Uint8Array);
+  if (typeof value !== "object" || value === null) return false;
+  const prototype = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
 }
 
 function append(a: Uint8Array, b: Uint8Array): Uint8Array {

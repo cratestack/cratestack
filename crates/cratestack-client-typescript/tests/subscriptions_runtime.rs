@@ -62,6 +62,9 @@ fn subscriptions_run_over_sse_and_a_socket() {
         "vitest.config.ts",
         "subscriptions.test.ts",
         "cbor-seq.test.ts",
+        "cbor-seq-framing.test.ts",
+        "cbor-seq-frames.test.ts",
+        "cbor-seq-support.ts",
         "cbor-seq-model-feed.hex",
         "tanstack.test.ts",
     ] {
