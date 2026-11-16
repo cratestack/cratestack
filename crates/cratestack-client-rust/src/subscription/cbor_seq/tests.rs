@@ -147,3 +147,20 @@ async fn an_err_frame_keeps_its_code() {
     let err = out[0].as_ref().unwrap().err.clone().unwrap();
     assert_eq!(err.code, "unavailable");
 }
+
+#[tokio::test]
+async fn an_item_that_is_not_a_map_is_an_invalid_response() {
+    // A bare integer, a text string and a byte string: none is a `ServerFrame`
+    // (a CBOR map), and none may read as one.
+    for item in [vec![0x05], vec![0x61, b'x'], vec![0x41, 0x01]] {
+        let mut wire = encode(&ServerFrame::ready(1));
+        wire.extend(&item);
+        let out = collect(vec![wire], 1 << 20).await;
+        assert_eq!(out.len(), 2, "{item:?}: {out:?}");
+        assert!(out[0].as_ref().unwrap().ready.is_some());
+        assert!(
+            matches!(&out[1], Err(ClientError::InvalidResponse(m)) if m.contains("subscription frame")),
+            "{item:?}: {out:?}"
+        );
+    }
+}

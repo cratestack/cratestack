@@ -106,7 +106,9 @@ fn the_socket_modules_come_only_with_subscriptions() {
 
 /// cratestack#1001: `application/cbor-seq` is a pinned binding on every
 /// schema with a subscription, REST and RPC alike; the behaviour is proven by
-/// `fixtures/subscriptions_rpc_cbor_seq_test.dart` under `just verify-dart`.
+/// `fixtures/subscriptions_rpc_cbor_seq*_test.dart` under `just verify-dart`; the
+/// `ready` gate's place in the reader is asserted here, since CI is the only
+/// place Dart runs.
 #[test]
 fn the_cbor_seq_binding_is_pinned_not_automatic() {
     for fixture in [
@@ -125,6 +127,28 @@ fn the_cbor_seq_binding_is_pinned_not_automatic() {
         assert!(runtime.contains("the subscription body ended in the middle of a frame"));
         // A stream must open with `ready`, and the media type is checked.
         assert!(runtime.contains("a subscription must start with a `ready` frame"));
+        // The gate: its refusal comes after the `err` check (an `err` first is
+        // the server's refusal) and before the frame is acted on, so a `next`
+        // or `end` first is never yielded or taken as the end.
+        let reader = &runtime[runtime
+            .find("Stream<Object?> cratestackSubscribeCborSeq(")
+            .expect("the reader")..];
+        let gate = "if (!ready && frame['ready'] == null) {";
+        let (gate_at, err_at, end_at, next_at) = (
+            reader.find(gate).expect("the ready gate"),
+            reader
+                .find("final err = frame['err'];")
+                .expect("the err check"),
+            reader
+                .find("if (frame['end'] != null) {")
+                .expect("the end check"),
+            reader.find("yield frame['next'];").expect("the next yield"),
+        );
+        assert!(
+            err_at < gate_at && gate_at < end_at && end_at < next_at,
+            "{fixture}"
+        );
+        assert!(runtime.contains("if (!ready) {\n          ready = true;"));
         assert!(runtime.contains("expected an application/cbor-seq subscription body"));
         assert!(runtime.contains("a subscription frame must be a CBOR map"));
         // A model event's id is a 16-byte string over cbor-seq.
