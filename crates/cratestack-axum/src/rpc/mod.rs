@@ -33,6 +33,7 @@ mod model_feed;
 mod procedure_subscription;
 mod sse;
 mod sse_subscription;
+mod subscribe_binding;
 mod subscribe_error;
 mod subscribe_query;
 mod subscription_bridge;
@@ -72,8 +73,11 @@ pub use credential_expiry::until_credential_expires;
 pub use error_encode::{convert_handler_error_response, encode_rpc_error};
 pub use model_feed::{FeedEvent, model_events, model_feed, route_event};
 pub use procedure_subscription::{procedure_feed, procedure_input_query, procedure_query_args};
-pub use sse::{encode_model_event_sse_response, validate_subscribe_accept_header};
+pub use sse::encode_model_event_sse_response;
 pub use sse_subscription::{SseCodec, encode_subscription_sse_response};
+#[allow(deprecated)]
+pub use subscribe_binding::validate_subscribe_accept_header;
+pub use subscribe_binding::{SubscribeBinding, negotiate_subscribe_binding, serve_subscription};
 pub use subscribe_error::encode_subscribe_error;
 pub use subscribe_query::{
     SubscribeQuery, project_event_fields, split_subscribe_query, subscribe_input_query,

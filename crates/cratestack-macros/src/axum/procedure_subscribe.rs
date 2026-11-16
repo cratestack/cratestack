@@ -31,9 +31,10 @@ pub(crate) fn generate_subscription_procedure_axum(
             C: HttpTransport,
             Auth: AuthProvider,
         {
-            if let Err(error) = ::cratestack::__private::validate_subscribe_accept_header(&headers) {
-                return ::cratestack::__private::encode_subscribe_error(&error);
-            }
+            let binding = match ::cratestack::__private::negotiate_subscribe_binding(&headers) {
+                Ok(binding) => binding,
+                Err(error) => return ::cratestack::__private::encode_subscribe_error(&error),
+            };
             let request = request_context("GET", #path, raw_query.as_deref(), &headers, &[], &client_ip_ctx.extensions);
             let ctx = match state.auth_provider.authenticate(&request).await {
                 Ok(ctx) => ::cratestack::enrich_context_from_envelope(::cratestack::enrich_context_from_headers(ctx, &headers, client_ip_ctx.trusted_proxy.as_ref(), client_ip_ctx.peer), &client_ip_ctx.extensions),
@@ -42,13 +43,13 @@ pub(crate) fn generate_subscription_procedure_axum(
                     return ::cratestack::__private::encode_subscribe_error(&error);
                 }
             };
-            match super::subscriptions::#open(
-                &state.db, &state.registry, raw_query, ctx, ::cratestack::__private::SseCodec,
+            ::cratestack::__private::serve_subscription(
+                binding,
+                super::subscriptions::#open(
+                    &state.db, &state.registry, raw_query, ctx, ::cratestack::__private::SseCodec,
+                ),
             )
-            .await {
-                Ok(stream) => ::cratestack::__private::encode_subscription_sse_response(stream),
-                Err(error) => ::cratestack::__private::encode_subscribe_error(&error),
-            }
+            .await
         }
     };
     let route = quote! { .route(#path, axum::routing::get(#handler)) };

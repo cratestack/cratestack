@@ -29,9 +29,10 @@ pub(super) fn build_subscribe_handler(model: &Model) -> proc_macro2::TokenStream
             C: HttpTransport,
             Auth: ::cratestack::AuthProvider,
         {
-            if let Err(error) = ::cratestack::__private::validate_subscribe_accept_header(&headers) {
-                return ::cratestack::__private::encode_subscribe_error(&error);
-            }
+            let binding = match ::cratestack::__private::negotiate_subscribe_binding(&headers) {
+                Ok(binding) => binding,
+                Err(error) => return ::cratestack::__private::encode_subscribe_error(&error),
+            };
             let request = request_context("GET", #route, raw_query.as_deref(), &headers, &[], &client_ip_ctx.extensions);
             let ctx = match state.auth_provider.authenticate(&request).await {
                 Ok(ctx) => ::cratestack::enrich_context_from_envelope(::cratestack::enrich_context_from_headers(ctx, &headers, client_ip_ctx.trusted_proxy.as_ref(), client_ip_ctx.peer), &client_ip_ctx.extensions),
@@ -42,10 +43,11 @@ pub(super) fn build_subscribe_handler(model: &Model) -> proc_macro2::TokenStream
             };
             // The model's own feed, not the dispatcher: this router holds no
             // `ProcedureRegistry` for a schema's subscription procedures.
-            match super::subscriptions::#open(&state.db, raw_query, ctx, ::cratestack::__private::SseCodec).await {
-                Ok(stream) => ::cratestack::__private::encode_subscription_sse_response(stream),
-                Err(error) => ::cratestack::__private::encode_subscribe_error(&error),
-            }
+            ::cratestack::__private::serve_subscription(
+                binding,
+                super::subscriptions::#open(&state.db, raw_query, ctx, ::cratestack::__private::SseCodec),
+            )
+            .await
         }
     }
 }

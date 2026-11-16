@@ -104,3 +104,59 @@ async fn a_rest_schema_serves_its_feed_at_dollar_subscribe() {
     assert_eq!(delivered_ids(&owner), [1, 4], "owner: {owner}");
     assert_eq!(delivered_ids(&filtered), [1], "filtered: {filtered}");
 }
+
+/// Refuses every caller without `x-caller` at `authenticate`, so only a
+/// request that reaches authentication can see a `401`.
+#[derive(Clone)]
+struct StrictCaller;
+
+impl cratestack::AuthProvider for StrictCaller {
+    type Error = cratestack::CratestackError;
+
+    fn authenticate(
+        &self,
+        request: &cratestack::RequestContext<'_>,
+    ) -> impl core::future::Future<Output = Result<CratestackContext, Self::Error>> + Send {
+        core::future::ready(if request.headers.contains_key("x-caller") {
+            Ok(CratestackContext::authenticated([(
+                "id".to_owned(),
+                Value::Int(1),
+            )]))
+        } else {
+            Err(cratestack::CratestackError::Unauthorized(
+                "sign in".to_owned(),
+            ))
+        })
+    }
+}
+
+/// A wrong `Accept` is `406` before authentication (cratestack#1001). Neither
+/// request reaches the database, so a lazy pool keeps this test DB-free.
+#[tokio::test]
+async fn a_rest_model_feed_refuses_a_bad_accept_with_406_before_authenticating() {
+    let pool = cratestack::sqlx::PgPool::connect_lazy("postgres://127.0.0.1:1/none")
+        .expect("a lazy pool never connects");
+    let router = cratestack_schema::axum::router(
+        cratestack_schema::Cratestack::builder(pool).build(),
+        schema::NoProcedures,
+        (),
+        cratestack_codec_cbor::CborCodec,
+        StrictCaller,
+        cratestack::DEFAULT_BODY_LIMIT_BYTES,
+    );
+    let route = cratestack::model_subscribe_route("SubNote");
+    let status = |accept: &'static str| {
+        let router = router.clone();
+        let route = route.clone();
+        async move {
+            let request = Request::get(route)
+                .header("accept", accept)
+                .body(Body::empty())
+                .unwrap();
+            router.oneshot(request).await.unwrap().status()
+        }
+    };
+    assert_eq!(status("application/json").await, StatusCode::NOT_ACCEPTABLE);
+    // The provider does refuse this caller: with a right `Accept` it is 401.
+    assert_eq!(status("text/event-stream").await, StatusCode::UNAUTHORIZED);
+}

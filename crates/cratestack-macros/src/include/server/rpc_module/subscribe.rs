@@ -58,12 +58,10 @@ pub(super) fn build_subscribe_block(
             let body: &[u8] = &[];
             let method = "GET";
             #authenticate
-            match #dispatcher.open_query(
-                &op_id, raw_query, ctx, ::cratestack::__private::SseCodec,
-            ).await {
-                Ok(stream) => ::cratestack::__private::encode_subscription_sse_response(stream),
-                Err(error) => ::cratestack::__private::encode_subscribe_error(&error),
-            }
+            ::cratestack::__private::serve_subscription(
+                binding,
+                #dispatcher.open_query(&op_id, raw_query, ctx, ::cratestack::__private::SseCodec),
+            ).await
         }
 
         async fn rpc_subscribe_post_dispatch<R, CR, C, Auth>(
@@ -105,12 +103,12 @@ pub(super) fn build_subscribe_block(
             let method = "POST";
             #authenticate
             let open = ::cratestack::SubscriptionOpen { op_id, input, ctx };
-            match ::cratestack::SubscriptionDispatcher::open(
-                &#dispatcher, open, ::cratestack::__private::SseCodec,
-            ).await {
-                Ok(stream) => ::cratestack::__private::encode_subscription_sse_response(stream),
-                Err(error) => ::cratestack::__private::encode_subscribe_error(&error),
-            }
+            ::cratestack::__private::serve_subscription(
+                binding,
+                ::cratestack::SubscriptionDispatcher::open(
+                    &#dispatcher, open, ::cratestack::__private::SseCodec,
+                ),
+            ).await
         }
     }
 }
@@ -138,12 +136,14 @@ fn no_subscriptions_block() -> proc_macro2::TokenStream {
     }
 }
 
-/// Checks `Accept`, then authenticates the canonical request into `ctx`.
+/// Negotiates the binding from `Accept`, then authenticates the canonical
+/// request into `ctx`.
 fn authenticate_tokens() -> proc_macro2::TokenStream {
     quote! {
-        if let Err(error) = ::cratestack::__private::validate_subscribe_accept_header(&headers) {
-            return ::cratestack::__private::encode_subscribe_error(&error);
-        }
+        let binding = match ::cratestack::__private::negotiate_subscribe_binding(&headers) {
+            Ok(binding) => binding,
+            Err(error) => return ::cratestack::__private::encode_subscribe_error(&error),
+        };
         let canonical_path = format!("/rpc/subscribe/{op_id}");
         let request = request_context(method, &canonical_path, raw_query.as_deref(), &headers, body, &client_ip_ctx.extensions);
         let ctx = match state.auth_provider.authenticate(&request).await {
