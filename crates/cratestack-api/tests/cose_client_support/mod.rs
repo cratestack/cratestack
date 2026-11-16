@@ -8,6 +8,7 @@
 #![allow(dead_code, unused_imports)]
 
 mod proxy;
+mod tamper;
 
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -22,7 +23,8 @@ use cratestack::envelope_layer::{EnvelopeLayer, EnvelopeLayerBuilder, EnvelopeMo
 use cratestack_client_rust::{CborCodec, ClientConfig, ClientEnvelope, CratestackClient};
 use p256::ecdsa::signature::Signer as _;
 
-pub use proxy::{Captured, Proxy, Tamper, proxy};
+pub use proxy::{Captured, Proxy, proxy};
+pub use tamper::Tamper;
 
 pub const AUDIENCE: &str = "payments";
 

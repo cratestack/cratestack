@@ -214,7 +214,7 @@ fn a_marked_subscription_carries_its_frames_mode_and_seal_route() {
         ("_cratestackCborSeqItems(", "'application/cbor-seq'"),
     ] {
         let body = &runtime[runtime.rfind(reader).expect("the reader")..];
-        let refusal = body.find("_cratestackSubscriptionRefusal(response)");
+        let refusal = body.find("_cratestackSubscriptionRefusal(response, sealed: frames != null)");
         let check = body.find(&format!(
             "cratestackCheckFrames(response, frames, {stream})"
         ));

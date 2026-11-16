@@ -21,6 +21,10 @@ import { mediaTypeOf, openAnswer, sealRequest } from "./sealed-request.js";
 import { SealRequired } from "./sealed-required.js";
 
 const FRAMES_HEADER = "cratestack-frames";
+/** Set on the response the sealer returns for a refusal that was NOT sealed. A registered symbol,
+ *  so the generated reader (which cannot import this package) finds it, and never a header, so
+ *  nothing on the wire can forge or clear it. */
+export const UNSIGNED_REFUSAL = Symbol.for("cratestack.unsignedRefusal");
 const STREAMS = ["application/cbor-seq", "text/event-stream"];
 
 /** The answer to a signed subscription open was not the unsigned stream that
@@ -100,17 +104,39 @@ export function createSealedSubscriptions(options: {
           init,
           stream,
         );
-        const response = await underlying(url, { ...init, headers, body: sealed as BodyInit });
+        // A sealed open is never redirected: the seal binds this route, and a hop would send the
+        // signed request to somewhere it was not signed for. `redirect: "error"` stops it in a
+        // runtime that honours it; the `redirected` check below stops one that does not.
+        const response = await underlying(url, {
+          ...init,
+          headers,
+          body: sealed as BodyInit,
+          redirect: "error",
+        });
+        if (response.redirected) {
+          await response.body?.cancel().catch(() => undefined);
+          throw new CoseFailure("rejected", "a signed subscription open was redirected, which is never followed");
+        }
         if (
           mediaTypeOf(response.headers.get("content-type") ?? "") === mediaTypeOf(cose.mediaType)
         ) {
           // A sealed answer is a refusal, opened; a sealed success is no stream.
           const answer = await openAnswer(cose, response, binding, sealed);
-          if (answer.ok) throw new CoseFailure("rejected", "");
+          if (answer.ok) throw new CoseFailure("rejected", "a subscription answered with a sealed success");
           return answer;
         }
-        // An unsigned refusal is a hint, returned for what it is.
-        if (!response.ok) return response;
+        // An unsigned refusal is a hint, never the server's word: it is returned as a status with
+        // no body, tagged, so the reader reports `unsigned_refusal` and never reads a code from it.
+        if (!response.ok) {
+          await response.body?.cancel().catch(() => undefined);
+          const refusal = new Response(null, {
+            status: response.status,
+            statusText: response.statusText,
+            headers: response.headers,
+          });
+          Object.defineProperty(refusal, UNSIGNED_REFUSAL, { value: true });
+          return refusal;
+        }
         if (
           response.headers.get(FRAMES_HEADER) !== "unsigned" ||
           mediaTypeOf(response.headers.get("content-type") ?? "") !== stream

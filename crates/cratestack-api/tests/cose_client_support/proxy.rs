@@ -10,31 +10,7 @@ use cratestack::axum::http::header::{CONTENT_LENGTH, CONTENT_TYPE, HOST};
 use cratestack::axum::http::{HeaderMap, HeaderName, Request, StatusCode};
 use cratestack::axum::response::Response;
 
-/// What the proxy does to the traffic passing through it.
-#[derive(Debug, Clone)]
-pub enum Tamper {
-    /// Forward faithfully.
-    Pass,
-    /// Answer with the response recorded for the *previous* request, sealed
-    /// for that one: a replay of a genuine, validly signed answer.
-    ReplayPrevious,
-    /// Forward faithfully but change the status to this one.
-    Status(StatusCode),
-    /// Answer `200` with this body as plain `application/cbor`: the seal
-    /// stripped (or never applied) and the payload forged.
-    Plain(Vec<u8>),
-    /// Remove this request header before forwarding.
-    DropRequestHeader(&'static str),
-    /// Answer every request but one for `/redirected` with this redirect
-    /// status (`303`, `307`) and `Location: /redirected`, without asking the
-    /// server: a hop that would move a sealed request somewhere else.
-    Redirect(u16),
-    /// Forward faithfully but drop the `Cratestack-Frames` marker an
-    /// unsigned subscription stream carries (cratestack#1378).
-    StripFrames,
-    /// Forward faithfully, marker included, under this `Content-Type`.
-    ContentType(&'static str),
-}
+use super::tamper::Tamper;
 
 #[derive(Clone)]
 struct Recorded {
@@ -175,6 +151,12 @@ async fn forward(State(state): State<Arc<State_>>, request: Request<Body>) -> Re
     let sent = match tamper {
         Tamper::ReplayPrevious => previous.expect("a previous response to replay"),
         Tamper::Status(status) => Recorded { status, ..current },
+        Tamper::Answer(status, body) => Recorded {
+            status,
+            content_type: Some("application/cbor".to_owned()),
+            frames: None,
+            body: Bytes::from(body),
+        },
         Tamper::Plain(body) => Recorded {
             status: StatusCode::OK,
             content_type: Some("application/cbor".to_owned()),

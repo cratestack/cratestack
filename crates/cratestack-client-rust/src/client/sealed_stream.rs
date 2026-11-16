@@ -71,6 +71,18 @@ pub(crate) fn check_unsigned_stream(
     }
 }
 
+/// A sealed answer to a stream open is a refusal: a sealed success is no
+/// stream, and is never read as one.
+pub(crate) fn reject_sealed_success(status: StatusCode) -> Result<(), ClientError> {
+    match status.is_success() {
+        true => Err(ClientError::InvalidResponse(
+            "a signed subscription open was answered with a sealed success, not a stream"
+                .to_owned(),
+        )),
+        false => Ok(()),
+    }
+}
+
 impl<C> CratestackClient<C>
 where
     C: HttpClientCodec,
@@ -124,12 +136,7 @@ where
         if is_cose(&headers) {
             let bytes = response.bytes().await?;
             let opened = pending.open(status.as_u16(), &headers, bytes).await?;
-            if status.is_success() {
-                return Err(ClientError::InvalidResponse(
-                    "a signed subscription open was answered with a sealed success, not a stream"
-                        .to_owned(),
-                ));
-            }
+            reject_sealed_success(status)?;
             let wire = RuntimeResponseWire {
                 status_code: status.as_u16(),
                 headers: opened_headers(&headers, &opened.payload_type),

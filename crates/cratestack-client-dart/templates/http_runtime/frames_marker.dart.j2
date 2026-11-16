@@ -1,6 +1,8 @@
 // The signed open of a subscription (cratestack#1378, ADR 0006): what the
 // generated readers hand an HTTP transport that seals requests, and what they
-// accept back.
+// accept back. Only for a client built with
+// `CratestackSubscriptionOptions(sealsSubscriptions: true)`; without it the
+// readers are handed no `frames` and neither add `extra` nor check a marker.
 //
 // A subscription the schema marks `@frames(unsigned)` is opened signed and
 // answered with plain frames, labelled `Cratestack-Frames: unsigned`. The
@@ -13,9 +15,10 @@
 //
 // The frames are hints, so the reader accepts a 2xx only when it is the stream
 // that was asked for: the marker exactly once, with the value `unsigned`, in
-// the stream type requested. A marker on a subscription the schema does not
-// mark is refused as well. Either is a `CratestackSubscriptionException` with
-// code `unsigned_frames_refused`; the body is not read as frames.
+// the stream type requested. Anything else is a `CratestackSubscriptionException`
+// with code `unsigned_frames_refused`; the body is not read as frames. (An
+// unmarked subscription never reaches a reader with the opt-in: it is
+// `streams_unsupported` first, see `cratestackSubscribe`.)
 
 /// The `extra` of an open of a subscription marked [frames] (`null` for an
 /// unmarked one, which carries none), binding [route].
@@ -45,27 +48,27 @@ Map<String, Object?> cratestackFramesExtra(String? frames, String? route) {
 }
 
 /// Refuses a 2xx [response] that is not the answer to an open of a
-/// subscription marked [frames]: for a marked one, the marker exactly once
-/// with the value `unsigned` and [streamType] as its `Content-Type`; for an
-/// unmarked one, no marker at all. Cancels the body it refuses.
+/// subscription marked [frames]: the marker exactly once with the value
+/// `unsigned` and [streamType] as its `Content-Type`. Cancels the body it
+/// refuses. Does nothing for an open that is not signed ([frames] `null`).
 Future<void> cratestackCheckFrames(
   CratestackHttpResponse response,
   String? frames,
   String streamType,
 ) async {
+  if (frames == null) {
+    return;
+  }
   // A repeated header is joined with `, ` (see `CratestackHttpResponse`), so
   // a doubled marker is not `unsigned`.
   final marker = response.headers['cratestack-frames'];
   final type = (response.headers['content-type'] ?? '').split(';').first.trim().toLowerCase();
-  final accepted = frames == null ? marker == null : marker == 'unsigned' && type == streamType;
-  if (accepted) {
+  if (marker == 'unsigned' && type == streamType) {
     return;
   }
   await response.body.listen(null).cancel();
-  throw CratestackSubscriptionException(
+  throw const CratestackSubscriptionException(
     code: 'unsigned_frames_refused',
-    message: frames == null
-        ? 'the answer carries `Cratestack-Frames` for a subscription the schema does not mark `@frames(unsigned)`'
-        : 'the answer to a signed subscription open is not the unsigned $streamType stream that was asked for',
+    message: 'the answer to a signed subscription open is not the unsigned stream that was asked for',
   );
 }

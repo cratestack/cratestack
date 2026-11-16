@@ -1,5 +1,6 @@
 //! The cases of a signed subscription open, as seen from the generated Rust
-//! client (cratestack#1378), instantiated once per transport.
+//! client (cratestack#1378), instantiated once per transport. The refusals,
+//! replay and lifetime are in `refusal_cases.rs`.
 
 /// `$app` is the transport's test app (`rpc_app`, `rest_app`).
 #[macro_export]
@@ -18,7 +19,7 @@ macro_rules! client_stream_cases {
             const LIFE: Duration = Duration::from_secs(3600);
 
             /// A client of the generated server behind a tampering proxy.
-            async fn through_proxy(
+            pub(super) async fn through_proxy(
                 transport: SubscriptionTransport,
             ) -> (
                 $crate::cose_client_support::Proxy,
@@ -35,7 +36,9 @@ macro_rules! client_stream_cases {
                 (proxy, client, upstream, hits)
             }
 
-            fn refused(result: Result<$crate::cose_client_stream_support::Drained, Fail>) -> bool {
+            pub(super) fn refused(
+                result: Result<$crate::cose_client_stream_support::Drained, Fail>,
+            ) -> bool {
                 matches!(
                     result,
                     Err(Fail::Envelope(EnvelopeError::UnsignedFramesRefused))
@@ -121,17 +124,6 @@ macro_rules! client_stream_cases {
                 }
             }
 
-            /// An unsigned refusal, whatever its status, is `Unsigned`.
-            #[tokio::test]
-            async fn an_unsigned_error_is_unsigned_not_a_remote_error() {
-                let (proxy, client, ..) = through_proxy(SubscriptionTransport::CborSeq).await;
-                proxy.tamper(Tamper::Status(500.try_into().unwrap()));
-                assert!(matches!(
-                    $app::hinted_ticks(&client, 3).await,
-                    Err(Fail::Envelope(EnvelopeError::Unsigned { status: 500 }))
-                ));
-            }
-
             /// Only a subscription the schema marks can be opened signed:
             /// the rest is refused before a request is made.
             #[tokio::test]
@@ -166,71 +158,6 @@ macro_rules! client_stream_cases {
                         "{transport:?}"
                     );
                     assert!(proxy.captured().is_empty(), "{transport:?}: sent");
-                }
-            }
-
-            /// A policy refusal is sealed, and is opened into the error it is.
-            #[tokio::test]
-            async fn an_allow_refusal_is_a_remote_403() {
-                let (upstream, hits) = $app::server(false, LIFE).await;
-                let client = $app::client(upstream, SubscriptionTransport::CborSeq);
-                match $app::hinted_ticks(&client, 3).await {
-                    Err(Fail::Remote { status: 403, .. }) => {}
-                    other => panic!("expected a remote 403, got {other:?}"),
-                }
-                assert_eq!(hits.load(Ordering::SeqCst), 0, "the handler ran");
-            }
-
-            /// The captured bytes of an open, sent again, are a replay the
-            /// server refuses; opening again is a new open with a fresh nonce.
-            #[tokio::test]
-            async fn a_replayed_open_is_refused_and_a_resubscribe_is_not_one() {
-                let (proxy, client, upstream, hits) =
-                    through_proxy(SubscriptionTransport::CborSeq).await;
-                let first = $app::hinted_ticks(&client, 3).await.expect("an open");
-                assert_eq!(first.ticks, [3, 2, 1]);
-                let open = proxy.captured().remove(0);
-                let mut request = reqwest::Client::new().request(
-                    open.method.parse().unwrap(),
-                    format!("http://{upstream}{}", open.path_and_query),
-                );
-                for (name, value) in &open.headers {
-                    if !["host", "content-length"].contains(&name.as_str()) {
-                        request = request.header(name, value);
-                    }
-                }
-                let replay = request.body(open.body.clone()).send().await.unwrap();
-                assert_eq!(replay.status(), 401, "the replay was served");
-                assert_eq!(hits.load(Ordering::SeqCst), 1, "the replay ran the handler");
-
-                let second = $app::hinted_ticks(&client, 3).await.expect("an open");
-                assert_eq!(second.ticks, [3, 2, 1]);
-                let sent = proxy.captured();
-                assert_eq!(sent.len(), 2);
-                assert_ne!(sent[0].body, sent[1].body, "the nonce was reused");
-                assert_eq!(hits.load(Ordering::SeqCst), 2);
-            }
-
-            /// The server ends a signed stream at its lifetime with a terminal
-            /// `unavailable`, which the client reads as the end of the stream.
-            #[tokio::test]
-            async fn a_stream_ends_at_the_lifetime_with_a_remote_unavailable() {
-                let (upstream, _) = $app::server(true, Duration::from_secs(1)).await;
-                let client = $app::client(upstream, SubscriptionTransport::CborSeq);
-                let drained =
-                    tokio::time::timeout(Duration::from_secs(30), $app::hinted_ticks(&client, -1))
-                        .await
-                        .expect("the stream ended on its own")
-                        .expect("an open");
-                assert!(!drained.ticks.is_empty(), "items flowed before the cut");
-                match drained.ended {
-                    Some(Fail::Remote {
-                        status: 503,
-                        message,
-                    }) => {
-                        assert_eq!(message, "stream lifetime")
-                    }
-                    other => panic!("expected a remote 503, got {other:?}"),
                 }
             }
         }

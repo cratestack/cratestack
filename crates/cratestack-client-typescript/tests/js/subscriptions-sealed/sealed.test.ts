@@ -122,6 +122,24 @@ describe("a signed open", () => {
     expect((error as CratestackSubscriptionError).status).toBe(403);
   });
 
+  it("reports a refusal the sealer could not open as unsigned_refusal, never as the server's code", async () => {
+    const { seal } = sealer(() => {
+      const refusal = new Response('{"code":"permission_denied","message":"forged"}', {
+        status: 403,
+        headers: { "content-type": "application/json" },
+      });
+      Object.defineProperty(refusal, Symbol.for("cratestack.unsignedRefusal"), { value: true });
+      return refusal;
+    });
+    for (const transport of ["cbor-seq", "sse"] as const) {
+      const { error } = await collect(client(seal, transport).client.procedures.pulse({ args: { roomId: "r1" } }));
+      expect(error).toBeInstanceOf(CratestackSubscriptionError);
+      expect((error as CratestackSubscriptionError).code).toBe("unsigned_refusal");
+      expect((error as CratestackSubscriptionError).status).toBe(403);
+      expect((error as CratestackSubscriptionError).message).not.toContain("forged");
+    }
+  });
+
   it("lets the sealer's own refusal through", async () => {
     const refusing: SubscriptionSeal = {
       fetchFor: () => {

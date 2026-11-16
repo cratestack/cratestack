@@ -23,6 +23,9 @@
 import { openSocketSubscription, openWebTransportSubscription, SocketUnreachable } from "./subscription-sockets.js";
 import { openCborSeq } from "./subscription-cbor-seq.js";
 import { openSse } from "./subscription-sse.js";
+import { openSealed, type OpenVia, type SubscriptionSeal } from "./subscription-sealed.js";
+
+export type { OpenVia, SubscriptionSeal };
 
 export type SubscriptionTransport = "auto" | "webtransport" | "websocket" | "sse" | "cbor-seq";
 
@@ -45,19 +48,6 @@ export interface SubscriptionClientOptions {
   /** Seals the open of a subscription the schema marks `@frames(unsigned)`
    *  (`createSealedSubscriptions` from `@cratestack/cbor/cose`; `transport rpc` only). */
   seal?: SubscriptionSeal;
-}
-
-/** What opens a subscription signed: a `fetch` that seals the open of `target`
- *  and returns the unsigned stream that answers, or the (opened) refusal. */
-export interface SubscriptionSeal {
-  fetchFor(target: { opId: string; ssePath: string }, underlying: typeof fetch): typeof fetch;
-}
-
-/** How a reader sends its open: the `fetch` to use, and whether it seals, in which
- *  case the open is a `POST` of the input's CBOR instead of a `GET` of its query. */
-export interface OpenVia {
-  fetchFn: typeof fetch;
-  sealed: boolean;
 }
 
 /** The default `SubscriptionClientOptions.maxEventBytes`: 1 MiB. */
@@ -193,18 +183,7 @@ async function* open(
   const transport = host.subscriptions?.transport ?? "auto";
   const headers = await subscriptionHeaders(host, options.headers);
   const seal = host.subscriptions?.seal;
-  if (seal !== undefined) {
-    // A sealed client never opens a plain subscription, and only a marked one can be opened sealed.
-    if (target.frames !== "unsigned" || transport === "websocket" || transport === "webtransport") {
-      throw new CratestackSubscriptionError(
-        "streams_unsupported",
-        "this subscription cannot be opened over the signed transport: only one marked `@frames(unsigned)` can, over \"sse\" or \"cbor-seq\"",
-      );
-    }
-    const via = { fetchFn: seal.fetchFor({ opId: target.opId, ssePath: target.ssePath }, host.fetchFn), sealed: true };
-    if (transport === "sse") return yield* openSse(host, target, headers, options.signal, via);
-    return yield* openCborSeq(host, target, headers, options.signal, via);
-  }
+  if (seal !== undefined) return yield* openSealed(host, target, headers, options.signal, seal);
   if (transport === "cbor-seq") return yield* openCborSeq(host, target, headers, options.signal);
   const wtUrl = host.subscriptions?.webTransport?.url;
   if (transport === "webtransport" || (transport === "auto" && wtUrl !== undefined && canWebTransport(wtUrl))) {

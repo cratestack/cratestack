@@ -8,6 +8,7 @@
 #![allow(dead_code, unused_imports)]
 
 mod cases;
+mod refusal_cases;
 
 use std::sync::Arc;
 use std::sync::atomic::AtomicUsize;

@@ -10,10 +10,11 @@
 // listen cancels the request. The input is the query string: a model feed's
 // `list` filters, a subscription procedure's JSON-valued arguments.
 //
-// A subscription the schema marks `@frames(unsigned)` (cratestack#1378) is the
-// open a signing transport may seal: `frames_marker.dart` hands the transport
-// the route and contract it binds, and refuses any answer that is not the
-// unsigned stream asked for.
+// With `CratestackSubscriptionOptions.sealsSubscriptions` (cratestack#1378), a
+// subscription the schema marks `@frames(unsigned)` is the open a signing
+// transport may seal: `frames_marker.dart` hands the transport the route and
+// contract it binds, and refuses any answer that is not the unsigned stream
+// asked for. Without the opt-in none of that happens.
 // -----------------------------------------------------------------------------
 
 /// A subscription refused before `Ready`, or ended by the server's error.

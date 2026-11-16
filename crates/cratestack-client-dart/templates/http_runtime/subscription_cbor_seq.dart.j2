@@ -73,7 +73,7 @@ Stream<Object?> _cratestackCborSeqItems(
     ),
   );
   if (response.status < 200 || response.status >= 300) {
-    throw await _cratestackSubscriptionRefusal(response);
+    throw await _cratestackSubscriptionRefusal(response, sealed: frames != null);
   }
   await cratestackCheckFrames(response, frames, 'application/cbor-seq');
   final contentType = response.headers['content-type'] ?? '';
@@ -116,12 +116,7 @@ Stream<Object?> _cratestackCborSeqItems(
       final frame = cratestackAsValueMap(decoded);
       final err = frame['err'];
       if (err != null) {
-        final error = cratestackAsValueMap(err);
-        throw CratestackSubscriptionException(
-          code: error['code'] as String? ?? 'unknown',
-          message: error['message'] as String? ?? '',
-          details: error['details'],
-        );
+        throw _cratestackFrameError(cratestackAsValueMap(err));
       }
       if (!ready && frame['ready'] == null) {
         throw CratestackSubscriptionException(
@@ -172,23 +167,51 @@ int? _cratestackSkipCborSeqItem(Uint8List buffer, int offset) {
 
 /// A refused subscription's error body as the exception it becomes: JSON, or
 /// CBOR when that is what a signing transport opened a sealed refusal to
-/// (cratestack#1378).
+/// (cratestack#1378). With [sealed] (the open was signed), a refusal the
+/// transport did not open ([CratestackHttpResponse.opened]) is unsigned, a hint
+/// any hop can forge: its body is never read, and it is `unsigned_refusal`,
+/// never a code that looks like the server's.
 Future<CratestackSubscriptionException> _cratestackSubscriptionRefusal(
-  CratestackHttpResponse response,
-) async {
+  CratestackHttpResponse response, {
+  bool sealed = false,
+}) async {
+  if (sealed && !response.opened) {
+    await response.body.listen(null).cancel();
+    return CratestackSubscriptionException(
+      code: 'unsigned_refusal',
+      message: 'the open was refused with HTTP ${response.status}, and the refusal is not signed',
+      status: response.status,
+    );
+  }
   final bytes = await response.bytes();
-  Object? body;
+  var map = const <String, Object?>{};
   try {
     final type = (response.headers['content-type'] ?? '').split(';').first.trim().toLowerCase();
-    body = type == 'application/cbor' ? await _decodeCbor(bytes) : jsonDecode(utf8.decode(bytes));
+    final body = type == 'application/cbor' ? await _decodeCbor(bytes) : jsonDecode(utf8.decode(bytes));
+    if (body is Map) {
+      map = cratestackAsValueMap(body);
+    }
   } on Object {
-    body = null;
+    map = const <String, Object?>{};
   }
-  final map = body is Map ? cratestackAsValueMap(body) : const <String, Object?>{};
+  final code = map['code'];
+  final message = map['message'];
   return CratestackSubscriptionException(
-    code: map['code'] as String? ?? 'unknown',
-    message: map['message'] as String? ?? 'HTTP ${response.status}',
+    code: code is String ? code : 'unknown',
+    message: message is String ? message : 'HTTP ${response.status}',
     details: map['details'],
     status: response.status,
+  );
+}
+
+/// A terminal `err` frame as the exception it is. A `code` or `message` that
+/// is not a string reads as `unknown` / empty, never as a `TypeError`.
+CratestackSubscriptionException _cratestackFrameError(Map<String, Object?> error) {
+  final code = error['code'];
+  final message = error['message'];
+  return CratestackSubscriptionException(
+    code: code is String ? code : 'unknown',
+    message: message is String ? message : '',
+    details: error['details'],
   );
 }

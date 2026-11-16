@@ -1,7 +1,10 @@
 use reqwest::header::{CONTENT_TYPE, HeaderMap, HeaderValue};
 
-use super::check_unsigned_stream;
+use reqwest::StatusCode;
+
+use super::{check_unsigned_stream, reject_sealed_success};
 use crate::envelope_error::EnvelopeError;
+use crate::error::ClientError;
 
 const SEQ: &str = "application/cbor-seq";
 
@@ -61,4 +64,21 @@ fn the_sse_type_is_checked_against_what_was_asked() {
     let map = headers(&["text/event-stream"], &["unsigned"]);
     assert!(check_unsigned_stream(&map, "text/event-stream").is_ok());
     assert!(check_unsigned_stream(&map, SEQ).is_err());
+}
+
+#[test]
+fn a_sealed_success_is_an_invalid_response_and_a_sealed_refusal_is_not() {
+    for status in [200, 201, 204] {
+        let status = StatusCode::from_u16(status).unwrap();
+        assert!(
+            matches!(
+                reject_sealed_success(status),
+                Err(ClientError::InvalidResponse(_))
+            ),
+            "{status}"
+        );
+    }
+    for status in [401, 403, 426, 500] {
+        assert!(reject_sealed_success(StatusCode::from_u16(status).unwrap()).is_ok());
+    }
 }

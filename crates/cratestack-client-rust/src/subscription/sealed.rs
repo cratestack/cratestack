@@ -19,21 +19,40 @@ use crate::codec::HttpClientCodec;
 use crate::envelope_error::EnvelopeError;
 use crate::error::ClientError;
 
+/// Which HTTP reader a sealed open uses: `true` for SSE, `false` for
+/// cbor-seq. Everything this client cannot open signed is
+/// [`EnvelopeError::StreamsUnsupported`], decided before anything is sent:
+/// `wasm` says the target is `wasm32`.
+pub(super) fn choose(
+    transport: SubscriptionTransport,
+    frames: Option<FramesMode>,
+    seal_route: &str,
+    wasm: bool,
+) -> Result<bool, EnvelopeError> {
+    let sse = match transport {
+        SubscriptionTransport::Sse => true,
+        SubscriptionTransport::CborSeq | SubscriptionTransport::Auto => false,
+        SubscriptionTransport::WebSocket | SubscriptionTransport::WebTransport => {
+            return Err(EnvelopeError::StreamsUnsupported);
+        }
+    };
+    let rest = seal_route.starts_with('/');
+    if frames != Some(FramesMode::Unsigned) || (rest && wasm) {
+        return Err(EnvelopeError::StreamsUnsupported);
+    }
+    Ok(sse)
+}
+
 pub(super) async fn open<C: HttpClientCodec, T: DeserializeOwned + Send + 'static>(
     client: &CratestackClient<C>,
     target: &SubscriptionTarget,
 ) -> Result<ClientSubscription<T>, ClientError> {
-    let sse = match client.config.subscription_transport {
-        SubscriptionTransport::Sse => true,
-        SubscriptionTransport::CborSeq | SubscriptionTransport::Auto => false,
-        SubscriptionTransport::WebSocket | SubscriptionTransport::WebTransport => {
-            return Err(EnvelopeError::StreamsUnsupported.into());
-        }
-    };
-    let rest = target.seal_route.starts_with('/');
-    if target.frames != Some(FramesMode::Unsigned) || (rest && cfg!(target_arch = "wasm32")) {
-        return Err(EnvelopeError::StreamsUnsupported.into());
-    }
+    let sse = choose(
+        client.config.subscription_transport,
+        target.frames,
+        &target.seal_route,
+        cfg!(target_arch = "wasm32"),
+    )?;
     match sse {
         true => {
             let response = client.open_sealed_stream(target, sse::ACCEPT).await?;
@@ -45,3 +64,6 @@ pub(super) async fn open<C: HttpClientCodec, T: DeserializeOwned + Send + 'stati
         }
     }
 }
+
+#[cfg(test)]
+mod tests;

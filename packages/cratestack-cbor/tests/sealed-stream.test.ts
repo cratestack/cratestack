@@ -14,6 +14,7 @@ import {
   SealRequired,
   UnsignedFramesRefused,
 } from "../src/sealed.js";
+import { UNSIGNED_REFUSAL } from "../src/sealed-stream.js";
 
 const MEDIA = 'application/cose; cose-type="cose-sign1"';
 const SHA = "ab".repeat(32);
@@ -164,14 +165,64 @@ describe("createSealedSubscriptions", () => {
           headers: { "content-type": MEDIA },
         }),
     );
-    await expect(success.send()).rejects.toMatchObject({ code: "rejected" });
+    await expect(success.send()).rejects.toMatchObject({
+      code: "rejected",
+      message: "a subscription answered with a sealed success",
+    });
   });
 
-  it("returns an unsigned refusal untouched: a hint, never proof", async () => {
+  it("returns an unsigned refusal as a bodiless, tagged status, never as the server's words", async () => {
     for (const status of [401, 426, 500]) {
-      const { send } = open(() => new Response("{}", { status }));
-      expect((await send()).status).toBe(status);
+      const { send } = open(
+        () => new Response('{"code":"permission_denied"}', { status, statusText: "No" }),
+      );
+      const refusal = await send();
+      expect(refusal.status).toBe(status);
+      expect(refusal.body).toBeNull();
+      expect((refusal as unknown as Record<symbol, unknown>)[UNSIGNED_REFUSAL]).toBe(true);
     }
+  });
+
+  it("does not tag an opened (sealed) refusal", async () => {
+    const { send } = open(
+      () => new Response(new Uint8Array([0xd2, 9]), { status: 403, headers: { "content-type": MEDIA } }),
+    );
+    const refusal = await send();
+    expect((refusal as unknown as Record<symbol, unknown>)[UNSIGNED_REFUSAL]).toBeUndefined();
+  });
+
+  it("sends the open with redirect: error, and refuses an answer that was redirected anyway", async () => {
+    const { send, calls } = open(() => stream({ "content-type": SEQ, "cratestack-frames": "unsigned" }));
+    await send();
+    expect(calls[0]?.init.redirect).toBe("error");
+    const redirected = open(() => {
+      const response = stream({ "content-type": SEQ, "cratestack-frames": "unsigned" });
+      Object.defineProperty(response, "redirected", { value: true });
+      return response;
+    });
+    await expect(redirected.send()).rejects.toMatchObject({ code: "rejected" });
+  });
+
+  it("seals every open afresh: two opens, two different sealed bodies", async () => {
+    const seen = newSeen();
+    let counter = 0;
+    const cose: CoseClient = {
+      ...fakeCose(seen),
+      async sealRequest(payload, binding) {
+        seen.sealed.push({ payload, binding });
+        counter += 1;
+        return new Uint8Array([0xd2, counter]);
+      },
+    };
+    const { send, calls } = open(
+      () => stream({ "content-type": SEQ, "cratestack-frames": "unsigned" }),
+      cose,
+    );
+    await send();
+    await send();
+    expect(seen.sealed).toHaveLength(2);
+    const [first, second] = calls.map((call) => Array.from(call.init.body as Uint8Array));
+    expect(first).not.toEqual(second);
   });
 
   it("is RPC only: a REST route is a misuse before any fetch", () => {

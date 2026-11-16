@@ -89,23 +89,28 @@ fn the_runtime_takes_a_sealer_and_refuses_what_it_cannot_seal() {
             subscriptions.contains("frames?: \"unsigned\";"),
             "rpc={rpc}"
         );
-        assert!(
-            subscriptions.contains("\"streams_unsupported\""),
-            "rpc={rpc}"
-        );
+        let sealed = file(&generated, "src/subscription-sealed.ts");
+        assert!(sealed.contains("\"streams_unsupported\""), "rpc={rpc}");
+        assert!(sealed.contains("seal.fetchFor"), "rpc={rpc}");
         // A sealed client never opens a plain subscription: the sealed
         // branch comes before any binding is tried.
-        let sealed = subscriptions
-            .find("seal.fetchFor")
+        let branch = subscriptions
+            .find("openSealed(host, target, headers, options.signal, seal)")
             .expect("a sealed branch");
         let first_plain = subscriptions.find("openCborSeq(host, target, headers, options.signal)");
-        assert!(first_plain.is_some_and(|plain| sealed < plain), "rpc={rpc}");
+        assert!(first_plain.is_some_and(|plain| branch < plain), "rpc={rpc}");
         for reader in ["src/subscription-sse.ts", "src/subscription-cbor-seq.ts"] {
             let text = file(&generated, reader);
             assert!(text.contains("via: OpenVia"), "rpc={rpc} {reader}");
         }
-        let open = file(&generated, "src/subscription-cbor-seq.ts");
+        let open = file(&generated, "src/subscription-open.ts");
         assert!(open.contains("init.method = \"POST\";"), "rpc={rpc}");
         assert!(open.contains("encode(target.input)"), "rpc={rpc}");
+        // An unsigned refusal's body is never read for a code.
+        assert!(open.contains("\"unsigned_refusal\""), "rpc={rpc}");
+        assert!(
+            open.contains("Symbol.for(\"cratestack.unsignedRefusal\")"),
+            "rpc={rpc}"
+        );
     }
 }

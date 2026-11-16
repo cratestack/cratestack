@@ -13,8 +13,8 @@ use std::process::Command;
 
 use cratestack_client_typescript::{TypeScriptGeneratorConfig, generate_package};
 
-/// Keep in lockstep with `tests/js/subscriptions-sealed/sealed.test.ts` (4 + 2 + 1).
-const EXPECTED_PASSING: &str = "7 passed";
+/// Keep in lockstep with `tests/js/subscriptions-sealed/sealed.test.ts` (5 + 2 + 1).
+const EXPECTED_PASSING: &str = "8 passed";
 
 #[test]
 fn a_generated_client_opens_a_marked_subscription_through_its_sealer() {
