@@ -139,7 +139,10 @@ fn the_cbor_seq_binding_is_pinned_not_automatic() {
         .find(|file| file.file_name == "lib/src/subscription_sockets.dart")
         .expect("sockets module")
         .contents;
-    assert!(sockets.contains("webSocket, sse, cborSeq }"), "the enum gains a value");
+    assert!(
+        sockets.contains("webSocket, sse, cborSeq }"),
+        "the enum gains a value"
+    );
     assert!(sockets.contains("CratestackSubscriptionTransport.cborSeq => http(true),"));
     // `auto` is unchanged: it never lands on `cborSeq`.
     let auto = sockets
