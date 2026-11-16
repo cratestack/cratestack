@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.20.3 (2026-11-16)
+
 ### Subscriptions over `application/cbor-seq`: the server binding and the Rust, TypeScript and Dart clients (cratestack#1001)
 
 Additive on the wire; **one source-breaking change for Rust clients** (below). PR 2 of 2 for #1001. A subscribe route now answers `Accept: application/cbor-seq` with a CBOR sequence of the frames SSE carries, CBOR-encoded, so a CBOR-only client (or one behind a proxy that mangles `text/event-stream`) can subscribe over plain HTTP with items in their CBOR shapes: a `Uuid` is a byte string, as on a unary CBOR call and on the sockets.
