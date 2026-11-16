@@ -168,12 +168,18 @@ fn the_cbor_seq_binding_is_pinned_not_automatic() {
         "the enum gains a value"
     );
     assert!(sockets.contains("CratestackSubscriptionTransport.cborSeq => http(true),"));
-    // `auto` is unchanged: it never lands on `cborSeq`.
-    let auto = sockets
-        .split("CratestackSubscriptionTransport.auto when")
+    // `auto` lands on `cborSeq` only for a client that seals its opens
+    // (cratestack#1378); every other `auto` arm is unchanged.
+    assert!(sockets.contains("CratestackSubscriptionTransport.auto when seals => http(true),"));
+    let unsealed = sockets
+        .split("CratestackSubscriptionTransport.auto when seals => http(true),")
         .nth(1)
-        .expect("auto arm");
-    assert!(!auto.contains("http(true)"), "auto must not pick cbor-seq");
+        .expect("the arms after the sealed one");
+    let unsealed = unsealed.split("};").next().expect("the end of the switch");
+    assert!(
+        !unsealed.contains("http(true)"),
+        "auto must not pick cbor-seq without a sealing client"
+    );
 }
 
 #[test]
