@@ -123,6 +123,12 @@ fn the_cbor_seq_binding_is_pinned_not_automatic() {
         assert!(runtime.contains("CratestackEventTooLargeException(maxEventBytes)"));
         assert!(runtime.contains("0xf6"), "the keep-alive null is skipped");
         assert!(runtime.contains("the subscription body ended in the middle of a frame"));
+        // A stream must open with `ready`, and the media type is checked.
+        assert!(runtime.contains("a subscription must start with a `ready` frame"));
+        assert!(runtime.contains("expected an application/cbor-seq subscription body"));
+        assert!(runtime.contains("a subscription frame must be a CBOR map"));
+        // A model event's id is a 16-byte string over cbor-seq.
+        assert!(runtime.contains("cratestackDecodeUuid(map['event_id']"));
     }
     let schema = cratestack_parser::parse_schema_file("tests/fixtures/subscriptions_rpc.cstack")
         .expect("parses");
@@ -133,14 +139,14 @@ fn the_cbor_seq_binding_is_pinned_not_automatic() {
         .find(|file| file.file_name == "lib/src/subscription_sockets.dart")
         .expect("sockets module")
         .contents;
-    assert!(sockets.contains("  cborSeq,\n}"), "the enum gains a value");
-    assert!(sockets.contains("CratestackSubscriptionTransport.cborSeq => cborSeq(),"));
+    assert!(sockets.contains("webSocket, sse, cborSeq }"), "the enum gains a value");
+    assert!(sockets.contains("CratestackSubscriptionTransport.cborSeq => http(true),"));
     // `auto` is unchanged: it never lands on `cborSeq`.
     let auto = sockets
         .split("CratestackSubscriptionTransport.auto when")
         .nth(1)
         .expect("auto arm");
-    assert!(!auto.contains("cborSeq()"), "auto must not pick cbor-seq");
+    assert!(!auto.contains("http(true)"), "auto must not pick cbor-seq");
 }
 
 #[test]

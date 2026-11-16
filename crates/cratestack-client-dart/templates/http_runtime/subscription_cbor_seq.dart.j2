@@ -1,8 +1,10 @@
 // The `application/cbor-seq` reader behind `cratestackSubscribeCborSeq`
 // (cratestack#1001): the SSE route with `Accept: application/cbor-seq`, its
 // body a CBOR sequence (RFC 8742) of server frames, `{id, ready}`, `{id,
-// next}` per item, then `{id, end}` or `{id, err}`. A bare CBOR `null` is a
-// keep-alive and is skipped.
+// next}` per item, then `{id, end}` or `{id, err}`. A stream must open with
+// `ready` (or an `err`, the refusal): anything else first is refused, as is a
+// response whose `Content-Type` is not `application/cbor-seq`. A bare CBOR
+// `null` is a keep-alive and is skipped.
 //
 // Item boundaries come from `_cratestackSkipCborItem`, the structural walker
 // the `@stream` scanner is built on, and each frame is decoded by the same
@@ -66,6 +68,14 @@ Stream<Object?> _cratestackCborSeqItems(
   if (response.status < 200 || response.status >= 300) {
     throw await _cratestackSubscriptionRefusal(response);
   }
+  final contentType = response.headers['content-type'] ?? '';
+  if (contentType.split(';').first.trim().toLowerCase() != 'application/cbor-seq') {
+    throw CratestackSubscriptionException(
+      code: 'invalid_response',
+      message: 'expected an application/cbor-seq subscription body, got Content-Type `$contentType`',
+    );
+  }
+  var ready = false;
   var buffer = Uint8List(0);
   await for (final chunk in response.body.cast<List<int>>()) {
     buffer = buffer.isEmpty
@@ -88,7 +98,14 @@ Stream<Object?> _cratestackCborSeqItems(
       if (item.length == 1 && item[0] == 0xf6) {
         continue;
       }
-      final frame = cratestackAsValueMap(await _decodeCbor(item));
+      final decoded = await _decodeCbor(item);
+      if (decoded is! Map) {
+        throw CratestackSubscriptionException(
+          code: 'invalid_response',
+          message: 'a subscription frame must be a CBOR map',
+        );
+      }
+      final frame = cratestackAsValueMap(decoded);
       final err = frame['err'];
       if (err != null) {
         final error = cratestackAsValueMap(err);
@@ -98,11 +115,20 @@ Stream<Object?> _cratestackCborSeqItems(
           details: error['details'],
         );
       }
+      if (!ready && frame['ready'] == null) {
+        throw CratestackSubscriptionException(
+          code: 'invalid_response',
+          message: 'a subscription must start with a `ready` frame',
+        );
+      }
       if (frame['end'] != null) {
         return;
       }
       if (frame['ready'] != null) {
-        onReady?.call();
+        if (!ready) {
+          ready = true;
+          onReady?.call();
+        }
       } else if (frame.containsKey('next')) {
         yield frame['next'];
       }
