@@ -10,32 +10,25 @@ use cratestack::axum::http::header::{CONTENT_LENGTH, CONTENT_TYPE, HOST};
 use cratestack::axum::http::{HeaderMap, HeaderName, Request, StatusCode};
 use cratestack::axum::response::Response;
 
-/// What the proxy does to the traffic passing through it.
-#[derive(Debug, Clone)]
-pub enum Tamper {
-    /// Forward faithfully.
-    Pass,
-    /// Answer with the response recorded for the *previous* request, sealed
-    /// for that one: a replay of a genuine, validly signed answer.
-    ReplayPrevious,
-    /// Forward faithfully but change the status to this one.
-    Status(StatusCode),
-    /// Answer `200` with this body as plain `application/cbor`: the seal
-    /// stripped (or never applied) and the payload forged.
-    Plain(Vec<u8>),
-    /// Remove this request header before forwarding.
-    DropRequestHeader(&'static str),
-    /// Answer every request but one for `/redirected` with this redirect
-    /// status (`303`, `307`) and `Location: /redirected`, without asking the
-    /// server: a hop that would move a sealed request somewhere else.
-    Redirect(u16),
-}
+use super::tamper::Tamper;
 
 #[derive(Clone)]
 struct Recorded {
     status: StatusCode,
     content_type: Option<String>,
+    /// The `Cratestack-Frames` value of the answer, which the proxy passes
+    /// on (it forwards no other header but `Content-Type`).
+    frames: Option<String>,
     body: Bytes,
+}
+
+/// A request as it reached the proxy.
+#[derive(Debug, Clone)]
+pub struct Captured {
+    pub method: String,
+    pub path_and_query: String,
+    pub headers: Vec<(String, String)>,
+    pub body: Vec<u8>,
 }
 
 struct State_ {
@@ -44,6 +37,7 @@ struct State_ {
     tamper: Mutex<Tamper>,
     previous: Mutex<Option<Recorded>>,
     request_content_types: Mutex<Vec<Option<String>>>,
+    captured: Mutex<Vec<Captured>>,
 }
 
 pub struct Proxy {
@@ -54,6 +48,11 @@ pub struct Proxy {
 impl Proxy {
     pub fn tamper(&self, tamper: Tamper) {
         *self.state.tamper.lock().unwrap() = tamper;
+    }
+
+    /// Every request that reached the proxy, in order, bytes and all.
+    pub fn captured(&self) -> Vec<Captured> {
+        self.state.captured.lock().unwrap().clone()
     }
 
     /// The `Content-Type` of every request that reached the proxy, in order.
@@ -70,6 +69,7 @@ pub async fn proxy(upstream: SocketAddr) -> Proxy {
         tamper: Mutex::new(Tamper::Pass),
         previous: Mutex::new(None),
         request_content_types: Mutex::new(Vec::new()),
+        captured: Mutex::new(Vec::new()),
     });
     let router = Router::new().fallback(forward).with_state(state.clone());
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -90,6 +90,20 @@ async fn forward(State(state): State<Arc<State_>>, request: Request<Body>) -> Re
     if let Tamper::DropRequestHeader(name) = &tamper {
         headers.remove(HeaderName::from_static(name));
     }
+    state.captured.lock().unwrap().push(Captured {
+        method: parts.method.to_string(),
+        path_and_query: parts
+            .uri
+            .path_and_query()
+            .map_or("/", |p| p.as_str())
+            .to_owned(),
+        headers: parts
+            .headers
+            .iter()
+            .filter_map(|(name, value)| Some((name.to_string(), value.to_str().ok()?.to_owned())))
+            .collect(),
+        body: body.to_vec(),
+    });
     state.request_content_types.lock().unwrap().push(
         parts
             .headers
@@ -126,22 +140,45 @@ async fn forward(State(state): State<Arc<State_>>, request: Request<Body>) -> Re
             .get(CONTENT_TYPE)
             .and_then(|value| value.to_str().ok())
             .map(str::to_owned),
+        frames: answer
+            .headers()
+            .get("cratestack-frames")
+            .and_then(|value| value.to_str().ok())
+            .map(str::to_owned),
         body: answer.bytes().await.expect("upstream body"),
     };
     let previous = state.previous.lock().unwrap().replace(current.clone());
     let sent = match tamper {
         Tamper::ReplayPrevious => previous.expect("a previous response to replay"),
         Tamper::Status(status) => Recorded { status, ..current },
+        Tamper::Answer(status, body) => Recorded {
+            status,
+            content_type: Some("application/cbor".to_owned()),
+            frames: None,
+            body: Bytes::from(body),
+        },
         Tamper::Plain(body) => Recorded {
             status: StatusCode::OK,
             content_type: Some("application/cbor".to_owned()),
+            frames: None,
             body: Bytes::from(body),
+        },
+        Tamper::StripFrames => Recorded {
+            frames: None,
+            ..current
+        },
+        Tamper::ContentType(content_type) => Recorded {
+            content_type: Some(content_type.to_owned()),
+            ..current
         },
         Tamper::Pass | Tamper::DropRequestHeader(_) | Tamper::Redirect(_) => current,
     };
     let mut response = Response::builder().status(sent.status);
     if let Some(content_type) = sent.content_type {
         response = response.header(CONTENT_TYPE, content_type);
+    }
+    if let Some(frames) = sent.frames {
+        response = response.header("cratestack-frames", frames);
     }
     response.body(Body::from(sent.body)).expect("response")
 }

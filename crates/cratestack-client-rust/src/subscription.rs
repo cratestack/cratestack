@@ -13,6 +13,8 @@ mod cbor_seq;
 mod failure;
 mod frames;
 mod open;
+#[cfg(feature = "cose")]
+mod sealed;
 mod sse;
 #[cfg(all(feature = "ws", not(target_arch = "wasm32")))]
 mod ws;
@@ -27,6 +29,7 @@ pub use frames::rpc_error_to_client;
 pub type ClientSubscription<T> = tokio::sync::mpsc::Receiver<Result<T, ClientError>>;
 
 use crate::error::ClientError;
+pub use cratestack_core::FramesMode;
 
 /// Which binding a subscription uses.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -65,6 +68,15 @@ pub struct SubscriptionTarget {
     pub sse_query: Option<String>,
     /// The socket path: `/rpc/ws`, or `/$ws` on REST.
     pub socket_path: &'static str,
+    /// The `@frames` mode the schema declares, which is what makes a signed
+    /// open possible: a client with an envelope opens only a subscription
+    /// marked `Some(FramesMode::Unsigned)` and refuses any other with
+    /// [`EnvelopeError::StreamsUnsupported`](crate::EnvelopeError), sending
+    /// nothing (cratestack#1378). Ignored by a client with no envelope.
+    pub frames: Option<FramesMode>,
+    /// The route a signed open binds: `subscribe/<op_id>` on RPC, the route
+    /// template (`/$procs/<name>`) on REST. Unused without an envelope.
+    pub seal_route: String,
 }
 
 impl SubscriptionTarget {

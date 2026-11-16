@@ -17,12 +17,13 @@
 // package, an optional peer of a REST one), loaded on first use.
 
 import { NeedMoreBytesError, skipItem } from "./cbor-item.js";
+import { loadCodec, openStream } from "./subscription-open.js";
 import {
   CratestackEventTooLargeError,
   CratestackSubscriptionError,
   DEFAULT_MAX_EVENT_BYTES,
-  resolveUrl,
   type Frame,
+  type OpenVia,
   type SubscriptionHost,
   type SubscriptionTarget,
 } from "./subscriptions.js";
@@ -38,59 +39,16 @@ interface ServerFrame {
   err?: { code: string; message: string; details?: unknown };
 }
 
-interface FrameDecoder {
-  decode(bytes: Uint8Array): unknown;
-}
-
-let codec: Promise<FrameDecoder> | undefined;
-
-/** `@cratestack/cbor`'s native codec, created once; a failed load is retried. */
-function loadCodec(): Promise<FrameDecoder> {
-  if (codec === undefined) {
-    const pending = (async (): Promise<FrameDecoder> => {
-      let loaded: unknown;
-      try {
-        // @ts-ignore -- an optional peer on a REST client
-        loaded = await import("@cratestack/cbor");
-      } catch {
-        throw new CratestackSubscriptionError(
-          "codec_unavailable",
-          'subscriptions over "cbor-seq" need the `@cratestack/cbor` package',
-        );
-      }
-      const create = (loaded as { createCborCodec?: () => Promise<FrameDecoder> } | null)?.createCborCodec;
-      if (typeof create !== "function") {
-        throw new CratestackSubscriptionError(
-          "codec_unavailable",
-          "the installed `@cratestack/cbor` has no `createCborCodec`",
-        );
-      }
-      return create();
-    })();
-    pending.catch(() => {
-      codec = undefined;
-    });
-    codec = pending;
-  }
-  return codec;
-}
-
 export async function* openCborSeq(
   host: SubscriptionHost,
   target: SubscriptionTarget,
   headers: Headers,
   signal: AbortSignal | undefined,
+  via: OpenVia = { fetchFn: host.fetchFn, sealed: false },
 ): AsyncGenerator<Frame> {
   // Before the request, so a missing codec never leaves a response open.
   const decoder = await loadCodec();
-  headers.set("Accept", SUBSCRIPTION_CBOR_SEQ_CONTENT_TYPE);
-  const init: RequestInit = { headers };
-  if (signal !== undefined) init.signal = signal;
-  const response = await host.fetchFn(resolveUrl(host, target.ssePath, target.sseQuery), init);
-  if (!response.ok || response.body === null) {
-    const body = (await response.json().catch(() => ({}))) as { code?: string; message?: string; details?: unknown };
-    throw new CratestackSubscriptionError(body.code ?? "unknown", body.message ?? response.statusText, body.details, response.status);
-  }
+  const response = await openStream(host, target, headers, signal, via, SUBSCRIPTION_CBOR_SEQ_CONTENT_TYPE);
   if (!isCborSeq(response.headers.get("Content-Type"))) {
     await response.body.cancel().catch(() => undefined);
     throw new CratestackSubscriptionError(

@@ -65,6 +65,8 @@ async fn an_endless_event_ends_the_subscription_and_drops_the_connection() {
         sse_path: "/rpc/subscribe/procedure.endless".to_owned(),
         sse_query: None,
         socket_path: "/rpc/ws",
+        frames: None,
+        seal_route: String::new(),
     };
 
     let mut subscription = client.subscribe::<serde_json::Value>(target).await.unwrap();
@@ -116,6 +118,8 @@ async fn an_oversize_ready_is_a_typed_error_on_the_rest_and_the_rpc_surface() {
         sse_path: "/rpc/subscribe/procedure.big".to_owned(),
         sse_query: None,
         socket_path: "/rpc/ws",
+        frames: None,
+        seal_route: String::new(),
     };
     let Err(error) = client.subscribe::<serde_json::Value>(target).await else {
         panic!("an oversize ready must refuse the open");

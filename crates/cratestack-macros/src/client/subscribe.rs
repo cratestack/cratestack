@@ -21,6 +21,24 @@ struct Surface {
     socket_path: &'static str,
 }
 
+/// The `frames` and `seal_route` members of a target (cratestack#1378).
+/// A model feed takes no `@frames`, so it has neither a mode nor a route a
+/// signed open could bind.
+fn sealing(
+    frames: Option<cratestack_core::FramesMode>,
+    seal_route: String,
+) -> proc_macro2::TokenStream {
+    let frames = match frames {
+        Some(cratestack_core::FramesMode::Unsigned) => {
+            quote! { Some(::cratestack::client_rust::FramesMode::Unsigned) }
+        }
+        // `FramesMode` is `#[non_exhaustive]`: a mode added upstream is not
+        // openable by a client built before it, which fails closed.
+        _ => quote! { None },
+    };
+    quote! { frames: #frames, seal_route: #seal_route.to_owned(), }
+}
+
 fn surface(rpc: bool) -> Surface {
     if rpc {
         Surface {
@@ -57,6 +75,7 @@ pub(crate) fn model_subscribe_method(model: &Model, rpc: bool) -> proc_macro2::T
         cratestack_core::model_subscribe_route(&model.name)
     };
     let model_ident = ident(&model.name);
+    let sealing = sealing(None, String::new());
     quote! {
         /// Live events of this model that the caller may read, narrowed by
         /// `input` (`list`'s filters, `operations`). Resolves once the
@@ -78,6 +97,7 @@ pub(crate) fn model_subscribe_method(model: &Model, rpc: bool) -> proc_macro2::T
                 sse_path: #sse_path.to_owned(),
                 sse_query: input.to_query(),
                 socket_path: #socket_path,
+                #sealing
             };
             #runtime.subscribe(target).await #finish
         }
@@ -103,6 +123,12 @@ pub(super) fn procedure_subscribe_method(
     } else {
         cratestack_core::procedure_route::procedure_rest_route_path(procedure)
     };
+    let seal_route = if rpc {
+        format!("subscribe/{op_id}")
+    } else {
+        sse_path.clone()
+    };
+    let sealing = sealing(procedure.frames(), seal_route);
     let item = procedure_client_output_item_tokens(&procedure.return_type);
     let docs = format!(
         "Subscribes to `{}`. Resolves once the subscription is live; a policy or setup \
@@ -123,6 +149,7 @@ pub(super) fn procedure_subscribe_method(
                 input,
                 sse_path: #sse_path.to_owned(),
                 socket_path: #socket_path,
+                #sealing
             };
             #runtime.subscribe(target).await #finish
         }

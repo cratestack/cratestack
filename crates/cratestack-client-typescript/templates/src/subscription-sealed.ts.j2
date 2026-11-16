@@ -1,0 +1,43 @@
+// A subscription opened over the signed transport (cratestack#1378): the types the runtime's
+// `subscriptions.seal` option takes, and the choice of reader for a client that has one.
+//
+// A client with a sealer never opens a plain subscription. Only one the schema marks
+// `@frames(unsigned)` can be opened sealed, over `"sse"` or `"cbor-seq"` (`"auto"` picks
+// `"cbor-seq"`); a socket binding and an unmarked subscription are `streams_unsupported`, thrown
+// before anything is sent.
+
+import { openCborSeq } from "./subscription-cbor-seq.js";
+import { openSse } from "./subscription-sse.js";
+import { CratestackSubscriptionError, type Frame, type SubscriptionHost, type SubscriptionTarget } from "./subscriptions.js";
+
+/** What opens a subscription signed: a `fetch` that seals the open of `target`
+ *  and returns the unsigned stream that answers, or the (opened) refusal. */
+export interface SubscriptionSeal {
+  fetchFor(target: { opId: string; ssePath: string }, underlying: typeof fetch): typeof fetch;
+}
+
+/** How a reader sends its open: the `fetch` to use, and whether it seals, in which
+ *  case the open is a `POST` of the input's CBOR instead of a `GET` of its query. */
+export interface OpenVia {
+  fetchFn: typeof fetch;
+  sealed: boolean;
+}
+
+export async function* openSealed(
+  host: SubscriptionHost,
+  target: SubscriptionTarget,
+  headers: Headers,
+  signal: AbortSignal | undefined,
+  seal: SubscriptionSeal,
+): AsyncGenerator<Frame> {
+  const transport = host.subscriptions?.transport ?? "auto";
+  if (target.frames !== "unsigned" || transport === "websocket" || transport === "webtransport") {
+    throw new CratestackSubscriptionError(
+      "streams_unsupported",
+      "this subscription cannot be opened over the signed transport: only one marked `@frames(unsigned)` can, over \"sse\" or \"cbor-seq\"",
+    );
+  }
+  const via = { fetchFn: seal.fetchFor({ opId: target.opId, ssePath: target.ssePath }, host.fetchFn), sealed: true };
+  if (transport === "sse") return yield* openSse(host, target, headers, signal, via);
+  return yield* openCborSeq(host, target, headers, signal, via);
+}

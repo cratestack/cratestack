@@ -2,6 +2,8 @@
 //! `docs/design/subscriptions-websocket.md` §8): `src/subscriptions.ts` and
 //! `src/subscription-sockets.ts` (WebTransport, WebSocket, SSE, `"auto"`) and
 //! `src/subscription-cbor-seq.ts` (`application/cbor-seq`, chosen not auto),
+//! `src/subscription-open.ts` (the open and codec both readers share) and
+//! `src/subscription-sealed.ts` (a signed open, cratestack#1378),
 //! emitted only for a schema with a subscription op, so every other schema
 //! renders byte-for-byte as before. Under `--swr`, `src/swr/subscriptions.hooks.ts`
 //! adds a generic `useSubscription` over the package's client; under
@@ -30,6 +32,16 @@ pub(crate) const SUBSCRIPTION_TEMPLATE_SPECS: &[TemplateSpec] = &[
         template_name: "subscription-sse.ts.j2",
         output_path: OutputPath::Fixed("src/subscription-sse.ts"),
         default_source: include_str!("../templates/src/subscription-sse.ts.j2"),
+    },
+    TemplateSpec {
+        template_name: "subscription-open.ts.j2",
+        output_path: OutputPath::Fixed("src/subscription-open.ts"),
+        default_source: include_str!("../templates/src/subscription-open.ts.j2"),
+    },
+    TemplateSpec {
+        template_name: "subscription-sealed.ts.j2",
+        output_path: OutputPath::Fixed("src/subscription-sealed.ts"),
+        default_source: include_str!("../templates/src/subscription-sealed.ts.j2"),
     },
     TemplateSpec {
         template_name: "subscription-cbor-seq.ts.j2",

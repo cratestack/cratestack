@@ -26,6 +26,31 @@
 ///  * Send [CratestackHttpRequest.body] exactly as given (the bytes a signer
 ///    layered above this one saw), and send no header the request does not
 ///    carry beyond what the platform adds by itself.
+///
+/// **A signed subscription open** (cratestack#1378). Only for a client built
+/// with `CratestackSubscriptionOptions(sealsSubscriptions: true)`, which says
+/// its transport seals requests. Without it none of this happens: the open is
+/// a plain `GET` with no `extra`, and its answer is not checked for a marker.
+/// The generated client never seals; the transport does, and it is the only
+/// layer that can. A subscription the schema marks `@frames(unsigned)` is
+/// opened with `cratestack.frames` (`unsigned`), `cratestack.route` (what the
+/// seal binds: `subscribe/<op id>` on RPC, the route template on REST) and
+/// `cratestack.contract` (the op's contract digest, hex) in
+/// [CratestackHttpRequest.extra]; such a transport seals the open under them
+/// and asks for the stream beside the seal (`Accept: <stream type>,
+/// application/cose`). Its answer to the reader is then either the stream
+/// itself, passed through untouched with its `Cratestack-Frames: unsigned` and
+/// `Content-Type` headers (the frames are hints, not signed), or a refusal. A
+/// refusal the transport opened is an ordinary response (a JSON or CBOR error
+/// body and its real status) with [CratestackHttpResponse.opened] set; any
+/// other non-2xx is unsigned, a hint any hop can forge, and the reader reports
+/// it as `unsigned_refusal` without reading its body. The transport must never
+/// add the marker: the reader refuses a 2xx without it, or with another value
+/// or stream type, with a `CratestackSubscriptionException` whose code is
+/// `unsigned_frames_refused`. With the opt-in, a subscription the schema does
+/// not mark and a `webSocket` or `webTransport` pin (a socket does not go
+/// through this seam and is never sealed) are `streams_unsupported`, thrown
+/// before anything is sent; `auto` reads `application/cbor-seq`.
 abstract interface class CratestackHttpTransport {
   Future<CratestackHttpResponse> send(CratestackHttpRequest request);
 }
@@ -72,6 +97,7 @@ final class CratestackHttpResponse {
     required this.status,
     required Map<String, String> headers,
     required this.body,
+    this.opened = false,
   }) : headers = Map<String, String>.unmodifiable(<String, String>{
          for (final entry in headers.entries) entry.key.toLowerCase(): entry.value,
        });
@@ -82,15 +108,23 @@ final class CratestackHttpResponse {
     required int status,
     Map<String, String> headers = const <String, String>{},
     List<int> body = const <int>[],
+    bool opened = false,
   }) {
     return CratestackHttpResponse(
       status: status,
       headers: headers,
       body: Stream<Uint8List>.value(Uint8List.fromList(body)),
+      opened: opened,
     );
   }
 
   final int status;
+
+  /// `true` when a transport that seals requests verified and opened this
+  /// answer's seal, so a refusal's body is the server's own words. Only a
+  /// signed subscription open reads it (cratestack#1378): there, a non-2xx
+  /// that is not [opened] is unsigned and never read for an error code.
+  final bool opened;
 
   /// Response headers, names lower-cased.
   final Map<String, String> headers;

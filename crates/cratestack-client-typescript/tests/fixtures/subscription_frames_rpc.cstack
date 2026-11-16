@@ -1,0 +1,18 @@
+// `@frames(unsigned)` on an RPC schema for the generated TypeScript client
+// (`tests/sealed_subscriptions_runtime.rs`, cratestack#1378): one marked
+// subscription and one unmarked.
+
+transport rpc
+
+type Room {
+  roomId String
+}
+
+type Line {
+  body String
+}
+
+subscription procedure lines(args: Room): Line
+
+subscription procedure pulse(args: Room): Line
+  @frames(unsigned)

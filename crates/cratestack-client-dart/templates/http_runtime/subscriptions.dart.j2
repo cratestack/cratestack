@@ -9,6 +9,12 @@
 // ends it, or with a `CratestackSubscriptionException`. Cancelling the
 // listen cancels the request. The input is the query string: a model feed's
 // `list` filters, a subscription procedure's JSON-valued arguments.
+//
+// With `CratestackSubscriptionOptions.sealsSubscriptions` (cratestack#1378), a
+// subscription the schema marks `@frames(unsigned)` is the open a signing
+// transport may seal: `frames_marker.dart` hands the transport the route and
+// contract it binds, and refuses any answer that is not the unsigned stream
+// asked for. Without the opt-in none of that happens.
 // -----------------------------------------------------------------------------
 
 /// A subscription refused before `Ready`, or ended by the server's error.
@@ -167,6 +173,8 @@ Stream<Object?> cratestackSubscribeSse(
   Map<String, String>? headers,
   void Function()? onReady,
   int maxEventBytes = cratestackDefaultMaxEventBytes,
+  String? frames,
+  String? sealRoute,
 }) {
   return _cratestackAbortable(
     (abort) => _cratestackSseItems(
@@ -178,10 +186,13 @@ Stream<Object?> cratestackSubscribeSse(
       onReady,
       abort,
       maxEventBytes,
+      frames,
+      sealRoute,
     ),
   );
 }
 
 {% include "http_runtime/abortable.dart.j2" %}
+{% include "http_runtime/frames_marker.dart.j2" %}
 {% include "http_runtime/sse_reader.dart.j2" %}
 {% include "http_runtime/subscription_cbor_seq.dart.j2" %}

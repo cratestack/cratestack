@@ -182,13 +182,14 @@ export class ProceduresApi {
     args: {{ procedure.args_name }},
     options: subscriptions.SubscriptionOptions = {},
   ): AsyncIterable<{{ procedure.return_type }}> {
-    const target = {
+    const target: subscriptions.SubscriptionTarget = {
       opId: "{{ procedure.op_id }}",
       input: args,
       ssePath: "/rpc/subscribe/{{ procedure.op_id }}",
       sseQuery: subscriptions.procedureQuery(args),
       socketPath: "/rpc/ws",
-    };
+{% if procedure.frames %}      frames: "{{ procedure.frames }}",
+{% endif %}    };
     return subscriptions.subscribe(this.runtime, target, options, (value) =>
       {% if procedure.revival_kind == "scalar" %}reviveWireScalar(value, "{{ procedure.revival_scalar_kind }}"){% else %}reviveWireFields(value, '{{ procedure.revival_shape_name }}'){% endif %} as {{ procedure.return_type }});
   }

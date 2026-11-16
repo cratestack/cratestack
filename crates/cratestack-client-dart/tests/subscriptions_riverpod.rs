@@ -31,7 +31,7 @@ fn file(fixture: &str, name: &str) -> String {
 /// the function must defer to the public `ProviderContainer.defaultRetry`.
 fn assert_retry_function(client: &str) {
     assert!(
-        client.contains("Duration? cratestackSubscriptionRetry(int retryCount, Object error) {\n  if (error is CratestackEventTooLargeException) return null;\n  return ProviderContainer.defaultRetry(retryCount, error);\n}"),
+        client.contains("Duration? cratestackSubscriptionRetry(int retryCount, Object error) {\n  if (error is CratestackEventTooLargeException) return null;\n  if (error is CratestackSubscriptionException &&\n      const <String>{'unsigned_frames_refused', 'streams_unsupported', 'unsigned_refusal'}\n          .contains(error.code)) {\n    return null;\n  }\n  return ProviderContainer.defaultRetry(retryCount, error);\n}"),
         "{client}"
     );
     assert!(!client.contains("ProviderException"), "{client}");
@@ -114,4 +114,17 @@ fn a_schema_without_subscriptions_emits_none_of_it() {
         assert!(!contents.contains("subscribe"), "{name}: {contents}");
         assert!(!contents.contains("Stream<"), "{name}: {contents}");
     }
+}
+
+/// cratestack#1378: the riverpod `ProceduresApi` builds the same marked target
+/// the plain client does.
+#[test]
+fn a_marked_subscription_procedure_carries_its_seal_route() {
+    let procedures = file(RPC, "lib/src/procedures.dart");
+    assert!(
+        procedures
+            .contains("frames: 'unsigned',\n            sealRoute: 'subscribe/procedure.pulse',"),
+        "{procedures}"
+    );
+    assert_eq!(procedures.matches("sealRoute:").count(), 1, "{procedures}");
 }

@@ -11,10 +11,21 @@
 // that has not reached `Ready{0}` within 3 s counts as failed, and the failure is remembered
 // per origin for 10 minutes, so a UDP-blocked network pays that wait once. A refusal (401, 403,
 // a policy or setup error) is the server's answer: it is thrown, never a reason to fall back.
+//
+// A runtime built with `subscriptions.seal` (`createSealedSubscriptions` from
+// `@cratestack/cbor/cose`, cratestack#1378) opens the subscriptions its schema marks
+// `@frames(unsigned)` signed: the open is sealed, the stream that answers is plain frames the
+// sealer has checked for `Cratestack-Frames: unsigned`. The frames are hints, so re-read through
+// a sealed call. `"auto"` picks `"cbor-seq"` then; any other subscription, a socket binding
+// (`"websocket"`, `"webtransport"`) and a REST route are refused (`streams_unsupported`, or the
+// sealer's `misuse`) before anything is sent.
 
 import { openSocketSubscription, openWebTransportSubscription, SocketUnreachable } from "./subscription-sockets.js";
 import { openCborSeq } from "./subscription-cbor-seq.js";
 import { openSse } from "./subscription-sse.js";
+import { openSealed, type OpenVia, type SubscriptionSeal } from "./subscription-sealed.js";
+
+export type { OpenVia, SubscriptionSeal };
 
 export type SubscriptionTransport = "auto" | "webtransport" | "websocket" | "sse" | "cbor-seq";
 
@@ -34,6 +45,9 @@ export interface SubscriptionClientOptions {
    *  Default `1048576` (1 MiB). A longer event, or one that never ends,
    *  throws `CratestackEventTooLargeError` and drops the connection. */
   maxEventBytes?: number;
+  /** Seals the open of a subscription the schema marks `@frames(unsigned)`
+   *  (`createSealedSubscriptions` from `@cratestack/cbor/cose`; `transport rpc` only). */
+  seal?: SubscriptionSeal;
 }
 
 /** The default `SubscriptionClientOptions.maxEventBytes`: 1 MiB. */
@@ -67,6 +81,8 @@ export interface SubscriptionTarget {
   sseQuery: string;
   /** `/rpc/ws`, or `/$ws` on REST. */
   socketPath: string;
+  /** The schema's `@frames` mode: `"unsigned"` makes a signed open possible. */
+  frames?: "unsigned";
 }
 
 /** A refusal or a terminal error from the server, on any binding. */
@@ -166,6 +182,8 @@ async function* open(
 ): AsyncGenerator<Frame> {
   const transport = host.subscriptions?.transport ?? "auto";
   const headers = await subscriptionHeaders(host, options.headers);
+  const seal = host.subscriptions?.seal;
+  if (seal !== undefined) return yield* openSealed(host, target, headers, options.signal, seal);
   if (transport === "cbor-seq") return yield* openCborSeq(host, target, headers, options.signal);
   const wtUrl = host.subscriptions?.webTransport?.url;
   if (transport === "webtransport" || (transport === "auto" && wtUrl !== undefined && canWebTransport(wtUrl))) {

@@ -1,0 +1,74 @@
+// The signed open of a subscription (cratestack#1378, ADR 0006): what the
+// generated readers hand an HTTP transport that seals requests, and what they
+// accept back. Only for a client built with
+// `CratestackSubscriptionOptions(sealsSubscriptions: true)`; without it the
+// readers are handed no `frames` and neither add `extra` nor check a marker.
+//
+// A subscription the schema marks `@frames(unsigned)` is opened signed and
+// answered with plain frames, labelled `Cratestack-Frames: unsigned`. The
+// generated client never seals; the transport does. For such an open the
+// reader puts three attributes in `CratestackHttpRequest.extra` (never sent on
+// the wire): `cratestack.frames` (`unsigned`), `cratestack.route` (the route
+// the seal binds: `subscribe/<op id>` on RPC, the route template on REST) and
+// `cratestack.contract` (that op's contract digest, hex, from
+// `cratestackOpContracts`).
+//
+// The frames are hints, so the reader accepts a 2xx only when it is the stream
+// that was asked for: the marker exactly once, with the value `unsigned`, in
+// the stream type requested. Anything else is a `CratestackSubscriptionException`
+// with code `unsigned_frames_refused`; the body is not read as frames. (An
+// unmarked subscription never reaches a reader with the opt-in: it is
+// `streams_unsupported` first, see `cratestackSubscribe`.)
+
+/// The `extra` of an open of a subscription marked [frames] (`null` for an
+/// unmarked one, which carries none), binding [route].
+Map<String, Object?> cratestackFramesExtra(String? frames, String? route) {
+  if (frames == null) {
+    return const <String, Object?>{};
+  }
+  // An RPC route is `subscribe/<op id>` and its contract is the op's own; a
+  // REST one is the route template, and its contract `GET <template>`.
+  final key = route == null
+      ? null
+      : route.startsWith('/')
+          ? 'GET $route'
+          : route.replaceFirst('subscribe/', '');
+  final contract = key == null ? null : cratestackOpContracts[key];
+  if (route == null || contract == null) {
+    throw CratestackSubscriptionException(
+      code: 'unsigned_frames_refused',
+      message: 'a subscription marked `@frames($frames)` needs its route and contract to be opened signed',
+    );
+  }
+  return <String, Object?>{
+    'cratestack.frames': frames,
+    'cratestack.route': route,
+    'cratestack.contract': contract,
+  };
+}
+
+/// Refuses a 2xx [response] that is not the answer to an open of a
+/// subscription marked [frames]: the marker exactly once with the value
+/// `unsigned` and [streamType] as its `Content-Type`. Cancels the body it
+/// refuses. Does nothing for an open that is not signed ([frames] `null`).
+Future<void> cratestackCheckFrames(
+  CratestackHttpResponse response,
+  String? frames,
+  String streamType,
+) async {
+  if (frames == null) {
+    return;
+  }
+  // A repeated header is joined with `, ` (see `CratestackHttpResponse`), so
+  // a doubled marker is not `unsigned`.
+  final marker = response.headers['cratestack-frames'];
+  final type = (response.headers['content-type'] ?? '').split(';').first.trim().toLowerCase();
+  if (marker == 'unsigned' && type == streamType) {
+    return;
+  }
+  await response.body.listen(null).cancel();
+  throw const CratestackSubscriptionException(
+    code: 'unsigned_frames_refused',
+    message: 'the answer to a signed subscription open is not the unsigned stream that was asked for',
+  );
+}

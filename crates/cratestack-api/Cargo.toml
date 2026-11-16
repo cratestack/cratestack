@@ -322,6 +322,18 @@ name = "signed_subscription_rest"
 path = "tests/signed_subscription_rest.rs"
 required-features = ["cose"]
 
+# The generated Rust client opens a `@frames(unsigned)` subscription over the
+# signed transport (cratestack#1378): `cose` only, like `cose_client_{rest,rpc}`.
+[[test]]
+name = "cose_client_stream_rpc"
+path = "tests/cose_client_stream_rpc.rs"
+required-features = ["cose"]
+
+[[test]]
+name = "cose_client_stream_rest"
+path = "tests/cose_client_stream_rest.rs"
+required-features = ["cose"]
+
 [[test]]
 name = "cose_client_rest"
 path = "tests/cose_client_rest.rs"

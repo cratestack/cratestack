@@ -52,6 +52,10 @@ class ProceduresApi {
             ssePath: '/rpc/subscribe/{{ procedure.op_id }}',
             sseQuery: cratestackProcedureQuery(args.toWire()),
             socketPath: '/rpc/ws',
+{% if procedure.frames %}
+            frames: '{{ procedure.frames }}',
+            sealRoute: 'subscribe/{{ procedure.op_id }}',
+{% endif %}
           ),
           headers: headers,
           onReady: onReady,

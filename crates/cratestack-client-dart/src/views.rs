@@ -184,4 +184,7 @@ pub(crate) struct ProcedureView {
     pub(crate) route: String,
     pub(crate) return_decode_expr: String,
     pub(crate) kind: &'static str,
+    /// A subscription procedure's `@frames` mode (`"unsigned"`), which makes a
+    /// signed open possible (cratestack#1378); `None` for every other.
+    pub(crate) frames: Option<&'static str>,
 }

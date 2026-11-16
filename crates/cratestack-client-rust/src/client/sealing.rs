@@ -119,10 +119,14 @@ where
     /// re-sent. Do not put a redirecting hop in front of a browser client.
     /// **Compact keys** adapt under the seal as on a plain call (`compact` module docs).
     /// **Streams** ([`RpcClient::call_streaming`](crate::RpcClient), the
-    /// `*_streamed` methods, subscriptions) are refused with
-    /// [`EnvelopeError::StreamsUnsupported`](crate::EnvelopeError) until
-    /// ADR 0006 P1.
-    ///
+    /// `*_streamed` methods) are refused with
+    /// [`EnvelopeError::StreamsUnsupported`](crate::EnvelopeError). A
+    /// **subscription** the schema marks `@frames(unsigned)` is opened
+    /// sealed and then streams plain frames (cratestack#1378); the frames
+    /// are hints, so re-read through a sealed call. Every `subscribe()`
+    /// seals anew with a fresh nonce, so a resubscribe is never a replay.
+    /// Any other subscription, and a WebSocket or WebTransport pin, is
+    /// `StreamsUnsupported` too, before anything is sent.
     /// **Authorizers** still run, over the *inner* payload with the codec's
     /// `Content-Type` (none for a bodiless call): the request the server's
     /// `AuthProvider` sees after it opens the seal.

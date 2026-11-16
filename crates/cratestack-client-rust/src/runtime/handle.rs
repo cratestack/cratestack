@@ -41,7 +41,8 @@ impl RuntimeHandle {
     ///
     /// Raw requests must be RPC ones (`/rpc/{op_id}`, `/rpc/batch`); a raw
     /// REST path has no route template to bind. Streams are refused
-    /// (`envelope_streams_unsupported`).
+    /// (`envelope_streams_unsupported`); a subscription's open is not a raw
+    /// request, so it is not reachable through this bridge yet.
     #[cfg(feature = "cose")]
     pub fn with_envelope(
         config: RuntimeConfigWire,
