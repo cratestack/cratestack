@@ -173,7 +173,7 @@ mod tests;
 /// direct `async-trait` dependency.
 pub use async_trait::async_trait;
 pub use builder::EnvelopeLayerBuilder;
-pub use builder_stream::DEFAULT_MAX_SIGNED_STREAM_LIFE;
+pub use builder_stream::{DEFAULT_MAX_SIGNED_STREAM_LIFE, MAX_SIGNED_STREAM_LIFE};
 pub use layer::EnvelopeLayer;
 pub use mode::{EnvelopeMode, EnvelopePolicy};
 pub use opened::{OpenedRequest, SealContext, Sealed};

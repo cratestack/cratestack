@@ -46,6 +46,11 @@ pub enum Serve {
     Quiet,
     /// A `403`, as `encode_subscribe_error` writes it.
     Forbidden,
+    /// One item, and the handler sets `Cratestack-Payload-Type` on the answer.
+    PayloadTyped,
+    /// A `500` in `application/cbor-seq` carrying the streamed marker: a
+    /// failure that looks like a stream by everything but its status.
+    FailedStream,
 }
 
 async fn subscribe(hits: Hits, serve: Serve, req: Request) -> Response {
@@ -61,15 +66,34 @@ async fn subscribe(hits: Hits, serve: Serve, req: Request) -> Response {
         Err(error) => return encode_subscribe_error(&error),
     };
     let items: SubscriptionStream<serde_json::Value> = match serve {
-        Serve::Items => Box::pin(stream::iter([Ok(serde_json::json!({"n": 1}))])),
+        Serve::Items | Serve::PayloadTyped => {
+            Box::pin(stream::iter([Ok(serde_json::json!({"n": 1}))]))
+        }
         Serve::Quiet => Box::pin(stream::pending()),
         Serve::Forbidden => {
             return encode_subscribe_error(&CratestackError::Forbidden("no".to_owned()));
+        }
+        Serve::FailedStream => {
+            let mut response = Response::new(axum::body::Body::from("x"));
+            *response.status_mut() = http::StatusCode::INTERNAL_SERVER_ERROR;
+            response
+                .headers_mut()
+                .insert(header::CONTENT_TYPE, HeaderValue::from_static(CBOR_SEQ));
+            response
+                .extensions_mut()
+                .insert(crate::transport::StreamedResponseMarker);
+            return response;
         }
     };
     let mut response =
         serve_subscription_with(binding, req.extensions(), async { Ok(items) }).await;
     let seen = response.headers_mut();
+    if matches!(serve, Serve::PayloadTyped) {
+        seen.insert(
+            cratestack_core::PAYLOAD_TYPE_HEADER,
+            HeaderValue::from_static("application/x-handler-set"),
+        );
+    }
     let accept = headers.get(header::ACCEPT).cloned();
     seen.insert(
         "x-seen-accept",

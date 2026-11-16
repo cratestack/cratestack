@@ -5,7 +5,10 @@
 //! Only a subscription the schema marks `@frames(unsigned)` may be opened
 //! this way ([`lookup`]); every other signed subscription open is refused
 //! with a sealed `406`, and the frames of a marked one are never sealed: a
-//! client treats them as hints.
+//! client treats them as hints. This is the one exception to "a signed
+//! request's answer is always sealed", and it holds in every mode that
+//! accepts a signed request (`Required`, `Optional` and
+//! `UnsignedRequestSealedReply`).
 
 use axum::body::Body;
 use axum::extract::Request;
@@ -116,6 +119,8 @@ pub(super) async fn handle<S: Inner>(
     if let Some(response) = admit(config, &sealer, signer, &mut parts.extensions).await {
         return response;
     }
+    // `build` caps the lifetime at `MAX_SIGNED_STREAM_LIFE`, so this cannot
+    // overflow through configuration; the fallback is defensive only.
     match Instant::now().checked_add(config.max_signed_stream_life) {
         Some(at) => {
             parts.extensions.insert(SignedStreamDeadline(at));

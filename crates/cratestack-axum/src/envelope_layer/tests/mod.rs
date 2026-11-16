@@ -83,6 +83,8 @@ mod sealed_reply;
 #[cfg(feature = "cose")]
 mod signed_subscription;
 #[cfg(feature = "cose")]
+mod signed_subscription_exits;
+#[cfg(feature = "cose")]
 mod signed_subscription_lifetime;
 #[cfg(feature = "cose")]
 mod signed_subscription_refusals;

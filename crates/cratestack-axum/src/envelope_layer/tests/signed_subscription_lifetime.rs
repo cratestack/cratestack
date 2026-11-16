@@ -14,7 +14,7 @@ use http::{Method, StatusCode};
 use super::fixtures::Hits;
 use super::signed_subscription_support::*;
 use super::support::*;
-use crate::envelope_layer::DEFAULT_MAX_SIGNED_STREAM_LIFE;
+use crate::envelope_layer::{DEFAULT_MAX_SIGNED_STREAM_LIFE, MAX_SIGNED_STREAM_LIFE};
 use crate::rpc::{negotiate_subscribe_binding, serve_subscription_with, until_credential_expires};
 
 /// `send`, but a stream that never ends fails the test (a day of paused time)
@@ -69,20 +69,33 @@ fn a_zero_lifetime_is_refused_at_build() {
     assert!(error.to_string().contains("lifetime"), "{error}");
 }
 
-/// A lifetime the clock cannot hold is no deadline, not a panic and not a
-/// refusal of the open.
-#[tokio::test]
-async fn an_overflowing_lifetime_inserts_no_deadline() {
-    let hits = Hits::default();
-    let layer = builder()
-        .max_signed_stream_life(Duration::MAX)
+/// A lifetime above the cap is refused at build, naming the cap, so a value
+/// the clock cannot hold is never configured; exactly the cap builds.
+#[test]
+fn a_lifetime_over_24_hours_is_refused_at_build() {
+    assert_eq!(MAX_SIGNED_STREAM_LIFE, Duration::from_secs(24 * 3600));
+    for over in [
+        MAX_SIGNED_STREAM_LIFE + Duration::from_secs(1),
+        Duration::MAX,
+    ] {
+        let error = builder()
+            .max_signed_stream_life(over)
+            .build()
+            .expect_err("over the cap");
+        assert!(matches!(
+            error,
+            cratestack_core::CratestackError::Validation(_)
+        ));
+        assert!(error.to_string().contains("24 hours"), "{error}");
+        assert!(
+            error.to_string().contains("MAX_SIGNED_STREAM_LIFE"),
+            "{error}"
+        );
+    }
+    builder()
+        .max_signed_stream_life(MAX_SIGNED_STREAM_LIFE)
         .build()
-        .expect("layer");
-    let router = router(layer, &hits, Serve::Items);
-    let (request, ..) = open(Method::GET, MARKED, &[CBOR_SEQ]).await;
-    let answer = send(&router, request).await;
-    assert_eq!(answer.status, StatusCode::OK);
-    assert_eq!(answer.seen("x-seen-deadline-ms"), "<none>");
+        .expect("exactly the cap builds");
 }
 
 /// The credential's `exp`, applied by the generated feed inside, is earlier

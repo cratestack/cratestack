@@ -1,6 +1,9 @@
 //! A request with an envelope body: open it, hand the router the payload,
 //! seal whatever comes back. A signed request's response is always sealed,
-//! under `Optional` as under `Required` (decision S3).
+//! under `Optional` as under `Required` (decision S3), with one exception: a
+//! signed open of a subscription marked `@frames(unsigned)` answers with an
+//! unsealed stream (see `signed_subscription.rs`), in every mode that accepts
+//! a signed request.
 
 use std::sync::Arc;
 

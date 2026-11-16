@@ -6,6 +6,7 @@ use cratestack_core::CratestackError;
 use http::HeaderValue;
 
 use super::builder::{EnvelopeLayerBuilder, Transport};
+use super::builder_stream::MAX_SIGNED_STREAM_LIFE;
 use super::layer::{Config, EnvelopeLayer};
 use super::media;
 use super::mode::{EnvelopePolicy, WithUnresolved};
@@ -64,6 +65,13 @@ impl EnvelopeLayerBuilder {
             return Err(invalid(
                 "the envelope layer's signed stream lifetime must not be zero",
             ));
+        }
+        if self.max_signed_stream_life > MAX_SIGNED_STREAM_LIFE {
+            return Err(invalid(&format!(
+                "the envelope layer's signed stream lifetime must not exceed {} hours \
+                 (MAX_SIGNED_STREAM_LIFE)",
+                MAX_SIGNED_STREAM_LIFE.as_secs() / 3600,
+            )));
         }
         if self.max_body_bytes == 0 {
             return Err(invalid("the envelope layer's body limit must not be zero"));
