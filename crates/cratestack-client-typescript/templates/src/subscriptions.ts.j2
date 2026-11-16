@@ -4,15 +4,13 @@
 // `onReady`); then items, until the server ends it or throws its error.
 // Breaking out of the `for await`, or aborting `signal`, cancels it.
 //
-// The binding is client configuration (`subscriptions.transport`), never
-// part of a generated method's name. `"auto"` (the default) tries
-// WebTransport when `subscriptions.webTransport.url` names the server's
-// WebTransport listener and the platform has `WebTransport`, then a
-// WebSocket, then SSE (`"cbor-seq"` is chosen, never fallen back to). A WebTransport attempt that has not reached
-// `Ready{0}` within 3 s counts as failed, and the failure is remembered per
-// origin for 10 minutes, so a UDP-blocked network pays that wait once. A
-// refusal (401, 403, a policy or setup error) is the server's answer: it is
-// thrown, never a reason to fall back.
+// The binding is client configuration (`subscriptions.transport`), never part of a generated
+// method's name. `"auto"` (the default) tries WebTransport when `subscriptions.webTransport.url`
+// names the server's WebTransport listener and the platform has `WebTransport`, then a
+// WebSocket, then SSE (`"cbor-seq"` is chosen, never fallen back to). A WebTransport attempt
+// that has not reached `Ready{0}` within 3 s counts as failed, and the failure is remembered
+// per origin for 10 minutes, so a UDP-blocked network pays that wait once. A refusal (401, 403,
+// a policy or setup error) is the server's answer: it is thrown, never a reason to fall back.
 
 import { openSocketSubscription, openWebTransportSubscription, SocketUnreachable } from "./subscription-sockets.js";
 import { openCborSeq } from "./subscription-cbor-seq.js";
@@ -21,8 +19,7 @@ import { openSse } from "./subscription-sse.js";
 export type SubscriptionTransport = "auto" | "webtransport" | "websocket" | "sse" | "cbor-seq";
 
 export interface SubscriptionClientOptions {
-  /** Default `"auto"`. `"cbor-seq"` reads `application/cbor-seq` over HTTP
-   *  (the SSE route, CBOR frames); `"auto"` never picks it. */
+  /** Default `"auto"`; `"cbor-seq"` (the SSE route, CBOR frames) is never auto-picked. */
   transport?: SubscriptionTransport;
   /** The server's WebTransport listener (`SubscriptionDispatch::webtransport`),
    *  a separate UDP address: `https://api.example.com:4433/rpc/wt`. Without
@@ -31,8 +28,7 @@ export interface SubscriptionClientOptions {
     url: string;
     serverCertificateHashes?: { algorithm: "sha-256"; value: BufferSource }[];
   };
-  /** The most bytes one `"cbor-seq"` frame may span, and the most UTF-8 bytes
-   *  one SSE event may span, counted after `\r\n` is
+  /** The most UTF-8 bytes one SSE event (or bytes one `"cbor-seq"` frame) may span, counted after `\r\n` is
    *  normalized to `\n` and including the terminating blank line (so a CRLF
    *  stream may carry up to one more byte per line than the cap).
    *  Default `1048576` (1 MiB). A longer event, or one that never ends,
@@ -170,10 +166,7 @@ async function* open(
 ): AsyncGenerator<Frame> {
   const transport = host.subscriptions?.transport ?? "auto";
   const headers = await subscriptionHeaders(host, options.headers);
-  if (transport === "cbor-seq") {
-    yield* openCborSeq(host, target, headers, options.signal);
-    return;
-  }
+  if (transport === "cbor-seq") return yield* openCborSeq(host, target, headers, options.signal);
   const wtUrl = host.subscriptions?.webTransport?.url;
   if (transport === "webtransport" || (transport === "auto" && wtUrl !== undefined && canWebTransport(wtUrl))) {
     try {

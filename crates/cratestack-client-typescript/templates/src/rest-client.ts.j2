@@ -127,7 +127,12 @@ export class {{ model.api_name }} {
     };
     return subscriptions.subscribe(this.runtime, target, options, (value) => {
       const event = value as subscriptions.ModelEvent<unknown>;
-      return { ...event, data: reviveWireFields(event.data, '{{ model.revival_shape_name }}') as {{ model.name }} };
+      // `event_id` is a `Uuid`: 16 bytes over cbor-seq, text over SSE and the sockets' JSON.
+      return {
+        ...event,
+        event_id: reviveWireScalar(event.event_id, "uuid") as string,
+        data: reviveWireFields(event.data, '{{ model.revival_shape_name }}') as {{ model.name }},
+      };
     });
   }
 {% endif %}
