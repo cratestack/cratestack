@@ -5,10 +5,7 @@
 
 use cratestack::axum::body::{Body, to_bytes};
 use cratestack::axum::http::{Request, StatusCode, header};
-use cratestack::{
-    CratestackContext, CratestackError, RequestContext, SubscriptionStream, Value,
-    include_server_schema,
-};
+use cratestack::{CratestackContext, CratestackError, SubscriptionStream, include_server_schema};
 use cratestack_codec_cbor::CborCodec;
 use cratestack_core::CratestackCodec;
 use tower::util::ServiceExt;
@@ -19,27 +16,11 @@ include_server_schema!(
     decimal = RustDecimal
 );
 
-mod subscription_cbor_seq_support;
+mod cbor_seq_support;
+
+use cbor_seq_support::Caller;
 
 use cratestack_schema::procedures::readings;
-
-#[derive(Clone)]
-struct Caller;
-
-impl cratestack::AuthProvider for Caller {
-    type Error = CratestackError;
-
-    fn authenticate(
-        &self,
-        request: &RequestContext<'_>,
-    ) -> impl core::future::Future<Output = Result<CratestackContext, Self::Error>> + Send {
-        core::future::ready(Ok(if request.headers.contains_key("x-caller") {
-            CratestackContext::authenticated([("id".to_owned(), Value::Int(1))])
-        } else {
-            CratestackContext::anonymous()
-        }))
-    }
-}
 
 #[derive(Clone)]
 struct Readings;
@@ -52,23 +33,25 @@ impl cratestack_schema::procedures::ProcedureRegistry for Readings {
         args: readings::Args,
         _authorized: readings::Authorized,
     ) -> Result<SubscriptionStream<readings::Output>, CratestackError> {
-        let mut items: Vec<Result<cratestack_schema::Reading, CratestackError>> =
-            (1..=args.args.count)
+        let count = args.args.count;
+        // `0`: quiet. Negative: a terminal error. Otherwise `count` readings.
+        if count == 0 {
+            return Ok(Box::pin(cratestack::futures::stream::pending()));
+        }
+        let items: Vec<Result<cratestack_schema::Reading, CratestackError>> = if count < 0 {
+            vec![Err(CratestackError::Unavailable("lagged".to_owned()))]
+        } else {
+            (1..=count)
                 .map(|n| {
                     Ok(cratestack_schema::Reading {
-                        id: subscription_cbor_seq_support::expected_id(n),
+                        id: cbor_seq_support::expected_id(n),
                         data: vec![0, 1, 255, n as u8],
                         amount: format!("{n}.50").parse().unwrap(),
                         n,
                     })
                 })
-                .collect();
-        if args.args.count < 0 {
-            items = vec![Err(CratestackError::Unavailable("lagged".to_owned()))];
-        }
-        if args.args.count == 0 {
-            return Ok(Box::pin(cratestack::futures::stream::pending()));
-        }
+                .collect()
+        };
         Ok(Box::pin(cratestack::futures::stream::iter(items)))
     }
 }
@@ -111,13 +94,13 @@ async fn get_sends_ready_first_then_lossless_items_then_end() {
     let (status, content_type, bytes) = serve(get(Some("application/cbor-seq"), 2)).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(content_type.as_deref(), Some("application/cbor-seq"));
-    let body = subscription_cbor_seq_support::read(&bytes);
+    let body = cbor_seq_support::read(&bytes);
     assert_eq!(body.keepalives, 0);
     assert_eq!(body.frames.len(), 4, "ready, two readings, end");
     assert_eq!(body.frames[0].id, 1);
     assert!(body.frames[0].ready.is_some());
-    subscription_cbor_seq_support::assert_reading(&body.frames[1], 2, 1);
-    subscription_cbor_seq_support::assert_reading(&body.frames[2], 3, 2);
+    cbor_seq_support::assert_reading(&body.frames[1], 2, 1);
+    cbor_seq_support::assert_reading(&body.frames[2], 3, 2);
     assert_eq!(body.frames[3].id, 4);
     assert!(body.frames[3].end.is_some(), "a source that ran out ends");
 }
@@ -126,7 +109,7 @@ async fn get_sends_ready_first_then_lossless_items_then_end() {
 async fn a_terminal_error_is_an_err_frame_and_the_last() {
     let (status, _, bytes) = serve(get(Some("application/cbor-seq"), -1)).await;
     assert_eq!(status, StatusCode::OK);
-    let body = subscription_cbor_seq_support::read(&bytes);
+    let body = cbor_seq_support::read(&bytes);
     assert_eq!(body.frames.len(), 2, "ready, then the error");
     let err = body.frames[1].err.as_ref().expect("an err frame");
     assert_eq!(
@@ -135,43 +118,34 @@ async fn a_terminal_error_is_an_err_frame_and_the_last() {
     );
 }
 
+fn post(content_type: &str, body: Vec<u8>) -> Request<Body> {
+    Request::post("/rpc/subscribe/procedure.readings")
+        .header("x-caller", "1")
+        .header("accept", "application/cbor-seq")
+        .header("content-type", content_type)
+        .body(Body::from(body))
+        .unwrap()
+}
+
 #[tokio::test]
 async fn post_takes_a_cbor_open_body_and_a_json_one() {
     let cbor = CborCodec
         .encode(&serde_json::json!({"args": {"count": 1}}))
         .unwrap();
-    for (content_type, body) in [
-        ("application/cbor", cbor),
-        ("application/json", br#"{"args":{"count":1}}"#.to_vec()),
-    ] {
-        let request = Request::post("/rpc/subscribe/procedure.readings")
-            .header("x-caller", "1")
-            .header("accept", "application/cbor-seq")
-            .header("content-type", content_type)
-            .body(Body::from(body))
-            .unwrap();
-        let (status, response_type, bytes) = serve(request).await;
+    let json = br#"{"args":{"count":1}}"#.to_vec();
+    for (content_type, body) in [("application/cbor", cbor), ("application/json", json)] {
+        let (status, response_type, bytes) = serve(post(content_type, body)).await;
         assert_eq!(status, StatusCode::OK, "{content_type}");
         assert_eq!(response_type.as_deref(), Some("application/cbor-seq"));
-        let body = subscription_cbor_seq_support::read(&bytes);
-        assert_eq!(
-            body.frames.len(),
-            3,
-            "{content_type}: ready, one reading, end"
-        );
-        subscription_cbor_seq_support::assert_reading(&body.frames[1], 2, 1);
+        let body = cbor_seq_support::read(&bytes);
+        assert_eq!(body.frames.len(), 3, "{content_type}: ready, one, end");
+        cbor_seq_support::assert_reading(&body.frames[1], 2, 1);
     }
 }
 
 #[tokio::test]
 async fn post_with_a_malformed_cbor_body_is_a_json_400() {
-    let request = Request::post("/rpc/subscribe/procedure.readings")
-        .header("x-caller", "1")
-        .header("accept", "application/cbor-seq")
-        .header("content-type", "application/cbor")
-        .body(Body::from(&b"\xff\xff"[..]))
-        .unwrap();
-    let (status, content_type, _) = serve(request).await;
+    let (status, content_type, _) = serve(post("application/cbor", vec![0xff, 0xff])).await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert_eq!(content_type.as_deref(), Some("application/json"));
 }
@@ -212,11 +186,7 @@ async fn a_quiet_subscription_sends_a_null_keepalive() {
     assert_eq!(response.status(), StatusCode::OK);
     let mut body = response.into_body().into_data_stream();
     let ready = body.next().await.unwrap().unwrap();
-    assert!(
-        subscription_cbor_seq_support::read(&ready).frames[0]
-            .ready
-            .is_some()
-    );
+    assert!(cbor_seq_support::read(&ready).frames[0].ready.is_some());
     assert_eq!(&body.next().await.unwrap().unwrap()[..], &[0xf6]);
     assert_eq!(&body.next().await.unwrap().unwrap()[..], &[0xf6]);
 }

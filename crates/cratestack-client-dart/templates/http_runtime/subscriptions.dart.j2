@@ -182,32 +182,6 @@ Stream<Object?> cratestackSubscribeSse(
   );
 }
 
-/// Opens a subscription over `application/cbor-seq` at [path] (with [query])
-/// under [baseUri]: the SSE route, answered with CBOR frames
-/// (cratestack#1001).
-Stream<Object?> cratestackSubscribeCborSeq(
-  CratestackHttpTransport transport,
-  Uri baseUri,
-  String path,
-  String? query, {
-  Map<String, String>? headers,
-  void Function()? onReady,
-  int maxEventBytes = cratestackDefaultMaxEventBytes,
-}) {
-  return _cratestackAbortable(
-    (abort) => _cratestackCborSeqItems(
-      transport,
-      baseUri,
-      path,
-      query,
-      headers,
-      onReady,
-      abort,
-      maxEventBytes,
-    ),
-  );
-}
-
 /// A stream of what [items] yields, which is told to stop (through the
 /// future it is given) when the listener cancels or an error ends it.
 Stream<Object?> _cratestackAbortable(

@@ -2,6 +2,7 @@
 //! (cratestack#1001): read an `application/cbor-seq` subscription body as
 //! frames.
 
+use cratestack::{CratestackContext, CratestackError, RequestContext, Value};
 use cratestack_codec_cbor::{CborCodec, CborSeqChunkDecoder};
 use cratestack_core::CratestackCodec;
 use cratestack_core::rpc::RpcFrameValue;
@@ -69,4 +70,23 @@ pub fn assert_reading(frame: &ServerFrame, id: u64, n: i64) {
     assert_eq!(reading.data, vec![0, 1, 255, n as u8]);
     assert_eq!(reading.amount.to_string(), format!("{n}.50"));
     assert_eq!(reading.n, n);
+}
+
+/// `x-caller` authenticates as principal 1; no header is anonymous.
+#[derive(Clone)]
+pub struct Caller;
+
+impl cratestack::AuthProvider for Caller {
+    type Error = CratestackError;
+
+    fn authenticate(
+        &self,
+        request: &RequestContext<'_>,
+    ) -> impl core::future::Future<Output = Result<CratestackContext, Self::Error>> + Send {
+        core::future::ready(Ok(if request.headers.contains_key("x-caller") {
+            CratestackContext::authenticated([("id".to_owned(), Value::Int(1))])
+        } else {
+            CratestackContext::anonymous()
+        }))
+    }
 }

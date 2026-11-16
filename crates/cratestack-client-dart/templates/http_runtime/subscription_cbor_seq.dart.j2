@@ -12,6 +12,32 @@
 // the middle of a frame, or without `end` or `err`, throws instead of ending
 // quietly.
 
+/// Opens a subscription over `application/cbor-seq` at [path] (with [query])
+/// under [baseUri]: the SSE route, answered with CBOR frames
+/// (cratestack#1001).
+Stream<Object?> cratestackSubscribeCborSeq(
+  CratestackHttpTransport transport,
+  Uri baseUri,
+  String path,
+  String? query, {
+  Map<String, String>? headers,
+  void Function()? onReady,
+  int maxEventBytes = cratestackDefaultMaxEventBytes,
+}) {
+  return _cratestackAbortable(
+    (abort) => _cratestackCborSeqItems(
+      transport,
+      baseUri,
+      path,
+      query,
+      headers,
+      onReady,
+      abort,
+      maxEventBytes,
+    ),
+  );
+}
+
 Stream<Object?> _cratestackCborSeqItems(
   CratestackHttpTransport transport,
   Uri baseUri,

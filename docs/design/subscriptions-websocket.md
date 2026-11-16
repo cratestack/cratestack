@@ -851,6 +851,20 @@ procedure has no unary form, so its REST route answers 406 to any other `Accept`
 content-negotiation precedent `@stream` set on RPC (rpc-transport.md §3.3). `op_list.rs:27`'s "only
 under `transport rpc`" goes away, and with it the parser rule at `model_attributes.rs:81`.
 
+### 7.3 `Accept: application/cbor-seq` (cratestack#1001)
+
+The same routes answer `Accept: application/cbor-seq` with the §6a.3 framing as an HTTP body: each
+item of the sequence is one CBOR `ServerFrame`, `{id: 1, ready: {}}` first, then `{id: n, next}`
+per event, then one `{id, err}` or `{id, end: {}}`; a bare CBOR `null` (`0xf6`) every 15 s is the
+keep-alive. Items are encoded with `CborCodec`, so a `Uuid` is a byte string. `Accept` negotiation is
+literal per entry and the first entry the server speaks wins; `text/event-stream` and `*/*` stay SSE,
+and anything else is `406` before authentication. A refusal before the stream is the same JSON body as
+for SSE. `POST /rpc/subscribe/{op_id}` reads its body by `Content-Type` (`application/cbor` or JSON).
+REST keeps `GET` only, as for SSE. Unlike SSE, a source that simply ends sends `end`, because a body
+that stops without a terminal frame is a dropped connection, and a client treats it as an error.
+Clients cap one frame at the SSE event cap (1 MiB by default) and pin the binding in configuration;
+`auto` does not pick it.
+
 ## 8. Clients
 
 One contract in each language: **subscribe → `Ready` → items → end or error**, with the binding
