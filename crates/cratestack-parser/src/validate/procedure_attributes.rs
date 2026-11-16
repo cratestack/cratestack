@@ -21,13 +21,16 @@
 //! | `@authn`          | required  | `cratestack_core::parse_authn_attribute`; enforced by the generated authorize step (`cratestack-macros` `procedure/authn.rs`) |
 //! | `@device_auth`    | required  | `cratestack_core::parse_device_auth_attribute`; read by `cratestack-client-dart`'s fespalier preset, which emits a `DeviceAuthServer` (cratestack#1303). The macros ignore it |
 //!
+//! `@frames` is not on this list: it belongs to a `subscription procedure`
+//! (`super::subscriptions`), and a unary procedure refuses it.
+//!
 //! Runs after the per-attribute validators, so their more specific
 //! messages (`@isolation requires a quoted level argument`, …) still win
 //! where they apply.
 
 use cratestack_core::Procedure;
 
-use super::attribute_shape::{Arguments, Known, check_shape};
+use super::attribute_shape::{Arguments, Known, check_shape_hinted};
 use crate::diagnostics::{SchemaError, span_error};
 
 const PROCEDURE_ATTRIBUTES: &[Known] = &[
@@ -46,6 +49,10 @@ const PROCEDURE_ATTRIBUTES: &[Known] = &[
     ("@device_auth", Arguments::Required),
 ];
 
+/// Attributes the language has but a unary `procedure` does not take: a typo
+/// of one is still pointed at it (`@frames` is a `subscription procedure`'s).
+const ELSEWHERE: &[&str] = &["@frames"];
+
 /// The actions `@authorize(Model, action, args.path)` supports
 /// (`generate_procedure_model_authorizer`).
 const AUTHORIZE_ACTIONS: &[&str] = &["detail", "read", "update", "delete"];
@@ -53,7 +60,13 @@ const AUTHORIZE_ACTIONS: &[&str] = &["detail", "read", "update", "delete"];
 pub(super) fn validate_procedure_attributes(procedure: &Procedure) -> Result<(), SchemaError> {
     let owner = format!("procedure `{}`", procedure.name);
     for attribute in &procedure.attributes {
-        let (name, inner) = check_shape(attribute, PROCEDURE_ATTRIBUTES, &owner, "procedure")?;
+        let (name, inner) = check_shape_hinted(
+            attribute,
+            PROCEDURE_ATTRIBUTES,
+            ELSEWHERE,
+            &owner,
+            "procedure",
+        )?;
         if name != "@authorize" {
             continue;
         }

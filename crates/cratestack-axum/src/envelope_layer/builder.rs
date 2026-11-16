@@ -4,7 +4,7 @@
 
 use std::sync::Arc;
 
-use cratestack_core::{AcceptedContracts, RouteTransportDescriptor};
+use cratestack_core::{AcceptedContracts, RouteTransportDescriptor, SubscriptionFrames};
 
 use super::mode::{EnvelopeMode, EnvelopePolicy};
 use super::principal::PrincipalMapper;
@@ -26,6 +26,8 @@ pub struct EnvelopeLayerBuilder {
     pub(super) audience: String,
     pub(super) contracts: AcceptedContracts,
     pub(super) max_contract_trials: usize,
+    /// `subscriptions(..)`; empty by default (cratestack#1378).
+    pub(super) subscriptions: SubscriptionFrames,
     pub(super) policy: Option<Box<dyn EnvelopePolicy>>,
     pub(super) transport: Transport,
     /// The prefix given to `rest(..)` / `rpc(..)`.
@@ -48,6 +50,19 @@ impl EnvelopeLayerBuilder {
     /// them, or a closure per op. Required (decision D9).
     pub fn policy(mut self, policy: impl EnvelopePolicy) -> Self {
         self.policy = Some(Box::new(policy));
+        self
+    }
+
+    /// The subscriptions the schema marks `@frames(unsigned)`: the generated
+    /// `cratestack_schema::SUBSCRIPTION_FRAMES`, which the generated
+    /// `envelope_layer` passes for you (cratestack#1378).
+    ///
+    /// **Inert for now**: the layer keeps the table and no request reads it,
+    /// so a subscription under a required envelope is refused as before.
+    /// The default is empty, which a later reader must treat as "no
+    /// subscription may open signed" (fail closed).
+    pub fn subscriptions(mut self, table: SubscriptionFrames) -> Self {
+        self.subscriptions = table;
         self
     }
 

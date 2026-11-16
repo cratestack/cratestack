@@ -48,6 +48,7 @@ const ATTRIBUTES: &[Known] = &[
     ("@authn", Arguments::Required),
     ("@authorize", Arguments::Required),
     ("@api_version", Arguments::Required),
+    ("@frames", Arguments::Required),
 ];
 
 /// Scalars a topic key may be: each renders as the channel's last segment.
@@ -114,6 +115,7 @@ pub(super) fn validate_subscriptions(
 
 fn validate_attributes(procedure: &Procedure) -> Result<(), SchemaError> {
     let owner = format!("subscription procedure `{}`", procedure.name);
+    let mut first_frames = true;
     for attribute in &procedure.attributes {
         if let Some((name, why)) = REFUSED.iter().find(|(name, _)| {
             attribute.raw == *name || attribute.raw.starts_with(&format!("{name}("))
@@ -123,7 +125,15 @@ fn validate_attributes(procedure: &Procedure) -> Result<(), SchemaError> {
                 attribute.span,
             ));
         }
-        check_shape(attribute, ATTRIBUTES, &owner, "subscription procedure")?;
+        let (name, inner) = check_shape(attribute, ATTRIBUTES, &owner, "subscription procedure")?;
+        if name == "@frames" {
+            super::frames_attribute::validate_frames(
+                procedure,
+                attribute,
+                inner.unwrap_or_default(),
+                &mut first_frames,
+            )?;
+        }
     }
     Ok(())
 }
@@ -171,3 +181,5 @@ fn validate_topic(
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tests_frames;

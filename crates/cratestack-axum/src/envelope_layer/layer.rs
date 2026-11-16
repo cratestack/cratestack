@@ -3,7 +3,7 @@
 use std::fmt;
 use std::sync::Arc;
 
-use cratestack_core::AcceptedContracts;
+use cratestack_core::{AcceptedContracts, SubscriptionFrames};
 use tower::Layer;
 
 use super::builder::{EnvelopeLayerBuilder, Transport};
@@ -25,6 +25,10 @@ pub(super) struct Config {
     /// Per op key, the digests a request may bind (`contract.rs`).
     pub(super) contracts: AcceptedContracts,
     pub(super) max_contract_trials: usize,
+    /// The subscriptions marked `@frames(unsigned)`, per op key. Stored for
+    /// the signed subscription open (cratestack#1378, part B); nothing reads
+    /// it to decide a request yet.
+    pub(super) subscriptions: SubscriptionFrames,
     pub(super) max_body_bytes: usize,
     /// Normalised (`""` or `"/api"`), for the allow-list.
     pub(super) mount_prefix: String,
@@ -76,6 +80,7 @@ impl EnvelopeLayer {
             audience: audience.into(),
             contracts,
             max_contract_trials: DEFAULT_MAX_CONTRACT_TRIALS,
+            subscriptions: &[],
             policy: None,
             transport: Transport::None,
             transport_prefix: None,
@@ -110,6 +115,10 @@ impl fmt::Debug for EnvelopeLayer {
             .field("mount_prefix", &self.config.mount_prefix)
             .field("allow_unresolved", &self.config.allow_unresolved)
             .field("max_body_bytes", &self.config.max_body_bytes)
+            .field(
+                "unsigned_frames_subscriptions",
+                &self.config.subscriptions.len(),
+            )
             .finish_non_exhaustive()
     }
 }

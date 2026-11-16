@@ -19,6 +19,7 @@ mod enum_ordinals;
 mod field_attribute_tables;
 mod field_attributes;
 mod fields;
+mod frames_attribute;
 mod index_attribute;
 mod isolation_scope;
 mod key_relation_attributes;

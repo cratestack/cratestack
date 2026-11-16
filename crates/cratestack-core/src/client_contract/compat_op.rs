@@ -108,10 +108,28 @@ pub(super) fn op(old: &OpContract, new: &OpContract, reasons: &mut Vec<String>) 
 pub(super) fn attributes(what: &str, old: &[String], new: &[String], reasons: &mut Vec<String>) {
     let (old, new): (BTreeSet<_>, BTreeSet<_>) = (old.iter().collect(), new.iter().collect());
     for removed in old.difference(&new) {
-        reasons.push(format!("{what} lost the attribute {removed}"));
+        reasons.push(format!(
+            "{what} lost the attribute {removed}{}",
+            trust(removed)
+        ));
     }
     for added in new.difference(&old) {
-        reasons.push(format!("{what} gained the attribute {added}"));
+        reasons.push(format!(
+            "{what} gained the attribute {added}{}",
+            trust(added)
+        ));
+    }
+}
+
+/// `@frames` decides whether a client accepts unsigned frames for the
+/// subscription (cratestack#1378): adding or removing it changes a trust
+/// decision on the wire, so it fails closed and says why.
+fn trust(attribute: &str) -> &'static str {
+    if super::attrs::attribute_name(attribute) == crate::schema::FRAMES_ATTRIBUTE {
+        ": a frames mode is a trust decision on the stream, so it is wire-incompatible \
+         whichever way it changes"
+    } else {
+        ""
     }
 }
 

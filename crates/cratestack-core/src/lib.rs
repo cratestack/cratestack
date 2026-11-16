@@ -103,6 +103,7 @@ pub use client_contract::{
     Generation, Incompatible, LOCK_FORMAT, LockError, OP_CONTRACT_DOMAIN, OpContracts, OpTarget,
     Pruned, Verdict, bound_contracts, classify, client_contract_digest, client_ops, digest_hex,
     find_contract, op_contract_digest, op_contract_digests, op_contract_json, op_keys,
+    subscription_frames,
 };
 pub use credential::Credential;
 pub use cursor::{MAX_CURSOR_LEN, cursor_scalar, decode_cursor, encode_cursor};
@@ -146,14 +147,15 @@ pub use patch::deserialize_double_option;
 pub use projection::ProjectionDecoder;
 pub use schema::{
     Attribute, AuthBlock, ComputedParamsArg, ConfigBlock, ConfigEntry, Datasource,
-    ENUM_ORDINAL_MAX, ENUM_RESERVED_ATTRIBUTE, EnumDecl, EnumVariant, ExtensionKind, Field,
-    INTERNAL_ACTIONS, MCP_MAX_PAGE_SIZE, McpConfig, McpName, MixinDecl, Model, ModelMcpExposure,
-    OwnedSchemaSummary, PRIMARY_KEY_ATTRIBUTE, ParsedCompositeUnique, ParsedIndexAttribute,
-    Procedure, ProcedureArg, ProcedureKind, ProcedureMcpExposure, QUERY_SQL_ATTRIBUTE, Query,
-    ReservedOrdinals, Schema, SchemaSummary, SelectionQuery, SourceSpan, Topic, TransportStyle,
-    TypeArity, TypeDecl, TypeRef, View, ViewSource, canonical_geometry_subtype,
-    computed_params_type_name, field_attribute_name, geometry_subtype_names, is_computed_attribute,
-    is_computed_field, is_primary_key_attribute, is_relation_attribute, model_internal_actions,
+    ENUM_ORDINAL_MAX, ENUM_RESERVED_ATTRIBUTE, EnumDecl, EnumVariant, ExtensionKind,
+    FRAMES_ATTRIBUTE, Field, FramesMode, INTERNAL_ACTIONS, MCP_MAX_PAGE_SIZE, McpConfig, McpName,
+    MixinDecl, Model, ModelMcpExposure, OwnedSchemaSummary, PRIMARY_KEY_ATTRIBUTE,
+    ParsedCompositeUnique, ParsedIndexAttribute, Procedure, ProcedureArg, ProcedureKind,
+    ProcedureMcpExposure, QUERY_SQL_ATTRIBUTE, Query, ReservedOrdinals, Schema, SchemaSummary,
+    SelectionQuery, SourceSpan, SubscriptionFrames, Topic, TransportStyle, TypeArity, TypeDecl,
+    TypeRef, View, ViewSource, canonical_geometry_subtype, computed_params_type_name,
+    field_attribute_name, geometry_subtype_names, is_computed_attribute, is_computed_field,
+    is_primary_key_attribute, is_relation_attribute, model_internal_actions,
     parse_composite_id_attribute, parse_composite_unique_attribute, parse_computed_params_arg,
     parse_index_attribute, parse_internal_attribute, scan_sql_placeholders,
 };

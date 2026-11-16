@@ -88,6 +88,7 @@ impl EnvelopeLayerBuilder {
                 audience: self.audience,
                 contracts: self.contracts,
                 max_contract_trials: self.max_contract_trials,
+                subscriptions: self.subscriptions,
                 max_body_bytes: self.max_body_bytes,
                 mount_prefix: mount_prefix::normalize(prefix),
                 allow_unresolved: self.allow_unresolved,
