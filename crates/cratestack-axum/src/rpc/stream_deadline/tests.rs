@@ -58,3 +58,38 @@ async fn a_busy_source_cannot_starve_the_deadline() {
     }
     assert!(items.next().await.is_none(), "nothing after the end");
 }
+
+/// A source that is always ready, yielding to the runtime between items (as a
+/// socket-backed body does), is cut shortly after a deadline that passes
+/// mid-stream: items flow first, then the terminal error, in real time on a
+/// runtime whose timer driver runs.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_busy_source_is_cut_when_the_deadline_passes_mid_stream() {
+    let busy: SubscriptionStream<serde_json::Value> = Box::pin(stream::unfold((), |()| async {
+        tokio::task::yield_now().await;
+        Some((Ok(serde_json::json!(1)), ()))
+    }));
+    let started = std::time::Instant::now();
+    let deadline = Some(SignedStreamDeadline(
+        Instant::now() + Duration::from_millis(100),
+    ));
+    let mut items = until_stream_deadline(busy, deadline);
+    let mut passed = 0usize;
+    let ended = tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            match items.next().await {
+                Some(Ok(_)) => passed += 1,
+                other => break other,
+            }
+        }
+    })
+    .await
+    .expect("the deadline ended a busy stream");
+    match ended {
+        Some(Err(CratestackError::Unavailable(message))) => assert_eq!(message, "stream lifetime"),
+        other => panic!("expected the lifetime error, got {other:?}"),
+    }
+    assert!(passed > 0, "items flowed before the deadline");
+    assert!(started.elapsed() < Duration::from_secs(5), "shortly after");
+    assert!(items.next().await.is_none(), "nothing after the end");
+}

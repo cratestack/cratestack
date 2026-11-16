@@ -67,3 +67,40 @@ async fn a_busy_source_cannot_starve_the_expiry() {
     }
     assert!(items.next().await.is_none(), "nothing after the expiry");
 }
+
+/// A source that is always ready, yielding to the runtime between items (as a
+/// socket-backed body does), is cut shortly after a credential expiry that
+/// passes mid-stream: items flow first, then the terminal error, in real time
+/// on a runtime whose timer driver runs.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_busy_source_is_cut_when_the_credential_expires_mid_stream() {
+    let busy: SubscriptionStream<serde_json::Value> = Box::pin(stream::unfold((), |()| async {
+        tokio::task::yield_now().await;
+        Some((Ok(serde_json::json!(1)), ()))
+    }));
+    let started = std::time::Instant::now();
+    let mut items = until_credential_expires(busy, Some(now() + 1));
+    let mut passed = 0usize;
+    let ended = tokio::time::timeout(std::time::Duration::from_secs(10), async {
+        loop {
+            match items.next().await {
+                Some(Ok(_)) => passed += 1,
+                other => break other,
+            }
+        }
+    })
+    .await
+    .expect("the expiry ended a busy stream");
+    match ended {
+        Some(Err(CratestackError::Unauthorized(message))) => {
+            assert_eq!(message, "credential expired")
+        }
+        other => panic!("expected the expiry error, got {other:?}"),
+    }
+    assert!(passed > 0, "items flowed before the expiry");
+    assert!(
+        started.elapsed() < std::time::Duration::from_secs(5),
+        "shortly after"
+    );
+    assert!(items.next().await.is_none(), "nothing after the end");
+}

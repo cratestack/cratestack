@@ -111,4 +111,5 @@ fn target(op: &str, method: &'static str) -> Target {
     }
 }
 
-signed_subscription_cases!(router: router, router_life: router_life, target: target, methods: ["GET"]);
+signed_subscription_cases!(router: router, target: target, methods: ["GET"]);
+signed_subscription_stream_cases!(router: router, router_life: router_life, target: target, methods: ["GET"]);

@@ -75,7 +75,7 @@ fn a_zero_lifetime_is_refused_at_build() {
 fn a_lifetime_over_24_hours_is_refused_at_build() {
     assert_eq!(MAX_SIGNED_STREAM_LIFE, Duration::from_secs(24 * 3600));
     for over in [
-        MAX_SIGNED_STREAM_LIFE + Duration::from_secs(1),
+        MAX_SIGNED_STREAM_LIFE + Duration::from_nanos(1),
         Duration::MAX,
     ] {
         let error = builder()

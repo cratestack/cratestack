@@ -20,8 +20,10 @@ impl EnvelopeLayerBuilder {
     /// audience is empty (it would bind no recipient), the policy or the
     /// transport is missing, the REST route table is empty (a `rest(..)`
     /// given another schema's, or an RPC schema's, empty table would bind
-    /// nothing), the body limit, the contract trials or the signed stream lifetime is zero, an allow-listed template does not
-    /// start with `/`, or the envelope's media type is not a valid header
+    /// nothing), the body limit, the contract trials or the signed stream
+    /// lifetime is zero, the signed stream lifetime exceeds
+    /// [`MAX_SIGNED_STREAM_LIFE`] (24 hours), an allow-listed template does
+    /// not start with `/`, or the envelope's media type is not a valid header
     /// value naming `application/cose` or a type the envelope claims.
     pub fn build(self) -> Result<EnvelopeLayer, CratestackError> {
         if self.audience.is_empty() {

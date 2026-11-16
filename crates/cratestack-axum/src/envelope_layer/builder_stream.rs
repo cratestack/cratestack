@@ -18,9 +18,10 @@ pub const MAX_SIGNED_STREAM_LIFE: Duration = Duration::from_secs(24 * 3600);
 impl EnvelopeLayerBuilder {
     /// The longest a signed subscription's stream lives. Default
     /// [`DEFAULT_MAX_SIGNED_STREAM_LIFE`] (one hour); zero, or more than
-    /// [`MAX_SIGNED_STREAM_LIFE`] (24 hours), is refused by `build`. The frames of such a stream are not signed, so this bounds how
-    /// long one signed open vouches for them. If the credential's `exp`
-    /// comes first, it wins.
+    /// [`MAX_SIGNED_STREAM_LIFE`] (24 hours), is refused by `build`. The
+    /// frames of such a stream are not signed, so this bounds how long one
+    /// signed open vouches for them. If the credential's `exp` comes first,
+    /// it wins.
     pub fn max_signed_stream_life(mut self, life: Duration) -> Self {
         self.max_signed_stream_life = life;
         self
