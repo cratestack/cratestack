@@ -21,7 +21,10 @@ pub enum EnvelopeMode {
     /// request. Prefer `GET` under `Required`.
     Required,
     /// A signed request is opened and its response is always sealed, as
-    /// under `Required` (decision S3). An unsigned one runs as before; its
+    /// under `Required` (decision S3), except that a signed open of a
+    /// subscription marked `@frames(unsigned)` streams unsigned frames
+    /// (`Cratestack-Frames: unsigned`), as in every mode that accepts a signed
+    /// request. An unsigned one runs as before; its
     /// response is sealed only when it carries a valid `Cratestack-Nonce`
     /// and the [`super::ResponseSealPolicy`] asks for it (D10). A signed
     /// request that fails verification is still the `401`, never downgraded
@@ -32,7 +35,9 @@ pub enum EnvelopeMode {
     /// bootstrap, any op whose caller has no registered key yet but must
     /// never be answered unauthenticated.
     ///
-    /// A signed request is opened and answered sealed, as under `Optional`.
+    /// A signed request is opened and answered sealed, as under `Optional`
+    /// (including its one exception: a signed open of a subscription marked
+    /// `@frames(unsigned)` streams unsigned frames).
     /// An unsigned one must carry exactly one well-formed
     /// `Cratestack-Nonce`, an `Accept` that names `application/cose` with a
     /// non-zero weight, and satisfy the [`super::ResponseSealPolicy`]; and

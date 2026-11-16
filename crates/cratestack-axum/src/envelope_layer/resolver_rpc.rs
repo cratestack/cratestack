@@ -26,8 +26,9 @@ use crate::rpc::RPC_BINDING_CAPABILITIES;
 /// a COSE body is refused, a plain one passes to the router, whose `404` it
 /// is. A well-formed but unknown op id is bound anyway, so the router's
 /// `404` for it is sealed like any other error. Only `POST` is an op on the
-/// unary and batch routes, only `GET` (and `HEAD`, which axum routes to
-/// it) on the subscription route.
+/// unary and batch routes; `GET` (and `HEAD`, which axum routes to it) and
+/// `POST` (a signed open's body, cratestack#1378) are on the subscription
+/// route.
 #[derive(Debug, Clone)]
 pub struct RpcBindingResolver {
     prefix: String,
@@ -61,12 +62,14 @@ impl BindingResolver for RpcBindingResolver {
         let values = |params: &[(String, String)]| -> Vec<String> {
             params.iter().map(|(_, value)| value.clone()).collect()
         };
-        let (expected, route) = if template == RPC_BATCH_PATH {
-            (Method::POST, None)
+        let (allowed, route): (&[Method], Option<&str>) = if template == RPC_BATCH_PATH {
+            (&[Method::POST], None)
         } else if template == RPC_UNARY_PATH {
-            (Method::POST, Some(""))
+            (&[Method::POST], Some(""))
         } else if template == RPC_SUBSCRIBE_PATH {
-            (Method::GET, Some("subscribe/"))
+            // `POST` carries a signed open's CBOR body (cratestack#1378): a
+            // signed request cannot put one in a `GET`.
+            (&[Method::GET, Method::POST], Some("subscribe/"))
         } else {
             return Resolution::Unresolved;
         };
@@ -75,9 +78,9 @@ impl BindingResolver for RpcBindingResolver {
         // its real method, as in the REST resolver (security finding SF-2
         // of the second review). As `MethodNotAllowed` it passed unsigned
         // whenever the policy's `unresolved_mode` was not `Required`.
-        let head_as_get = expected == Method::GET && request.method() == Method::HEAD;
-        if request.method() != expected && !head_as_get {
-            return Resolution::MethodNotAllowed(vec![expected]);
+        let head_as_get = allowed.contains(&Method::GET) && request.method() == Method::HEAD;
+        if !allowed.contains(request.method()) && !head_as_get {
+            return Resolution::MethodNotAllowed(allowed.to_vec());
         }
         let Some(route_prefix) = route else {
             return Resolution::Op(ResolvedRoute::new("batch", values(request.path_params())));

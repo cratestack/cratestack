@@ -876,6 +876,36 @@ stream whose first frame is not `ready` (an `err` first is the server's refusal)
 frame at the SSE event cap (1 MiB by default) and pin the binding in configuration; `auto` does not
 pick it.
 
+### 7.4 Signed open, unsigned frames (cratestack#1378)
+
+Under a required signed envelope, a subscription the schema marks `@frames(unsigned)` may be opened
+with a signed request; every other subscription stays a sealed `406`. The open is verified like a
+unary call (audience, method, route, canonical query, op-contract digest, nonce), and the response
+is a plain §7.3 stream, labelled `Cratestack-Frames: unsigned`: **the frames are not signed**, so a
+client treats them only as hints to re-read through a sealed call (ADR 0006).
+
+- **Routes.** RPC `POST /rpc/subscribe/{op_id}` (the sealed message is the body, the open input
+  inside it) or `GET` with the input as a query; REST `GET /$procs/<name>` with the sealed message as
+  the body, which browsers cannot send (cratestack#1407), so REST is for native clients.
+  `HEAD` is a sealed `406`.
+- **Naming the stream.** The single `Accept` must contain `application/cbor-seq` or
+  `text/event-stream` literally, the first one winning; `*/*` alone, none, or two `Accept` headers
+  is a sealed `406`. The layer reads it before rewriting it, then hands the router that one type.
+- **Which are marked.** The layer's `SUBSCRIPTION_FRAMES` table: on RPC by bare op id, only for a
+  route bound as a subscription (a unary call to the same id is not an open); on REST by
+  `"<METHOD> <path>"`, never for `HEAD`. A marked REST open that names no stream is refused before
+  its handler; an unmarked one keeps today's behaviour (handler runs, stream replaced by a sealed
+  `406`); an unmarked RPC one is refused before its handler.
+- **Answer.** A 2xx stream of the requested type is returned unsealed with `Cratestack-Frames:
+  unsigned` and `Cache-Control: no-store`. Every other answer is sealed, so a refusal is never
+  mistaken for frames. This is the one exception to "a signed request is answered sealed", and it
+  holds in every mode that accepts a signed request (`Required`, `Optional`,
+  `UnsignedRequestSealedReply`).
+- **Lifetime.** The layer puts `SignedStreamDeadline(now + max_signed_stream_life)` (default 1 h)
+  in the request extensions (`build` refuses a lifetime of zero or above 24 h); `serve_subscription_with` ends the stream with `err` `unavailable` /
+  `"stream lifetime"`, after the credential's `exp` if that is earlier. Clients resubscribe with
+  jittered backoff and a fresh signed open (a nonce is single-use).
+
 ## 8. Clients
 
 One contract in each language: **subscribe → `Ready` → items → end or error**, with the binding

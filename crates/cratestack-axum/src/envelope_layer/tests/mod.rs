@@ -81,6 +81,18 @@ mod rpc_rules;
 #[cfg(feature = "cose")]
 mod sealed_reply;
 #[cfg(feature = "cose")]
+mod signed_subscription;
+#[cfg(feature = "cose")]
+mod signed_subscription_exits;
+#[cfg(feature = "cose")]
+mod signed_subscription_lifetime;
+#[cfg(feature = "cose")]
+mod signed_subscription_refusals;
+#[cfg(feature = "cose")]
+mod signed_subscription_rest;
+#[cfg(feature = "cose")]
+mod signed_subscription_support;
+#[cfg(feature = "cose")]
 mod streams;
 #[cfg(feature = "cose")]
 mod subscription_frames;

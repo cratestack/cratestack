@@ -2,11 +2,13 @@
 
 use std::fmt;
 use std::sync::Arc;
+use std::time::Duration;
 
 use cratestack_core::{AcceptedContracts, SubscriptionFrames};
 use tower::Layer;
 
 use super::builder::{EnvelopeLayerBuilder, Transport};
+use super::builder_stream::DEFAULT_MAX_SIGNED_STREAM_LIFE;
 use super::mode::EnvelopePolicy;
 use super::principal::{PrincipalMapper, ThumbprintPrincipal};
 use super::resolver::BindingResolver;
@@ -25,10 +27,11 @@ pub(super) struct Config {
     /// Per op key, the digests a request may bind (`contract.rs`).
     pub(super) contracts: AcceptedContracts,
     pub(super) max_contract_trials: usize,
-    /// The subscriptions marked `@frames(unsigned)`, per op key. Stored for
-    /// the signed subscription open (cratestack#1378, part B); nothing reads
-    /// it to decide a request yet.
+    /// The subscriptions marked `@frames(unsigned)`, per op key: the ones
+    /// that may be opened signed (`signed_subscription.rs`, cratestack#1378).
     pub(super) subscriptions: SubscriptionFrames,
+    /// The longest a signed subscription streams.
+    pub(super) max_signed_stream_life: Duration,
     pub(super) max_body_bytes: usize,
     /// Normalised (`""` or `"/api"`), for the allow-list.
     pub(super) mount_prefix: String,
@@ -81,6 +84,7 @@ impl EnvelopeLayer {
             contracts,
             max_contract_trials: DEFAULT_MAX_CONTRACT_TRIALS,
             subscriptions: &[],
+            max_signed_stream_life: DEFAULT_MAX_SIGNED_STREAM_LIFE,
             policy: None,
             transport: Transport::None,
             transport_prefix: None,
@@ -118,6 +122,10 @@ impl fmt::Debug for EnvelopeLayer {
             .field(
                 "unsigned_frames_subscriptions",
                 &self.config.subscriptions.len(),
+            )
+            .field(
+                "max_signed_stream_life",
+                &self.config.max_signed_stream_life,
             )
             .finish_non_exhaustive()
     }

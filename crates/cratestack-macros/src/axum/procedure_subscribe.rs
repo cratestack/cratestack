@@ -43,8 +43,9 @@ pub(crate) fn generate_subscription_procedure_axum(
                     return ::cratestack::__private::encode_subscribe_error(&error);
                 }
             };
-            ::cratestack::__private::serve_subscription(
+            ::cratestack::__private::serve_subscription_with(
                 binding,
+                &client_ip_ctx.extensions,
                 super::subscriptions::#open(
                     &state.db, &state.registry, raw_query, ctx, binding.codec(),
                 ),

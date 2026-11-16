@@ -308,8 +308,8 @@ pub mod __private {
         FeedEvent, SseCodec, SubscribeBinding, SubscribeQuery, decode_subscribe_open_body,
         encode_model_event_sse_response, encode_subscribe_error, guarded_receiver_stream,
         model_events, model_feed, negotiate_subscribe_binding, project_event_fields, route_event,
-        serve_subscription, split_subscribe_query, subscribe_input_query, subscription_channel,
-        until_credential_expires,
+        serve_subscription, serve_subscription_with, split_subscribe_query, subscribe_input_query,
+        subscription_channel, until_credential_expires,
     };
     /// A `subscription procedure`'s arguments and items (slice S4).
     pub use cratestack_axum::rpc::{procedure_feed, procedure_input_query, procedure_query_args};

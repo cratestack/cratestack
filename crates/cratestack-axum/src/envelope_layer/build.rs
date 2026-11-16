@@ -6,6 +6,7 @@ use cratestack_core::CratestackError;
 use http::HeaderValue;
 
 use super::builder::{EnvelopeLayerBuilder, Transport};
+use super::builder_stream::MAX_SIGNED_STREAM_LIFE;
 use super::layer::{Config, EnvelopeLayer};
 use super::media;
 use super::mode::{EnvelopePolicy, WithUnresolved};
@@ -19,8 +20,10 @@ impl EnvelopeLayerBuilder {
     /// audience is empty (it would bind no recipient), the policy or the
     /// transport is missing, the REST route table is empty (a `rest(..)`
     /// given another schema's, or an RPC schema's, empty table would bind
-    /// nothing), the body limit or the contract trials is zero, an allow-listed template does not
-    /// start with `/`, or the envelope's media type is not a valid header
+    /// nothing), the body limit, the contract trials or the signed stream
+    /// lifetime is zero, the signed stream lifetime exceeds
+    /// [`MAX_SIGNED_STREAM_LIFE`] (24 hours), an allow-listed template does
+    /// not start with `/`, or the envelope's media type is not a valid header
     /// value naming `application/cose` or a type the envelope claims.
     pub fn build(self) -> Result<EnvelopeLayer, CratestackError> {
         if self.audience.is_empty() {
@@ -60,6 +63,18 @@ impl EnvelopeLayerBuilder {
                 "the envelope layer's contract trials must be at least 1",
             ));
         }
+        if self.max_signed_stream_life.is_zero() {
+            return Err(invalid(
+                "the envelope layer's signed stream lifetime must not be zero",
+            ));
+        }
+        if self.max_signed_stream_life > MAX_SIGNED_STREAM_LIFE {
+            return Err(invalid(&format!(
+                "the envelope layer's signed stream lifetime must not exceed {} hours \
+                 (MAX_SIGNED_STREAM_LIFE)",
+                MAX_SIGNED_STREAM_LIFE.as_secs() / 3600,
+            )));
+        }
         if self.max_body_bytes == 0 {
             return Err(invalid("the envelope layer's body limit must not be zero"));
         }
@@ -89,6 +104,7 @@ impl EnvelopeLayerBuilder {
                 contracts: self.contracts,
                 max_contract_trials: self.max_contract_trials,
                 subscriptions: self.subscriptions,
+                max_signed_stream_life: self.max_signed_stream_life,
                 max_body_bytes: self.max_body_bytes,
                 mount_prefix: mount_prefix::normalize(prefix),
                 allow_unresolved: self.allow_unresolved,

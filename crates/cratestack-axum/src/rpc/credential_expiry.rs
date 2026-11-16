@@ -37,13 +37,15 @@ pub fn until_credential_expires<T: Send + 'static>(
             if ended {
                 return None;
             }
-            match select(items.next(), deadline.as_mut()).await {
-                Either::Left((Some(item), _)) => {
+            // The clock first: `select` polls its first argument first, so a
+            // source that is always ready cannot starve the expiry.
+            match select(deadline.as_mut(), items.next()).await {
+                Either::Left(((), _)) => Some((Err(expired()), (items, deadline, true))),
+                Either::Right((Some(item), _)) => {
                     let ended = item.is_err();
                     Some((item, (items, deadline, ended)))
                 }
-                Either::Left((None, _)) => None,
-                Either::Right(((), _)) => Some((Err(expired()), (items, deadline, true))),
+                Either::Right((None, _)) => None,
             }
         },
     ))

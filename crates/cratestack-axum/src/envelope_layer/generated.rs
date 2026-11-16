@@ -1,7 +1,7 @@
 //! The body of the generated per-schema `envelope_layer(envelope, policy,
 //! audience)` (cratestack#1006): an [`super::EnvelopeLayerBuilder`] already
 //! set to the schema's transport, its `ROUTE_TRANSPORTS`, its
-//! `ACCEPTED_CONTRACTS` and its `SUBSCRIPTION_FRAMES` (inert, #1378), so a
+//! `ACCEPTED_CONTRACTS` and its `SUBSCRIPTION_FRAMES` (#1378), so a
 //! REST schema's layer cannot be built as RPC (or over another schema's
 //! descriptors).
 //!

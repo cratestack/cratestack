@@ -195,6 +195,6 @@ pub mod __private {
     pub use cratestack_axum::rpc::{
         SseCodec, SubscribeBinding, decode_subscribe_open_body, encode_subscribe_error,
         negotiate_subscribe_binding, procedure_feed, procedure_input_query, procedure_query_args,
-        serve_subscription, subscribe_input_query, until_credential_expires,
+        serve_subscription_with, subscribe_input_query, until_credential_expires,
     };
 }
