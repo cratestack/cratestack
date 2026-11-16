@@ -1,4 +1,4 @@
-//! `cratestack contract digest|print|lock|check|prune`: the per-op contract
+//! `cratestack contract digest|print|ops|lock|check|prune`: the per-op contract
 //! digests a signed client binds and the lock of older ones a server keeps
 //! accepting (cratestack#1123). `digest` and `print` are read-only; `check`
 //! is the CI gate (`lock_cmd`).
@@ -16,6 +16,7 @@ use clap::Subcommand;
 use crate::cli_support::parse_schema_or_render;
 
 mod lock_cmd;
+mod ops_cmd;
 mod reports;
 use reports::{digest_report, print_report};
 #[cfg(test)]
@@ -42,6 +43,23 @@ pub(crate) enum ContractAction {
         /// `"<METHOD> <route template>"` (`GET /widgets/{id}`).
         #[arg(long)]
         op: String,
+    },
+    /// List every op with the roles its `@allow` rules name and whether it
+    /// can be called with no principal, from the policy analysis the macros
+    /// themselves use (cratestack#1388). Read-only. With `--json` one
+    /// document: `schema`, `transport` and `ops[]`, each op with `key`,
+    /// `kind`, `allow`, `deny`, `roles` (every `hasRole` literal in an
+    /// `@allow`), `requires_principal`, `unanalysed` (rules not understood,
+    /// which count as anonymous) and `contract_digest`. An op with no `@allow`
+    /// is denied to everyone and reports `requires_principal: true`. Exit
+    /// codes: 0 ok, 2 an unreadable schema (with `--json`, `{"ok": false,
+    /// "error": …}`).
+    Ops {
+        #[arg(long)]
+        schema: PathBuf,
+        /// Machine-readable output.
+        #[arg(long)]
+        json: bool,
     },
     /// Record the schema's current op contracts in the lock file as a new
     /// generation (creating the file), so a server built with
@@ -119,6 +137,7 @@ fn dispatch(action: ContractAction) -> Result<()> {
             println!("{}", print_report(&parse_schema_or_render(&schema)?, &op)?);
             Ok(())
         }
+        ContractAction::Ops { schema, json } => ops_cmd::run(&schema, json),
         ContractAction::Lock {
             schema,
             lock,

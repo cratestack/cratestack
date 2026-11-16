@@ -16,11 +16,7 @@ pub(super) struct ProcedureModelAuthorizer<'a> {
 pub(super) fn parse_procedure_model_authorizer(
     raw: &str,
 ) -> Option<Result<ProcedureModelAuthorizer<'_>, String>> {
-    let inner = raw
-        .trim()
-        .strip_prefix("@authorize(")?
-        .strip_suffix(')')?
-        .trim();
+    let inner = cratestack_policy::authorize_attribute_inner(raw)?;
     let parts = inner.split(',').map(str::trim).collect::<Vec<_>>();
     if parts.len() != 3 {
         return Some(Err(format!(

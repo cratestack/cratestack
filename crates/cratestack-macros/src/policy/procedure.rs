@@ -26,11 +26,11 @@ pub(crate) use subject::PolicySubject;
 use term::parse_procedure_policy_term;
 
 pub(crate) fn parse_procedure_allow_expression(raw: &str) -> Option<Result<&str, String>> {
-    parse_procedure_policy_expression(raw, "@allow")
+    cratestack_policy::procedure_rule_expression(raw, "@allow")
 }
 
 pub(crate) fn parse_procedure_deny_expression(raw: &str) -> Option<Result<&str, String>> {
-    parse_procedure_policy_expression(raw, "@deny")
+    cratestack_policy::procedure_rule_expression(raw, "@deny")
 }
 
 /// Lower one `@allow`/`@deny` expression for whichever construct
@@ -60,17 +60,4 @@ pub(crate) fn generate_procedure_policy(
             expr: #expr,
         }
     })
-}
-
-fn parse_procedure_policy_expression<'a>(
-    raw: &'a str,
-    directive: &str,
-) -> Option<Result<&'a str, String>> {
-    let inner = raw
-        .trim()
-        .strip_prefix(directive)?
-        .strip_prefix('(')?
-        .strip_suffix(')')?
-        .trim();
-    Some(Ok(inner))
 }

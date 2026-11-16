@@ -41,6 +41,8 @@ mod tests_in_list;
 #[cfg(test)]
 mod tests_literal;
 #[cfg(test)]
+mod tests_literal_readings;
+#[cfg(test)]
 mod tests_system_principal;
 
 use cratestack_core::{EnumDecl, Model, TypeDecl};
@@ -48,10 +50,12 @@ use quote::quote;
 
 use super::ast::{generate_policy_ast_tokens, parse_policy_ast};
 
+use cratestack_policy::model_rule_expression as parse_policy_expression;
 use term::parse_policy_term;
 
 pub(crate) use audit::audit_model_policies;
 
+#[cfg(test)]
 pub(crate) fn generate_policies_for_action(
     model: &Model,
     models: &[Model],
@@ -72,17 +76,6 @@ pub(crate) fn generate_policies_for_actions(
     actions: &[&str],
 ) -> Result<Vec<proc_macro2::TokenStream>, String> {
     generate_policy_rules_for_actions(model, models, types, enums, auth, actions, "@@allow")
-}
-
-pub(crate) fn generate_denies_for_action(
-    model: &Model,
-    models: &[Model],
-    types: &[TypeDecl],
-    enums: &[EnumDecl],
-    auth: Option<&cratestack_core::AuthBlock>,
-    action: &str,
-) -> Result<Vec<proc_macro2::TokenStream>, String> {
-    generate_denies_for_actions(model, models, types, enums, auth, &[action])
 }
 
 pub(crate) fn generate_denies_for_actions(
@@ -121,50 +114,6 @@ fn generate_policy_rules_for_actions(
         }
     }
     Ok(policies)
-}
-
-fn parse_policy_expression<'a>(
-    raw: &'a str,
-    directive: &str,
-    actions: &[&str],
-) -> Option<Result<&'a str, String>> {
-    let inner = raw
-        .trim()
-        .strip_prefix(directive)?
-        .strip_prefix('(')?
-        .strip_suffix(')')?
-        .trim();
-    let primary_action = actions.first().copied().unwrap_or("read");
-    let Some((rule_action, rest)) = parse_rule_action(inner) else {
-        return Some(Err(format!(
-            "invalid {primary_action} policy attribute: {raw}"
-        )));
-    };
-    if rule_action != "all" && !actions.contains(&rule_action) {
-        return None;
-    }
-    let expression = match rest.strip_prefix(',') {
-        Some(expression) => expression.trim(),
-        None => {
-            return Some(Err(format!(
-                "invalid {primary_action} policy attribute: {raw}"
-            )));
-        }
-    };
-    Some(Ok(expression))
-}
-
-fn parse_rule_action(inner: &str) -> Option<(&str, &str)> {
-    let mut chars = inner.chars();
-    let quote = chars.next()?;
-    if quote != '"' && quote != '\'' {
-        return None;
-    }
-    let rest = &inner[quote.len_utf8()..];
-    let end = rest.find(quote)?;
-    let action = &rest[..end];
-    let remainder = rest[end + quote.len_utf8()..].trim_start();
-    Some((action, remainder))
 }
 
 fn generate_read_policy(

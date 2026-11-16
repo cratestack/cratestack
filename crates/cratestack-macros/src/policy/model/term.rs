@@ -6,12 +6,13 @@
 use cratestack_core::{EnumDecl, Model, TypeArity, TypeDecl};
 use quote::quote;
 
-use crate::policy::auth::{is_auth_is_system_term, parse_builtin_policy_call};
+use cratestack_policy::{ModelTerm, read_model_term};
+
 use crate::relation::parse_relation_attribute;
 use crate::shared::to_snake_case;
 
 use super::comparison::parse_model_comparison;
-use super::in_list::{parse_model_in_comparison, split_in_term};
+use super::in_list::parse_model_in_comparison;
 use super::predicates::{
     ensure_auth_field, find_model_field, generate_scalar_bool_predicate, wrap_relation_predicate,
 };
@@ -26,71 +27,37 @@ pub(super) fn parse_policy_term(
     auth: Option<&cratestack_core::AuthBlock>,
     _action: &str,
 ) -> Result<proc_macro2::TokenStream, String> {
-    if term == "auth() != null" {
-        return Ok(quote! { ::cratestack::ReadPredicate::AuthNotNull });
+    match read_model_term(term) {
+        ModelTerm::AuthNotNull => Ok(quote! { ::cratestack::ReadPredicate::AuthNotNull }),
+        ModelTerm::AuthIsNull => Ok(quote! { ::cratestack::ReadPredicate::AuthIsNull }),
+        // `auth().isSystem()` (issue #486 / ADR 0038 blocker B1): the reader
+        // recognises it before the builtin-call shape, which would find
+        // `auth`'s `(` and misreport it.
+        ModelTerm::AuthIsSystem => Ok(quote! { ::cratestack::ReadPredicate::AuthIsSystem }),
+        ModelTerm::Builtin(call) => parse_builtin_model_policy_term(call?),
+        ModelTerm::AuthRelation(relation_field) => {
+            parse_auth_relation_equality(model, auth, types, relation_field)
+        }
+        // Set membership is read before comparison, so `label in ["== x"]`
+        // is membership.
+        ModelTerm::In { lhs, list, negate } => {
+            parse_model_in_comparison(lhs, list, model, models, enums, negate)
+        }
+        ModelTerm::Comparison { lhs, rhs, negate } => {
+            parse_model_comparison(lhs, rhs, model, models, types, enums, auth, negate)
+        }
+        ModelTerm::Bare(term) => parse_bare_model_term(term, model, models),
+        // `ModelTerm` is `#[non_exhaustive]`: a shape this macro has no
+        // lowering for is refused, never guessed.
+        _ => Err(format!("unsupported policy term `{term}`")),
     }
+}
 
-    if term == "auth() == null" {
-        return Ok(quote! { ::cratestack::ReadPredicate::AuthIsNull });
-    }
-
-    // `auth().isSystem()` (issue #486 / ADR 0038 blocker B1). Must be
-    // recognised *before* `parse_builtin_policy_call`, which finds the
-    // first `(` in the term — for `auth().isSystem()` that is `auth`'s,
-    // so it would otherwise report "policy function `auth` requires a
-    // string literal argument" instead of lowering the term. Whitespace
-    // is normalized because the AST splitter only trims term edges, not
-    // interior whitespace.
-    if is_auth_is_system_term(term) {
-        return Ok(quote! { ::cratestack::ReadPredicate::AuthIsSystem });
-    }
-
-    if let Some(function) = parse_builtin_policy_call(term) {
-        return parse_builtin_model_policy_term(function?);
-    }
-
-    if let Some(relation_field) = term.strip_prefix("auth() ==") {
-        return parse_auth_relation_equality(model, auth, types, relation_field.trim());
-    }
-
-    if let Some(relation_field) = term.strip_suffix("== auth()") {
-        return parse_auth_relation_equality(model, auth, types, relation_field.trim());
-    }
-
-    // Before the `==`/`!=` splits: an `in` term contains neither
-    // operator, so ordering is not load-bearing for correctness — but
-    // keeping set membership adjacent to the comparison arms is how a
-    // reader finds it.
-    if let Some((lhs, list, negate)) = split_in_term(term) {
-        return parse_model_in_comparison(lhs, list, model, models, enums, negate);
-    }
-
-    if let Some((field, rhs)) = term.split_once("==") {
-        return parse_model_comparison(
-            field.trim(),
-            rhs.trim(),
-            model,
-            models,
-            types,
-            enums,
-            auth,
-            false,
-        );
-    }
-
-    if let Some((field, rhs)) = term.split_once("!=") {
-        return parse_model_comparison(
-            field.trim(),
-            rhs.trim(),
-            model,
-            models,
-            types,
-            enums,
-            auth,
-            true,
-        );
-    }
-
+fn parse_bare_model_term(
+    term: &str,
+    model: &Model,
+    models: &[Model],
+) -> Result<proc_macro2::TokenStream, String> {
     if let Some(relation_field) = resolve_relation_policy_field(model, models, term)? {
         if relation_field.target_field.ty.name != "Boolean"
             || relation_field.target_field.ty.arity != TypeArity::Required

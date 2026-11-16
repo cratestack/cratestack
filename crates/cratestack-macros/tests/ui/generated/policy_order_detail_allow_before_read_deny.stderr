@@ -1,0 +1,5 @@
+error: unknown model field `alsobogus` in read policy for `User`
+ --> tests/ui/generated/policy_order_detail_allow_before_read_deny.rs
+  |
+  | ...embedded_schema!("/tmp/cratestack-macros-ui-policy-order-1388/policy_order_detail_allow_before_read_deny.cstack");
+  |                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
