@@ -9,7 +9,7 @@ use cratestack_codec_cbor::CborCodec;
 use tower::util::ServiceExt;
 
 use super::HeaderCaller;
-use super::common::{TABLE, assert_one_event, frames};
+use super::common::{TABLE, assert_one_event, assert_refusal, frames};
 use super::support::pg;
 
 mod schema {
@@ -77,4 +77,36 @@ async fn a_rest_model_feed_carries_byte_string_uuids_and_exact_decimals() {
         .await
         .expect("note created");
     assert_one_event(&frames(response, Duration::from_millis(750)).await, row_id);
+}
+
+#[tokio::test]
+async fn a_rest_subscribe_refusal_before_the_stream_varies_on_accept() {
+    let Some(test_pg) = pg::connect_or_skip().await else {
+        return;
+    };
+    let _guard = pg::serial_guard().await;
+    let db = cratestack_schema::Cratestack::builder(test_pg.pool.clone()).build();
+    let router = cratestack_schema::axum::router(
+        db,
+        schema::NoProcedures,
+        (),
+        CborCodec,
+        HeaderCaller,
+        cratestack::DEFAULT_BODY_LIMIT_BYTES,
+    );
+    let route = cratestack::model_subscribe_route("SeqNote");
+    let not_acceptable = Request::get(&route)
+        .header("accept", "application/json")
+        .header("x-caller", "1")
+        .body(Body::empty())
+        .unwrap();
+    let response = router.clone().oneshot(not_acceptable).await.unwrap();
+    assert_refusal(&response, 406);
+    let unauthorized = Request::get(&route)
+        .header("accept", "application/cbor-seq")
+        .header("x-caller", "not-an-id")
+        .body(Body::empty())
+        .unwrap();
+    let response = router.oneshot(unauthorized).await.unwrap();
+    assert_refusal(&response, 401);
 }

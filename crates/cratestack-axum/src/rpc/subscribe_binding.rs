@@ -31,7 +31,7 @@ pub enum SubscribeBinding {
     /// `text/event-stream`: JSON events.
     Sse,
     /// `application/cbor-seq`: one CBOR `ServerFrame` per item, the SSE
-    /// frames CBOR-encoded (design §6a.3).
+    /// frames CBOR-encoded (design §7.3).
     CborSeq,
 }
 
@@ -119,19 +119,23 @@ where
     T: Serialize + Send + 'static,
     F: Future<Output = Result<SubscriptionStream<T>, CratestackError>>,
 {
-    let mut response = match open.await {
-        Ok(stream) => match binding {
-            SubscribeBinding::Sse => encode_subscription_sse_response(stream),
-            SubscribeBinding::CborSeq => encode_subscription_cbor_seq_response(stream),
-        },
+    match open.await {
+        Ok(stream) => {
+            let mut response = match binding {
+                SubscribeBinding::Sse => encode_subscription_sse_response(stream),
+                SubscribeBinding::CborSeq => encode_subscription_cbor_seq_response(stream),
+            };
+            // The body depends on `Accept`: a cache must not serve one
+            // binding's bytes for the other's request. (A refusal gets the
+            // same header from `encode_subscribe_error`, the one place every
+            // refusal, including the ones before this call, goes through.)
+            response
+                .headers_mut()
+                .append(header::VARY, HeaderValue::from_static("Accept"));
+            response
+        }
         Err(error) => encode_subscribe_error(&error),
-    };
-    // The body depends on `Accept`: a cache must not serve one binding's
-    // bytes for the other's request.
-    response
-        .headers_mut()
-        .append(header::VARY, HeaderValue::from_static("Accept"));
-    response
+    }
 }
 
 #[cfg(test)]

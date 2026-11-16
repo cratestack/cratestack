@@ -40,6 +40,21 @@ pub async fn frames(
     frames
 }
 
+/// A refusal before the stream: JSON, its own status, and `Vary: Accept`
+/// like every subscribe response, so a cache keeps it apart from the other
+/// binding's answer to the same URL.
+pub fn assert_refusal(response: &cratestack::axum::response::Response, status: u16) {
+    assert_eq!(response.status().as_u16(), status);
+    assert_eq!(
+        response.headers()[cratestack::axum::http::header::CONTENT_TYPE],
+        "application/json"
+    );
+    assert_eq!(
+        response.headers()[cratestack::axum::http::header::VARY],
+        "Accept"
+    );
+}
+
 /// `ready`, then one `next` whose `event_id` and `data.id` are 16-byte
 /// strings (not the 36-character text SSE carries), and whose `Decimal`
 /// is its exact text.
@@ -62,10 +77,10 @@ pub fn assert_one_event(frames: &[ServerFrame], row_id: uuid::Uuid) {
         panic!("data is a map, got {:?}", item["data"]);
     };
     assert_eq!(data["id"], RpcFrameValue::Bytes(row_id.as_bytes().to_vec()));
-    assert!(
-        matches!(&data["amount"], RpcFrameValue::String(amount) if amount.starts_with("12.5")),
-        "a Decimal is its exact text: {:?}",
-        data["amount"]
+    assert_eq!(
+        data["amount"],
+        RpcFrameValue::String("12.50000000".to_owned()),
+        "a Decimal is its exact text (NUMERIC(38, 8) pads to 8 places)"
     );
 
     // And a typed client reads the whole event: the right Uuids, the row.
@@ -76,5 +91,5 @@ pub fn assert_one_event(frames: &[ServerFrame], row_id: uuid::Uuid) {
     assert!(!event.event_id.is_nil());
     assert_eq!(event.model, "SeqNote");
     assert_eq!((event.data.id, event.data.body.as_str()), (row_id, "hello"));
-    assert!(event.data.amount.starts_with("12.5"), "{:?}", event.data);
+    assert_eq!(event.data.amount, "12.50000000");
 }

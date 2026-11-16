@@ -9,7 +9,7 @@ use cratestack_codec_cbor::CborCodec;
 use tower::util::ServiceExt;
 
 use super::HeaderCaller;
-use super::common::{TABLE, assert_one_event, frames};
+use super::common::{TABLE, assert_one_event, assert_refusal, frames};
 use super::support::pg;
 
 mod schema {
@@ -77,4 +77,60 @@ async fn an_rpc_model_feed_carries_byte_string_uuids_and_exact_decimals() {
         .await
         .expect("note created");
     assert_one_event(&frames(response, Duration::from_millis(750)).await, row_id);
+}
+
+#[tokio::test]
+async fn an_rpc_subscribe_refusal_before_the_stream_varies_on_accept() {
+    let Some(test_pg) = pg::connect_or_skip().await else {
+        return;
+    };
+    let _guard = pg::serial_guard().await;
+    let db = cratestack_schema::Cratestack::builder(test_pg.pool.clone()).build();
+    let router = cratestack_schema::axum::rpc_router(
+        db,
+        schema::NoProcedures,
+        (),
+        CborCodec,
+        HeaderCaller,
+        cratestack::DEFAULT_BODY_LIMIT_BYTES,
+    );
+    let op = "/rpc/subscribe/model.SeqNote.subscribe";
+    let cases = [
+        // `Accept` names neither binding.
+        (Request::get(op).header("accept", "application/json"), 406),
+        // The credential is refused.
+        (
+            Request::get(op)
+                .header("accept", "application/cbor-seq")
+                .header("x-caller", "not-an-id"),
+            401,
+        ),
+        // The `POST` input is not JSON.
+        (
+            Request::post(op)
+                .header("accept", "application/cbor-seq")
+                .header("x-caller", "1"),
+            400,
+        ),
+        // No such subscription op.
+        (
+            Request::get("/rpc/subscribe/model.SeqNote.nope")
+                .header("accept", "application/cbor-seq")
+                .header("x-caller", "1"),
+            404,
+        ),
+    ];
+    for (builder, status) in cases {
+        let body = if builder.method_ref() == Some(&cratestack::axum::http::Method::POST) {
+            Body::from("{not json")
+        } else {
+            Body::empty()
+        };
+        let response = router
+            .clone()
+            .oneshot(builder.body(body).unwrap())
+            .await
+            .unwrap();
+        assert_refusal(&response, status);
+    }
 }

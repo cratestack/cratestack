@@ -1,5 +1,5 @@
 //! A subscription over `application/cbor-seq`
-//! (`docs/design/subscriptions-websocket.md` §6a.3, cratestack#1001): `GET`
+//! (`docs/design/subscriptions-websocket.md` §7.3, cratestack#1001): `GET`
 //! the same route SSE uses, with `Accept: application/cbor-seq`. The body is
 //! a CBOR sequence of server frames: the call resolves at `ready`, every
 //! `next` is an item, and `end` or `err` is the last frame. A bare CBOR

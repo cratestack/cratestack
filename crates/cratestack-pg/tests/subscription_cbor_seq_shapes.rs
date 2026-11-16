@@ -20,7 +20,8 @@ mod rest;
 mod rpc;
 mod support;
 
-/// `x-caller: <id>` authenticates as that id; no header is anonymous.
+/// `x-caller: <id>` authenticates as that id; no header is anonymous; any
+/// other value is refused (`401`), for the tests of a refusal's headers.
 #[derive(Clone)]
 struct HeaderCaller;
 
@@ -36,9 +37,14 @@ impl AuthProvider for HeaderCaller {
             .get("x-caller")
             .and_then(|value| value.to_str().ok())
             .and_then(|value| value.parse::<i64>().ok());
-        core::future::ready(Ok(match caller {
-            Some(id) => CratestackContext::authenticated([("id".to_owned(), Value::Int(id))]),
-            None => CratestackContext::anonymous(),
-        }))
+        let refused = request.headers.contains_key("x-caller") && caller.is_none();
+        core::future::ready(if refused {
+            Err(CratestackError::Unauthorized("bad credential".to_owned()))
+        } else {
+            Ok(match caller {
+                Some(id) => CratestackContext::authenticated([("id".to_owned(), Value::Int(id))]),
+                None => CratestackContext::anonymous(),
+            })
+        })
     }
 }

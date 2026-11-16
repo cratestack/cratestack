@@ -1,5 +1,5 @@
 //! The `application/cbor-seq` subscription binding
-//! (`docs/design/subscriptions-websocket.md` §6a.3, cratestack#1001): the
+//! (`docs/design/subscriptions-websocket.md` §7.3, cratestack#1001): the
 //! SSE binding's frames (ids counting up per frame), CBOR-encoded, as an HTTP
 //! response body. WebTransport differs: it carries one subscription id.
 //!
