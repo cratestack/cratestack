@@ -1,8 +1,12 @@
 // The generated `"cbor-seq"` subscription transport (cratestack#1001) run
 // for real against a `fetch` answering with `application/cbor-seq` bytes
 // written by `@cratestack/cbor`, the codec of the Rust server's frames.
-// Covers Ready gating, revival, the keep-alive `null`, frames split at every
-// byte, `end`, `err`, the frame cap, and a body that stops short.
+// Covers Ready gating (a stream must open with `ready`), revival, a model
+// event's byte-string `event_id` (against a body captured from the real
+// Postgres-backed server), the keep-alive `null`, frames split at every byte,
+// `end`, `err`, the frame cap, a body that stops short, and a response that
+// is not `application/cbor-seq`.
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { createCborCodec } from "@cratestack/cbor";
 import { CratestackClientClient as CratestackClient } from "./src/client.js";
@@ -42,7 +46,11 @@ interface Served {
 }
 
 /** A `fetch` answering with `chunks`, then closing, or left open (`idle`). */
-function served(chunks: Uint8Array[], tail: "close" | "idle" = "close"): Served {
+function served(
+  chunks: Uint8Array[],
+  tail: "close" | "idle" = "close",
+  contentType = "application/cbor-seq",
+): Served {
   const calls: Served["calls"] = [];
   const state = { cancelled: false };
   const fetchFn = (async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -57,7 +65,7 @@ function served(chunks: Uint8Array[], tail: "close" | "idle" = "close"): Served 
         state.cancelled = true;
       },
     });
-    return new Response(body, { headers: { "content-type": "application/cbor-seq" } });
+    return new Response(body, { headers: { "content-type": contentType } });
   }) as typeof fetch;
   return { fetch: fetchFn, calls, state };
 }
@@ -170,5 +178,69 @@ describe("cbor-seq", () => {
     const { error } = await collect(client(fetch, 200).procedures.lines({ args: { roomId: "r1" } }));
     expect(error).toBeInstanceOf(CratestackEventTooLargeError);
     expect(state.cancelled).toBe(true);
+  });
+
+  it("revives a model event's byte-string event_id and Uuid, as the real server writes them", async () => {
+    // Captured from the Postgres-backed server: `event_id` and `data.id` are
+    // 16-byte CBOR byte strings, `amount` is text.
+    const hex = readFileSync(new URL("./cbor-seq-model-feed.hex", import.meta.url), "utf8")
+      .split("\n")
+      .filter((line) => !line.startsWith("#"))
+      .join("")
+      .trim();
+    const body = Uint8Array.from(hex.match(/../g)!, (byte) => parseInt(byte, 16));
+    const { items, error } = await collect(client(served([body]).fetch).seqNotes.subscribe());
+    expect(items).toHaveLength(1);
+    const event = items[0] as { event_id: string; data: { id: string; amount: { toString(): string }; body: string } };
+    expect(event.event_id).toBe("3143e143-5515-49fa-8e22-9f24d82d0a03");
+    expect(event.data.id).toBe("01234567-89ab-cdef-0123-456789abcdef");
+    expect(event.data.amount.toString()).toBe("12.5");
+    expect(event.data.body).toBe("hello");
+    // The captured body stops without an `end`, which is an error.
+    expect((error as Error).message).toContain("without an `end` or `err` frame");
+  });
+
+  it("refuses a response that is not application/cbor-seq, and cancels its body", async () => {
+    const sse = new TextEncoder().encode('event: ready\ndata: {"id":1,"ready":{}}\n\n');
+    const wrong = served([sse], "idle", "text/event-stream");
+    const refused = await collect(client(wrong.fetch).procedures.lines({ args: { roomId: "r1" } }));
+    expect(refused.items).toEqual([]);
+    expect(refused.error).toBeInstanceOf(CratestackSubscriptionError);
+    expect((refused.error as CratestackSubscriptionError).code).toBe("invalid_response");
+    expect((refused.error as Error).message).toContain("text/event-stream");
+    expect(wrong.state.cancelled).toBe(true);
+
+    // Parameters and case do not matter.
+    const ok = served(
+      [concat([frame({ id: 1, ready: {} }), frame({ id: 2, end: {} })])],
+      "close",
+      "Application/CBOR-Seq; charset=binary",
+    );
+    expect((await collect(client(ok.fetch).procedures.lines({ args: { roomId: "r1" } }))).error).toBeUndefined();
+  });
+
+  it("turns an item that is not a map into a subscription error", async () => {
+    for (const bad of [frame(5 as unknown as object), frame([1, 2] as unknown as object), frame("x" as unknown as object)]) {
+      const { fetch } = served([concat([frame({ id: 1, ready: {} }), bad])]);
+      const { error } = await collect(client(fetch).procedures.lines({ args: { roomId: "r1" } }));
+      expect(error).toBeInstanceOf(CratestackSubscriptionError);
+      expect((error as CratestackSubscriptionError).code).toBe("invalid_response");
+    }
+  });
+
+  it("refuses a stream whose first frame is not `ready`, and yields nothing", async () => {
+    for (const first of [frame({ id: 1, next: { body: "early" } }), frame({ id: 1, end: {} })]) {
+      const { fetch, state } = served([concat([first, frame({ id: 2, ready: {} })])], "idle");
+      const { items, error } = await collect(client(fetch).procedures.lines({ args: { roomId: "r1" } }));
+      expect(items).toEqual([]);
+      expect(error).toBeInstanceOf(CratestackSubscriptionError);
+      expect((error as CratestackSubscriptionError).code).toBe("invalid_response");
+      expect((error as Error).message).toContain("`ready`");
+      expect(state.cancelled).toBe(true);
+    }
+    // An `err` first is the server's refusal, not a framing fault.
+    const refusal = served([frame({ id: 1, err: { code: "permission_denied", message: "no" } })]);
+    const { error } = await collect(client(refusal.fetch).procedures.lines({ args: { roomId: "r1" } }));
+    expect((error as CratestackSubscriptionError).code).toBe("permission_denied");
   });
 });
