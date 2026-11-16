@@ -16,6 +16,13 @@ Additive, non-breaking. `cratestack contract ops --schema <file> [--json]` is a 
 
 **Transport parity.** Read-only tooling; no request surface changes. MCP is exempt (ADR 0002 D5).
 
+### Published crates require their siblings exactly (cratestack#1390)
+
+Release hygiene, non-breaking for a consumer that already moved every `cratestack-*` pin together. Every `cratestack-*` crate now requires its siblings as `=x.y.z`, not a caret, so one consumer build resolves exactly one CrateStack version. Before, a consumer pinning `cratestack-client = "=0.20.0"` could still resolve `cratestack-core` and `cratestack-policy` at 0.20.1 beside 0.20.0 of everything else, and `cratestack-macros` 0.20.0 then generated code against a core API it was not built with.
+
+- **Upgrading.** Move all your `cratestack-*` pins to the same version in one change: edit the pins, then run `cargo update`. `cargo update -p <one sibling>` on its own now fails, because the siblings require each other exactly, so the whole family moves together. What newly fails to resolve is an older facade pinned beside a newer sibling (for example `cratestack-client` 0.20.0 next to `cratestack-core` 0.20.1) instead of silently resolving a mix.
+- **Maintainers.** `just bump` keeps the `=`. New CI job `sibling-pins` (`just check-sibling-pins`, `.ci/sibling-pins-check.sh`) fails on any non-exact `cratestack` / `cratestack-*` requirement (caret, tilde, range, bare version, renamed dependency, target-specific table) in `[workspace.dependencies]` or a published workspace member manifest, and its fixture tests run beside it (`just sibling-pins-test`, `.ci/sibling-pins-tests.sh`). The guard checks the shape of a pin, not its value; a stale value fails at the `cargo metadata` inside `just bump`.
+
 ### Security hardening: one SSE event is size-capped in the Rust, TypeScript and Dart subscription clients (cratestack#1379)
 
 Behavioural change: a stream that used to grow without bound now ends. **Breaking for one Rust pattern:** `ClientConfig` gained a `pub` field, so constructing it with a struct literal no longer compiles. `ClientConfig::new(url)` with the builder methods is unaffected. Everything else is additive (`ClientConfig` is not `#[non_exhaustive]` in this change). Every SSE subscription reader buffered bytes until it saw the blank line ending an event, with no limit, so a hostile or broken server (or any intermediary) that never sent the delimiter could exhaust the client's memory. The same class as the CBOR depth limit (cratestack#1315).
