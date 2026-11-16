@@ -26,6 +26,7 @@
 //! `RPC_*_PATH` constants both sides agree on.
 
 mod batch;
+mod cbor_seq_subscription;
 mod codec_helpers;
 mod credential_expiry;
 mod error_encode;
@@ -34,7 +35,9 @@ mod procedure_subscription;
 mod sse;
 mod sse_subscription;
 mod subscribe_binding;
+mod subscribe_codec;
 mod subscribe_error;
+mod subscribe_open_body;
 mod subscribe_query;
 mod subscription_bridge;
 mod synthesize;
@@ -68,6 +71,7 @@ pub use cratestack_core::rpc::{
 };
 
 pub use batch::response_to_frame;
+pub use cbor_seq_subscription::encode_subscription_cbor_seq_response;
 pub use codec_helpers::{decode_rpc_body, encode_rpc_value};
 pub use credential_expiry::until_credential_expires;
 pub use error_encode::{convert_handler_error_response, encode_rpc_error};
@@ -78,7 +82,9 @@ pub use sse_subscription::{SseCodec, encode_subscription_sse_response};
 #[allow(deprecated)]
 pub use subscribe_binding::validate_subscribe_accept_header;
 pub use subscribe_binding::{SubscribeBinding, negotiate_subscribe_binding, serve_subscription};
+pub use subscribe_codec::SubscribeCodec;
 pub use subscribe_error::encode_subscribe_error;
+pub use subscribe_open_body::decode_subscribe_open_body;
 pub use subscribe_query::{
     SubscribeQuery, project_event_fields, split_subscribe_query, subscribe_input_query,
 };

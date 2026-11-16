@@ -2,7 +2,8 @@ use reqwest::Url;
 
 use crate::subscription::SubscriptionTransport;
 
-/// The default per-event cap for SSE subscriptions: 1 MiB.
+/// The default per-event cap for SSE subscriptions: 1 MiB. The
+/// `application/cbor-seq` binding applies the same cap to one frame.
 pub const DEFAULT_MAX_SSE_EVENT_BYTES: usize = 1024 * 1024;
 
 #[derive(Debug, Clone)]
@@ -18,6 +19,11 @@ pub struct ClientConfig {
     /// more byte per line; the bound is linear in the cap either way. A longer event ends the subscription with
     /// [`ClientError::EventTooLarge`](crate::ClientError::EventTooLarge).
     /// Default: [`DEFAULT_MAX_SSE_EVENT_BYTES`].
+    ///
+    /// The `application/cbor-seq` binding reads this too: one CBOR frame may
+    /// span at most this many bytes. The name stays for compatibility;
+    /// [`ClientConfig::with_max_subscription_frame_bytes`] sets it under
+    /// the name that fits both.
     pub max_sse_event_bytes: usize,
     /// The server's WebTransport listener, a separate UDP address (feature
     /// `webtransport`, native targets). Without it `Auto` starts at the
@@ -47,6 +53,13 @@ impl ClientConfig {
     pub fn with_max_sse_event_bytes(mut self, bytes: usize) -> Self {
         self.max_sse_event_bytes = bytes;
         self
+    }
+
+    /// The same cap as [`Self::with_max_sse_event_bytes`], under the name that
+    /// covers both HTTP bindings: the most bytes one SSE event or one
+    /// `application/cbor-seq` frame may span.
+    pub fn with_max_subscription_frame_bytes(self, bytes: usize) -> Self {
+        self.with_max_sse_event_bytes(bytes)
     }
 
     /// Subscribe over WebTransport at `url` (`https://host:4433/rpc/wt`, or

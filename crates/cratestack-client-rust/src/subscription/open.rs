@@ -5,7 +5,7 @@
 use serde::de::DeserializeOwned;
 
 use super::failure::Failure;
-use super::{ClientSubscription, SubscriptionTarget, SubscriptionTransport, sse};
+use super::{ClientSubscription, SubscriptionTarget, SubscriptionTransport, cbor_seq, sse};
 use crate::client::CratestackClient;
 use crate::codec::HttpClientCodec;
 use crate::error::ClientError;
@@ -29,6 +29,7 @@ impl<C: HttpClientCodec> CratestackClient<C> {
     {
         match self.config.subscription_transport {
             SubscriptionTransport::Sse => sse::open(self, &target).await,
+            SubscriptionTransport::CborSeq => cbor_seq::open(self, &target).await,
             SubscriptionTransport::WebSocket => {
                 self.open_ws(&target).await.map_err(Failure::into_error)
             }

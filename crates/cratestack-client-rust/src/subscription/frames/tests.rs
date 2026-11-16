@@ -47,10 +47,6 @@ fn every_rpc_code_survives_an_err_frame() {
     }
 }
 
-#[cfg(all(
-    any(feature = "ws", feature = "webtransport"),
-    not(target_arch = "wasm32")
-))]
 mod socket_items {
     use cratestack_core::rpc::RpcFrameValue;
     use serde::Deserialize;

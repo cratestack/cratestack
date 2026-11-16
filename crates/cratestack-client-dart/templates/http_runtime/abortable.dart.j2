@@ -1,0 +1,38 @@
+/// A stream of what [items] yields, which is told to stop (through the
+/// future it is given) when the listener cancels or an error ends it.
+Stream<Object?> _cratestackAbortable(
+  Stream<Object?> Function(Future<void> abort) items,
+) {
+  final abort = Completer<void>();
+  late final StreamController<Object?> controller;
+  controller = StreamController<Object?>(
+    onListen: () async {
+      try {
+        await for (final item in items(abort.future)) {
+          if (controller.isClosed) {
+            return;
+          }
+          controller.add(item);
+        }
+      } on CratestackTransportAborted {
+        // The listener cancelled.
+      } catch (error, stackTrace) {
+        if (!abort.isCompleted) {
+          abort.complete();
+        }
+        if (!controller.isClosed) {
+          controller.addError(error, stackTrace);
+        }
+      }
+      if (!controller.isClosed) {
+        await controller.close();
+      }
+    },
+    onCancel: () {
+      if (!abort.isCompleted) {
+        abort.complete();
+      }
+    },
+  );
+  return controller.stream;
+}

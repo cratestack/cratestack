@@ -14,6 +14,18 @@ model Note {
   @@subscribe
 }
 
+// Uuid id and Decimal: a cbor-seq feed's `event_id` and `id` are byte strings
+// (`tests/js/subscriptions/cbor-seq.test.ts`, cratestack#1001).
+model SeqNote {
+  id Uuid @id
+  amount Decimal
+  body String
+
+  @@allow("read", true)
+  @@emit(created)
+  @@subscribe
+}
+
 type Room {
   roomId String
 }

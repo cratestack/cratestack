@@ -851,6 +851,31 @@ procedure has no unary form, so its REST route answers 406 to any other `Accept`
 content-negotiation precedent `@stream` set on RPC (rpc-transport.md §3.3). `op_list.rs:27`'s "only
 under `transport rpc`" goes away, and with it the parser rule at `model_attributes.rs:81`.
 
+### 7.3 `Accept: application/cbor-seq` (cratestack#1001)
+
+The same routes answer `Accept: application/cbor-seq` with the SSE binding's frames, CBOR-encoded,
+as an HTTP body: each item of the sequence is one CBOR `ServerFrame`, `{id: 1, ready: {}}` first,
+then `{id: n, next}` per event with `n` counting up per frame as on SSE, then one `{id, err}` or
+`{id, end: {}}`; a bare CBOR `null` (`0xf6`) every 15 s is the keep-alive. WebTransport differs: it
+carries one subscription id on every frame (§6a.3), so a reader must not assume ids are shared
+between the two. Items are encoded with `CborCodec`, so a `Uuid` is a byte string, a model event's
+`event_id` included; clients revive it to the canonical string. `Accept` negotiation is literal per
+entry and the first entry the server speaks wins; `text/event-stream` and `*/*` stay SSE, and
+anything else is `406` before authentication. Every subscribe response, and every refusal the
+generated subscribe handler makes, carries `Vary: Accept`, set once by the handler, because the
+same URL answers either binding. A compact answer (`application/vnd.cratestack.compact+…`) adds
+its own second `Vary` line naming `Cratestack-Contract`; caches combine the lines. A refusal from
+a layer in front of the handler (a `413`, `405`, path rejection, the rate-limit `429`, an
+`EnvelopeLayer` error) does not carry it. A refusal before the stream is the same
+JSON body as for SSE. `POST /rpc/subscribe/{op_id}` reads its body by `Content-Type`
+(`application/cbor` or JSON). REST keeps `GET` only, as for SSE. Unlike SSE, a source that simply
+ends sends `end`, because a body that stops without a terminal frame is a dropped connection, and a
+client treats it as an error. A client also refuses a response whose `Content-Type` is not
+`application/cbor-seq` (parameters ignored, case-insensitive), an item that is not a map, and a
+stream whose first frame is not `ready` (an `err` first is the server's refusal). Clients cap one
+frame at the SSE event cap (1 MiB by default) and pin the binding in configuration; `auto` does not
+pick it.
+
 ## 8. Clients
 
 One contract in each language: **subscribe → `Ready` → items → end or error**, with the binding

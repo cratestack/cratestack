@@ -23,6 +23,12 @@ pub fn encode_subscribe_error(error: &CratestackError) -> Response {
         header::CONTENT_TYPE,
         HeaderValue::from_static("application/json"),
     );
+    // Every subscribe response, refusals included, varies on `Accept`: a
+    // cache must not serve one binding's bytes (or a refusal made for a
+    // different `Accept`) to another request.
+    response
+        .headers_mut()
+        .append(header::VARY, HeaderValue::from_static("Accept"));
     crate::auth_challenge::attach(response, error.auth_challenges())
 }
 
@@ -39,6 +45,9 @@ mod tests {
         let response = encode_subscribe_error(&CratestackError::Unauthorized("sign in".to_owned()));
         assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
         assert_eq!(response.headers()[header::CONTENT_TYPE], "application/json");
+        let vary: Vec<_> = response.headers().get_all(header::VARY).iter().collect();
+        assert_eq!(vary.len(), 1, "Vary must appear once: {vary:?}");
+        assert_eq!(vary[0], "Accept");
         let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
         let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
         assert_eq!(body["code"], "unauthenticated");

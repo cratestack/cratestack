@@ -1,0 +1,183 @@
+// The `application/cbor-seq` reader behind `cratestackSubscribeCborSeq`
+// (cratestack#1001): the SSE route with `Accept: application/cbor-seq`, its
+// body a CBOR sequence (RFC 8742) of server frames, `{id, ready}`, `{id,
+// next}` per item, then `{id, end}` or `{id, err}`. A stream must open with
+// `ready` (or an `err`, the refusal): anything else first is refused, as is a
+// response whose `Content-Type` is not `application/cbor-seq`. A bare CBOR
+// `null` is a keep-alive and is skipped.
+//
+// Item boundaries come from `_cratestackSkipCborItem`, the structural walker
+// the `@stream` scanner is built on, and each frame is decoded by the same
+// `cratestack_cbor` codec every CBOR response uses, so a `Uuid` or `Bytes`
+// item reads as it does anywhere else. One frame may span at most
+// `maxEventBytes` ([CratestackEventTooLargeException]); a body that stops in
+// the middle of a frame, or without `end` or `err`, throws instead of ending
+// quietly.
+
+/// Opens a subscription over `application/cbor-seq` at [path] (with [query])
+/// under [baseUri]: the SSE route, answered with CBOR frames
+/// (cratestack#1001).
+Stream<Object?> cratestackSubscribeCborSeq(
+  CratestackHttpTransport transport,
+  Uri baseUri,
+  String path,
+  String? query, {
+  Map<String, String>? headers,
+  void Function()? onReady,
+  int maxEventBytes = cratestackDefaultMaxEventBytes,
+}) {
+  return _cratestackAbortable(
+    (abort) => _cratestackCborSeqItems(
+      transport,
+      baseUri,
+      path,
+      query,
+      headers,
+      onReady,
+      abort,
+      maxEventBytes,
+    ),
+  );
+}
+
+Stream<Object?> _cratestackCborSeqItems(
+  CratestackHttpTransport transport,
+  Uri baseUri,
+  String path,
+  String? query,
+  Map<String, String>? headers,
+  void Function()? onReady,
+  Future<void> abort,
+  int maxEventBytes,
+) async* {
+  final response = await transport.send(
+    CratestackHttpRequest(
+      method: 'GET',
+      uri: _resolveUri(baseUri, path, query),
+      headers: _mergeHeaders([
+        <String, String>{
+          'Accept': 'application/cbor-seq',
+          if (cratestackSchemaSha256 != null)
+            'x-cratestack-schema-sha': cratestackSchemaSha256!,
+        },
+        headers,
+      ]),
+      abort: abort,
+    ),
+  );
+  if (response.status < 200 || response.status >= 300) {
+    throw await _cratestackSubscriptionRefusal(response);
+  }
+  final contentType = response.headers['content-type'] ?? '';
+  if (contentType.split(';').first.trim().toLowerCase() != 'application/cbor-seq') {
+    throw CratestackSubscriptionException(
+      code: 'invalid_response',
+      message: 'expected an application/cbor-seq subscription body, got Content-Type `$contentType`',
+    );
+  }
+  var ready = false;
+  var buffer = Uint8List(0);
+  await for (final chunk in response.body.cast<List<int>>()) {
+    buffer = buffer.isEmpty
+        ? Uint8List.fromList(chunk)
+        : (Uint8List(buffer.length + chunk.length)
+          ..setRange(0, buffer.length, buffer)
+          ..setRange(buffer.length, buffer.length + chunk.length, chunk));
+    var consumed = 0;
+    while (consumed < buffer.length) {
+      final end = _cratestackSkipCborSeqItem(buffer, consumed);
+      if (end == null) {
+        break;
+      }
+      if (end - consumed > maxEventBytes) {
+        throw CratestackEventTooLargeException(maxEventBytes);
+      }
+      final item = Uint8List.fromList(buffer.sublist(consumed, end));
+      consumed = end;
+      // A bare `null` is the keep-alive, not a frame.
+      if (item.length == 1 && item[0] == 0xf6) {
+        continue;
+      }
+      final decoded = await _decodeCbor(item);
+      if (decoded is! Map) {
+        throw CratestackSubscriptionException(
+          code: 'invalid_response',
+          message: 'a subscription frame must be a CBOR map',
+        );
+      }
+      final frame = cratestackAsValueMap(decoded);
+      final err = frame['err'];
+      if (err != null) {
+        final error = cratestackAsValueMap(err);
+        throw CratestackSubscriptionException(
+          code: error['code'] as String? ?? 'unknown',
+          message: error['message'] as String? ?? '',
+          details: error['details'],
+        );
+      }
+      if (!ready && frame['ready'] == null) {
+        throw CratestackSubscriptionException(
+          code: 'invalid_response',
+          message: 'a subscription must start with a `ready` frame',
+        );
+      }
+      if (frame['end'] != null) {
+        return;
+      }
+      if (frame['ready'] != null) {
+        if (!ready) {
+          ready = true;
+          onReady?.call();
+        }
+      } else if (frame.containsKey('next')) {
+        yield frame['next'];
+      }
+    }
+    if (consumed > 0) {
+      buffer = Uint8List.fromList(buffer.sublist(consumed));
+    }
+    // What is left is the start of a frame still arriving.
+    if (buffer.length > maxEventBytes) {
+      throw CratestackEventTooLargeException(maxEventBytes);
+    }
+  }
+  throw CratestackSubscriptionException(
+    code: 'invalid_response',
+    message: buffer.isNotEmpty
+        ? 'the subscription body ended in the middle of a frame'
+        : 'the subscription body ended without an `end` or `err` frame',
+  );
+}
+
+/// [_cratestackSkipCborItem], with bytes no further data can make valid
+/// reported as the subscription's own exception.
+int? _cratestackSkipCborSeqItem(Uint8List buffer, int offset) {
+  try {
+    return _cratestackSkipCborItem(buffer, offset, 0);
+  } on FormatException catch (error) {
+    throw CratestackSubscriptionException(
+      code: 'invalid_response',
+      message: 'the subscription body is not a CBOR sequence: ${error.message}',
+    );
+  }
+}
+
+/// A refused subscription's JSON error body as the exception it becomes.
+Future<CratestackSubscriptionException> _cratestackSubscriptionRefusal(
+  CratestackHttpResponse response,
+) async {
+  final bytes = await response.bytes();
+  Object? body;
+  try {
+    body = jsonDecode(utf8.decode(bytes));
+  } on FormatException {
+    body = null;
+  }
+  final map = body is Map<String, Object?> ? body : const <String, Object?>{};
+  return CratestackSubscriptionException(
+    code: map['code'] as String? ?? 'unknown',
+    message: map['message'] as String? ?? 'HTTP ${response.status}',
+    details: map['details'],
+    status: response.status,
+  );
+}

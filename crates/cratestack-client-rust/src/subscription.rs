@@ -7,8 +7,9 @@
 //! `webtransport` feature is on and the config names the listener, then a
 //! WebSocket when the `ws` feature is on, then SSE (native targets for the
 //! first two). It moves on only when a binding cannot be opened; a refusal
-//! is never a reason to fall back.
+//! is never a reason to fall back. `CborSeq` is chosen, never fallen back to.
 
+mod cbor_seq;
 mod failure;
 mod frames;
 mod open;
@@ -41,6 +42,11 @@ pub enum SubscriptionTransport {
     WebSocket,
     /// `text/event-stream` over HTTP.
     Sse,
+    /// `application/cbor-seq` over HTTP: the route SSE uses, answered with a
+    /// CBOR sequence of the frames the sockets carry, so items keep their
+    /// CBOR shapes (a `Uuid` is a byte string). Never part of `Auto`'s
+    /// chain: pin it with `ClientConfig::with_subscription_transport`.
+    CborSeq,
 }
 
 /// Where a subscription is served. The generated client fills it in; the

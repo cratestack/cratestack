@@ -13,6 +13,17 @@ model Note {
   @@subscribe
 }
 
+// A `Uuid` id: over cbor-seq a model event's `event_id` and this `id` are byte
+// strings (`subscriptions_rpc_cbor_seq_test.dart`, cratestack#1001).
+model SeqNote {
+  id Uuid @id
+  body String
+
+  @@allow("read", true)
+  @@emit(created)
+  @@subscribe
+}
+
 type Room {
   roomId String
 }

@@ -1,0 +1,8 @@
+# A real `application/cbor-seq` body: `GET /seq_notes/$subscribe` with
+# `Accept: application/cbor-seq` against the Postgres-backed REST server
+# (`cratestack-pg/tests/subscription_cbor_seq_shapes.rs`), captured once, as
+# hex. The RPC route answers the same frames. A `ready` frame, then one `next` whose `event_id`
+# and `data.id` are 16-byte CBOR byte strings and whose `amount` is text:
+#   event_id 3143e143-5515-49fa-8e22-9f24d82d0a03
+#   data     {id: 01234567-89ab-cdef-0123-456789abcdef, amount: "12.50000000", body: "hello"}
+a262696401657265616479a0a262696402646e657874a56464617461a366616d6f756e746b31322e353030303030303064626f64796568656c6c6f626964500123456789abcdef0123456789abcdef686576656e745f6964503143e143551549fa8e229f24d82d0a03656d6f64656c675365714e6f74656b6f636375727265645f6174781e323032362d31312d31365430343a30393a35342e3332393534363231385a696f7065726174696f6e6743726561746564

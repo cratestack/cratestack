@@ -308,4 +308,90 @@ mod rest {
             .expect("published");
         assert_eq!(bodies(sse, Duration::from_millis(750)).await, ["over REST"]);
     }
+
+    /// `Vary: Accept` exactly once on the procedure route's answers: the
+    /// stream and each refusal the generated handler makes (cratestack#1001).
+    #[tokio::test]
+    async fn the_procedure_route_varies_on_accept_once_on_every_answer() {
+        let Some(test_pg) = pg::connect_or_skip().await else {
+            return;
+        };
+        let db = cratestack_schema::Cratestack::builder(test_pg.pool.clone()).build();
+        let router = cratestack_schema::axum::router(
+            db,
+            RestRooms,
+            (),
+            cratestack_codec_cbor::CborCodec,
+            HeaderCaller,
+            cratestack::DEFAULT_BODY_LIMIT_BYTES,
+        );
+        let uri = r#"/$procs/roomMessages?args=%7B%22roomId%22%3A%22rest%22%7D"#;
+        let seq_at = |uri: &str, caller: Option<&str>, accept: Option<&str>| {
+            let mut request = Request::get(uri);
+            if let Some(accept) = accept {
+                request = request.header("accept", accept);
+            }
+            if let Some(caller) = caller {
+                request = request.header("x-caller", caller);
+            }
+            request.body(Body::empty()).unwrap()
+        };
+        let seq = |caller: Option<&str>, accept: Option<&str>| seq_at(uri, caller, accept);
+        let cases = [
+            (seq(Some("1"), Some("text/event-stream")), 200),
+            (seq(Some("1"), Some("application/cbor-seq")), 200),
+            (seq(Some("1"), Some("application/json")), 406),
+            (seq(Some("1"), None), 406),
+            (seq(None, Some("text/event-stream")), 403),
+            (seq(None, Some("application/cbor-seq")), 403),
+            // Missing and malformed `args`: a `400`, still JSON, still `Vary`.
+            (
+                seq_at("/$procs/roomMessages", Some("1"), Some("text/event-stream")),
+                400,
+            ),
+            (
+                seq_at(
+                    "/$procs/roomMessages",
+                    Some("1"),
+                    Some("application/cbor-seq"),
+                ),
+                400,
+            ),
+            (
+                seq_at(
+                    "/$procs/roomMessages?args=%7Bnot-json",
+                    Some("1"),
+                    Some("text/event-stream"),
+                ),
+                400,
+            ),
+            (
+                seq_at(
+                    "/$procs/roomMessages?args=%7Bnot-json",
+                    Some("1"),
+                    Some("application/cbor-seq"),
+                ),
+                400,
+            ),
+        ];
+        for (request, status) in cases {
+            let label = format!("{} {:?}", request.uri(), request.headers());
+            let response = send(&router, request).await;
+            assert_eq!(response.status().as_u16(), status, "{label}");
+            let vary: Vec<_> = response
+                .headers()
+                .get_all(cratestack::axum::http::header::VARY)
+                .iter()
+                .collect();
+            assert_eq!(vary.len(), 1, "Vary once: {label}: {vary:?}");
+            assert_eq!(vary[0], "Accept", "{label}");
+            if status == 400 {
+                assert_eq!(
+                    response.headers()[cratestack::axum::http::header::CONTENT_TYPE],
+                    "application/json",
+                    "{label}"
+                );
+            }
+        }
+    }
 }

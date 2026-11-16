@@ -1,0 +1,181 @@
+// The `application/cbor-seq` binding behind `./subscriptions.js`
+// (cratestack#1001): `GET` the route SSE uses with `Accept:
+// application/cbor-seq`. The body is a CBOR sequence (RFC 8742) of server
+// frames: `{id, ready}`, then `{id, next}` per item, then `{id, end}` or
+// `{id, err}`. A stream must open with `ready` (or an `err`, the refusal):
+// anything else first is refused, as is a response whose `Content-Type` is
+// not `application/cbor-seq`. A bare CBOR `null` is a keep-alive and is
+// skipped. Items
+// arrive as CBOR, so a `Uuid` is a byte string, which the generated
+// `wireShapes` revive exactly as they do on a CBOR unary call.
+//
+// Item boundaries come from `./cbor-item`'s structural walker, the one the
+// `@stream` scanner (`./cbor-seq` on an RPC package) is built on. One frame
+// may span at most `maxEventBytes` (the SSE cap, `CratestackEventTooLargeError`);
+// a body that stops inside a frame, or without `end` or `err`, throws instead
+// of ending quietly. Decoding needs `@cratestack/cbor` (a dependency of an RPC
+// package, an optional peer of a REST one), loaded on first use.
+
+import { NeedMoreBytesError, skipItem } from "./cbor-item.js";
+import {
+  CratestackEventTooLargeError,
+  CratestackSubscriptionError,
+  DEFAULT_MAX_EVENT_BYTES,
+  resolveUrl,
+  type Frame,
+  type SubscriptionHost,
+  type SubscriptionTarget,
+} from "./subscriptions.js";
+
+/** The media type this binding asks for and reads. */
+export const SUBSCRIPTION_CBOR_SEQ_CONTENT_TYPE = "application/cbor-seq";
+
+interface ServerFrame {
+  id: number;
+  ready?: object;
+  next?: unknown;
+  end?: object;
+  err?: { code: string; message: string; details?: unknown };
+}
+
+interface FrameDecoder {
+  decode(bytes: Uint8Array): unknown;
+}
+
+let codec: Promise<FrameDecoder> | undefined;
+
+/** `@cratestack/cbor`'s native codec, created once; a failed load is retried. */
+function loadCodec(): Promise<FrameDecoder> {
+  if (codec === undefined) {
+    const pending = (async (): Promise<FrameDecoder> => {
+      let loaded: unknown;
+      try {
+        // @ts-ignore -- an optional peer on a REST client
+        loaded = await import("@cratestack/cbor");
+      } catch {
+        throw new CratestackSubscriptionError(
+          "codec_unavailable",
+          'subscriptions over "cbor-seq" need the `@cratestack/cbor` package',
+        );
+      }
+      const create = (loaded as { createCborCodec?: () => Promise<FrameDecoder> } | null)?.createCborCodec;
+      if (typeof create !== "function") {
+        throw new CratestackSubscriptionError(
+          "codec_unavailable",
+          "the installed `@cratestack/cbor` has no `createCborCodec`",
+        );
+      }
+      return create();
+    })();
+    pending.catch(() => {
+      codec = undefined;
+    });
+    codec = pending;
+  }
+  return codec;
+}
+
+export async function* openCborSeq(
+  host: SubscriptionHost,
+  target: SubscriptionTarget,
+  headers: Headers,
+  signal: AbortSignal | undefined,
+): AsyncGenerator<Frame> {
+  // Before the request, so a missing codec never leaves a response open.
+  const decoder = await loadCodec();
+  headers.set("Accept", SUBSCRIPTION_CBOR_SEQ_CONTENT_TYPE);
+  const init: RequestInit = { headers };
+  if (signal !== undefined) init.signal = signal;
+  const response = await host.fetchFn(resolveUrl(host, target.ssePath, target.sseQuery), init);
+  if (!response.ok || response.body === null) {
+    const body = (await response.json().catch(() => ({}))) as { code?: string; message?: string; details?: unknown };
+    throw new CratestackSubscriptionError(body.code ?? "unknown", body.message ?? response.statusText, body.details, response.status);
+  }
+  if (!isCborSeq(response.headers.get("Content-Type"))) {
+    await response.body.cancel().catch(() => undefined);
+    throw new CratestackSubscriptionError(
+      "invalid_response",
+      `expected an ${SUBSCRIPTION_CBOR_SEQ_CONTENT_TYPE} subscription body, got Content-Type \`${response.headers.get("Content-Type") ?? ""}\``,
+    );
+  }
+  const limit = host.subscriptions?.maxEventBytes ?? DEFAULT_MAX_EVENT_BYTES;
+  const reader = response.body.getReader();
+  let buffer: Uint8Array = new Uint8Array(0);
+  let ready = false;
+  try {
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) {
+        throw new CratestackSubscriptionError(
+          "invalid_response",
+          buffer.length > 0
+            ? "the subscription body ended in the middle of a frame"
+            : "the subscription body ended without an `end` or `err` frame",
+        );
+      }
+      buffer = append(buffer, value);
+      let start = 0;
+      while (start < buffer.length) {
+        let end: number;
+        try {
+          end = skipItem(buffer, start);
+        } catch (error) {
+          if (error instanceof NeedMoreBytesError) break;
+          throw error;
+        }
+        if (end - start > limit) throw new CratestackEventTooLargeError(limit);
+        const item = buffer.slice(start, end);
+        start = end;
+        // A bare `null` is the keep-alive, not a frame.
+        if (item.length === 1 && item[0] === 0xf6) continue;
+        const frame = decoder.decode(item);
+        if (!isFrame(frame)) {
+          throw new CratestackSubscriptionError("invalid_response", "a subscription frame must be a CBOR map");
+        }
+        if (frame.err) {
+          throw new CratestackSubscriptionError(frame.err.code, frame.err.message, frame.err.details);
+        }
+        if (!ready && !frame.ready) {
+          throw new CratestackSubscriptionError("invalid_response", "a subscription must start with a `ready` frame");
+        }
+        if (frame.end) return;
+        if (frame.ready) {
+          if (!ready) yield { kind: "ready" };
+          ready = true;
+        } else if ("next" in frame) yield { kind: "item", value: frame.next };
+      }
+      // What is left is the start of a frame still arriving.
+      buffer = buffer.slice(start);
+      if (buffer.length > limit) throw new CratestackEventTooLargeError(limit);
+    }
+  } finally {
+    await reader.cancel().catch(() => undefined);
+  }
+}
+
+/** `application/cbor-seq`, parameters stripped, case-insensitive. */
+function isCborSeq(contentType: string | null): boolean {
+  return (contentType ?? "").split(";")[0]?.trim().toLowerCase() === SUBSCRIPTION_CBOR_SEQ_CONTENT_TYPE;
+}
+
+/** A CBOR map, as the codec decodes it: a plain object. Not an array, a byte
+ *  string, a `Date`, a `Map`, or any other class instance a decoder might
+ *  make of a tagged item. */
+function isFrame(value: unknown): value is ServerFrame {
+  if (typeof value !== "object" || value === null) return false;
+  // A plain object of any realm (a Jest or `node:vm` context has its own
+  // `Object.prototype`): no prototype, or one whose own prototype is none.
+  // An object whose prototype has a null prototype, such as
+  // `Object.create(Object.create(null))`, is accepted on purpose: no CBOR decoder
+  // makes one, and the check exists to accept cross-realm plain objects.
+  const prototype = Object.getPrototypeOf(value);
+  return prototype === null || Object.getPrototypeOf(prototype) === null;
+}
+
+function append(a: Uint8Array, b: Uint8Array): Uint8Array {
+  if (a.length === 0) return b;
+  const out = new Uint8Array(a.length + b.length);
+  out.set(a, 0);
+  out.set(b, a.length);
+  return out;
+}

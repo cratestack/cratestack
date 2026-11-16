@@ -45,7 +45,7 @@ pub(super) fn build_subscribe_handler(model: &Model) -> proc_macro2::TokenStream
             // `ProcedureRegistry` for a schema's subscription procedures.
             ::cratestack::__private::serve_subscription(
                 binding,
-                super::subscriptions::#open(&state.db, raw_query, ctx, ::cratestack::__private::SseCodec),
+                super::subscriptions::#open(&state.db, raw_query, ctx, binding.codec()),
             )
             .await
         }

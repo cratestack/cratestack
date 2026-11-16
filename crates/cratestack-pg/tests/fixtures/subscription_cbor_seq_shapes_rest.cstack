@@ -1,0 +1,23 @@
+// A model feed whose rows carry a `Uuid` and a `Decimal`, over REST
+// (`tests/subscription_cbor_seq_shapes.rs`, cratestack#1001): over
+// `application/cbor-seq` the ids are byte strings, not text.
+
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+auth Caller {
+  id Int
+}
+
+model SeqNote {
+  id Uuid @id
+  amount Decimal
+  body String
+
+  @@allow("read", auth() != null)
+  @@allow("create", auth() != null)
+  @@emit(created)
+  @@subscribe
+}

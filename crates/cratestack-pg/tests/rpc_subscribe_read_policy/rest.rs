@@ -13,7 +13,7 @@ use tower::util::ServiceExt;
 use super::support::pg;
 use super::{HeaderCaller, delivered_ids, received};
 
-mod schema {
+pub(super) mod schema {
     use cratestack::include_server_schema;
     include_server_schema!("tests/fixtures/subscribe_rest.cstack", db = Postgres);
 

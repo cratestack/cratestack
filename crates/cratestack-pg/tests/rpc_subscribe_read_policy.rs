@@ -38,6 +38,10 @@ mod outbox_upgrade;
 mod replicas;
 #[path = "rpc_subscribe_read_policy/rest.rs"]
 mod rest;
+#[path = "rpc_subscribe_read_policy/rest_cbor_seq.rs"]
+mod rest_cbor_seq;
+#[path = "rpc_subscribe_read_policy/rpc_cbor_seq.rs"]
+mod rpc_cbor_seq;
 mod support;
 
 use support::pg;

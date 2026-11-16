@@ -33,7 +33,7 @@ final class CratestackSubscriptionException implements Exception {
   String toString() => 'CratestackSubscriptionException($code: $message)';
 }
 
-/// The default cap on one SSE event: 1 MiB.
+/// The default cap on one SSE event or `cborSeq` frame: 1 MiB.
 const int cratestackDefaultMaxEventBytes = 1024 * 1024;
 
 /// One SSE event outgrew the per-event byte cap, so the subscription ended
@@ -67,7 +67,7 @@ final class CratestackModelEvent<T> {
   ) {
     final map = cratestackAsValueMap(wire);
     return CratestackModelEvent<T>(
-      eventId: map['event_id'] as String,
+      eventId: cratestackDecodeUuid(map['event_id'], 'ModelEvent.event_id'),
       model: map['model'] as String,
       operation: map['operation'] as String,
       occurredAt: DateTime.parse(map['occurred_at'] as String),
@@ -168,47 +168,20 @@ Stream<Object?> cratestackSubscribeSse(
   void Function()? onReady,
   int maxEventBytes = cratestackDefaultMaxEventBytes,
 }) {
-  final abort = Completer<void>();
-  late final StreamController<Object?> controller;
-  controller = StreamController<Object?>(
-    onListen: () async {
-      try {
-        await for (final item in _cratestackSseItems(
-          transport,
-          baseUri,
-          path,
-          query,
-          headers,
-          onReady,
-          abort.future,
-          maxEventBytes,
-        )) {
-          if (controller.isClosed) {
-            return;
-          }
-          controller.add(item);
-        }
-      } on CratestackTransportAborted {
-        // The listener cancelled.
-      } catch (error, stackTrace) {
-        if (!abort.isCompleted) {
-          abort.complete();
-        }
-        if (!controller.isClosed) {
-          controller.addError(error, stackTrace);
-        }
-      }
-      if (!controller.isClosed) {
-        await controller.close();
-      }
-    },
-    onCancel: () {
-      if (!abort.isCompleted) {
-        abort.complete();
-      }
-    },
+  return _cratestackAbortable(
+    (abort) => _cratestackSseItems(
+      transport,
+      baseUri,
+      path,
+      query,
+      headers,
+      onReady,
+      abort,
+      maxEventBytes,
+    ),
   );
-  return controller.stream;
 }
 
+{% include "http_runtime/abortable.dart.j2" %}
 {% include "http_runtime/sse_reader.dart.j2" %}
+{% include "http_runtime/subscription_cbor_seq.dart.j2" %}

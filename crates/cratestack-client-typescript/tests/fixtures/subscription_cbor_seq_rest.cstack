@@ -1,0 +1,13 @@
+// A REST model feed with a `Uuid` id and a `Decimal`
+// (`tests/subscription_cbor_seq_rest_runtime.rs`, cratestack#1001): the REST
+// client revives a cbor-seq event's byte-string `event_id` and `data.id`.
+
+model SeqNote {
+  id Uuid @id
+  amount Decimal
+  body String
+
+  @@allow("read", true)
+  @@emit(created)
+  @@subscribe
+}

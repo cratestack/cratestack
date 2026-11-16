@@ -56,11 +56,7 @@ pub(super) fn item<T: DeserializeOwned>(value: serde_json::Value) -> Result<T, C
 /// A server from before that fix sent a `Uuid` as text on these sockets, which
 /// the CBOR rules refuse, so on failure the item is read once more as the
 /// human-readable JSON value it was then. If both fail, the first error is
-/// the one reported. WebSocket and WebTransport only: SSE is JSON.
-#[cfg(all(
-    any(feature = "ws", feature = "webtransport"),
-    not(target_arch = "wasm32")
-))]
+/// the one reported. Every binding but SSE, which is JSON.
 pub(super) fn cbor_item<T: DeserializeOwned>(
     value: cratestack_core::rpc::RpcFrameValue,
 ) -> Result<T, ClientError> {

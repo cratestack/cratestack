@@ -305,10 +305,10 @@ pub mod __private {
     /// part of the public API surface for the same reason as the rest
     /// of this module.
     pub use cratestack_axum::rpc::{
-        FeedEvent, SseCodec, SubscribeBinding, SubscribeQuery, encode_model_event_sse_response,
-        encode_subscribe_error, guarded_receiver_stream, model_events, model_feed,
-        negotiate_subscribe_binding, project_event_fields, route_event, serve_subscription,
-        split_subscribe_query, subscribe_input_query, subscription_channel,
+        FeedEvent, SseCodec, SubscribeBinding, SubscribeQuery, decode_subscribe_open_body,
+        encode_model_event_sse_response, encode_subscribe_error, guarded_receiver_stream,
+        model_events, model_feed, negotiate_subscribe_binding, project_event_fields, route_event,
+        serve_subscription, split_subscribe_query, subscribe_input_query, subscription_channel,
         until_credential_expires,
     };
     /// A `subscription procedure`'s arguments and items (slice S4).

@@ -1203,8 +1203,11 @@ verify-dart:
 	    mkdir -p "$pkg/test"
 	    cp "crates/cratestack-client-dart/tests/fixtures/subscriptions_rpc_test.dart" "$pkg/test/subscriptions_rpc_test.dart"
 	    cp "crates/cratestack-client-dart/tests/fixtures/subscriptions_rpc_socket_test.dart" "$pkg/test/subscriptions_rpc_socket_test.dart"
-	    echo "=== flutter test (subscriptions over SSE and a WebSocket): $pkg ==="
-	    (lib="$(native_cbor_vendored_lib_for "$pkg")" && cd "$pkg" && CRATESTACK_CBOR_NATIVE_LIB="$lib" flutter test test/subscriptions_rpc_test.dart test/subscriptions_rpc_socket_test.dart)
+	    cp "crates/cratestack-client-dart/tests/fixtures/subscriptions_rpc_cbor_seq_support.dart" "$pkg/test/subscriptions_rpc_cbor_seq_support.dart"
+	    cp "crates/cratestack-client-dart/tests/fixtures/subscriptions_rpc_cbor_seq_test.dart" "$pkg/test/subscriptions_rpc_cbor_seq_test.dart"
+	    cp "crates/cratestack-client-dart/tests/fixtures/subscriptions_rpc_cbor_seq_frames_test.dart" "$pkg/test/subscriptions_rpc_cbor_seq_frames_test.dart"
+	    echo "=== flutter test (subscriptions over SSE, application/cbor-seq and a WebSocket): $pkg ==="
+	    (lib="$(native_cbor_vendored_lib_for "$pkg")" && cd "$pkg" && CRATESTACK_CBOR_NATIVE_LIB="$lib" flutter test test/subscriptions_rpc_test.dart test/subscriptions_rpc_cbor_seq_test.dart test/subscriptions_rpc_cbor_seq_frames_test.dart test/subscriptions_rpc_socket_test.dart)
 	  fi
 	  # cratestack#1204: wire parity of the HTTP-seam adapters with the retired
 	  # Dio adapters (golden requests captured from them), typed REST/RPC
