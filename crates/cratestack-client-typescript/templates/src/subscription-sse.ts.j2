@@ -12,7 +12,7 @@ import {
   type SubscriptionHost,
   type SubscriptionTarget,
 } from "./subscriptions.js";
-import { openStream } from "./subscription-cbor-seq.js";
+import { openStream } from "./subscription-open.js";
 
 /** SSE over `fetch` (not `EventSource`, which cannot send headers). */
 export async function* openSse(
