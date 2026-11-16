@@ -57,6 +57,22 @@ pub async fn frames(
     frames_of(&raw_body(response, window).await)
 }
 
+/// Blank the two per-run values of an event, after checking each is still
+/// present and of the type clients rely on: a mask that overwrote them
+/// unchecked would hide a changed `event_id` or `occurred_at` encoding.
+fn mask_event(event: &mut std::collections::BTreeMap<String, RpcFrameValue>) {
+    match event.get_mut("event_id") {
+        Some(RpcFrameValue::Bytes(bytes)) if bytes.len() == 16 => bytes.fill(0),
+        other => panic!("`event_id` must be a 16-byte CBOR byte string, got {other:?}"),
+    }
+    match event.get_mut("occurred_at") {
+        Some(RpcFrameValue::String(text)) if chrono::DateTime::parse_from_rfc3339(text).is_ok() => {
+            *text = "<rfc3339>".to_owned();
+        }
+        other => panic!("`occurred_at` must be an RFC 3339 text string, got {other:?}"),
+    }
+}
+
 /// The committed hex body the TypeScript tests read
 /// (`cratestack-client-typescript/tests/js/subscriptions/cbor-seq-model-feed.hex`)
 /// must still be what the server writes for the same model and row. Compared
@@ -84,9 +100,7 @@ pub fn assert_matches_committed_fixture(live: &[u8]) {
                 if let RpcFrameValue::Object(map) = &mut frame
                     && let Some(RpcFrameValue::Object(event)) = map.get_mut("next")
                 {
-                    for field in ["event_id", "occurred_at"] {
-                        event.insert(field.to_owned(), RpcFrameValue::Null);
-                    }
+                    mask_event(event);
                 }
                 frame
             })
@@ -99,8 +113,12 @@ pub fn assert_matches_committed_fixture(live: &[u8]) {
         mask(&committed),
         "the server's cbor-seq body for `SeqNote` no longer matches the committed fixture \
          tests/js/subscriptions/cbor-seq-model-feed.hex (the TypeScript tests read it). \
-         Regenerate: replace the hex line of that file (keep the `#` header) with the live \
-         body below, then run the TypeScript suites that read it (`subscriptions_runtime`, \
+         Regenerate: replace the hex line of that file with the live body below and \
+         update its `#` header (event_id and data), then update everything that copies those \
+         bytes: the `event_id` assertions in tests/js/subscriptions/cbor-seq-frames.test.ts \
+         and tests/js/subscriptions-rest/cbor-seq-rest.test.ts, and the embedded hex in \
+         cratestack-client-dart/tests/fixtures/subscriptions_rpc_cbor_seq_frames_test.dart. \
+         Then run the TypeScript suites that read it (`subscriptions_runtime`, \
          `subscription_cbor_seq_rest_runtime`).\nlive body: {live_hex}"
     );
 }

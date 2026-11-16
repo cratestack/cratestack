@@ -861,10 +861,12 @@ carries one subscription id on every frame (§6a.3), so a reader must not assume
 between the two. Items are encoded with `CborCodec`, so a `Uuid` is a byte string, a model event's
 `event_id` included; clients revive it to the canonical string. `Accept` negotiation is literal per
 entry and the first entry the server speaks wins; `text/event-stream` and `*/*` stay SSE, and
-anything else is `406` before authentication. Every subscribe response, and every refusal the generated subscribe
-handler makes, carries `Vary: Accept` (once), because the same URL answers either binding; a
-refusal from a layer in front of the handler (a `413`, `405`, path rejection, the rate-limit `429`)
-does not. A refusal before the stream is the same
+anything else is `406` before authentication. Every subscribe response, and every refusal the
+generated subscribe handler makes, carries `Vary: Accept`, set once by the handler, because the
+same URL answers either binding. A compact answer (`application/vnd.cratestack.compact+…`) adds
+its own second `Vary` line naming `Cratestack-Contract`; caches combine the lines. A refusal from
+a layer in front of the handler (a `413`, `405`, path rejection, the rate-limit `429`, an
+`EnvelopeLayer` error) does not carry it. A refusal before the stream is the same
 JSON body as for SSE. `POST /rpc/subscribe/{op_id}` reads its body by `Content-Type`
 (`application/cbor` or JSON). REST keeps `GET` only, as for SSE. Unlike SSE, a source that simply
 ends sends `end`, because a body that stops without a terminal frame is a dropped connection, and a

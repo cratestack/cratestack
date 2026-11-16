@@ -165,6 +165,9 @@ function isFrame(value: unknown): value is ServerFrame {
   if (typeof value !== "object" || value === null) return false;
   // A plain object of any realm (a Jest or `node:vm` context has its own
   // `Object.prototype`): no prototype, or one whose own prototype is none.
+  // An object whose prototype has a null prototype, such as
+  // `Object.create(Object.create(null))`, is accepted on purpose: no CBOR decoder
+  // makes one, and the check exists to accept cross-realm plain objects.
   const prototype = Object.getPrototypeOf(value);
   return prototype === null || Object.getPrototypeOf(prototype) === null;
 }

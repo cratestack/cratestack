@@ -99,6 +99,8 @@ describe("cbor-seq codec", () => {
       expect(items, String(output)).toEqual([]);
       expect(error, String(output)).toBeInstanceOf(CratestackSubscriptionError);
       expect((error as { code: string }).code).toBe("invalid_response");
+      // The non-map wording, not the `ready`-first refusal that also is `invalid_response`.
+      expect((error as Error).message, String(output)).toContain("must be a CBOR map");
       expect(state.cancelled).toBe(true);
     }
   });
