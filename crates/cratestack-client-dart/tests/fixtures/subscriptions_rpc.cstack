@@ -33,3 +33,8 @@ type Line {
 }
 
 subscription procedure lines(args: Room): Line
+
+// Marked `@frames(unsigned)`: a signing transport may open it sealed
+// (`subscriptions_rpc_frames_test.dart`, cratestack#1378).
+subscription procedure pulse(args: Room): Line
+  @frames(unsigned)

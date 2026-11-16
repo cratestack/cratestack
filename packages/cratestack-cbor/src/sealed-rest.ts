@@ -1,8 +1,24 @@
 // The REST half of the fetch-boundary sealing (issue #1010): `createSealedFetch`
 // matches a URL to an `OP_CONTRACTS` template and seals through `sealedFetch`.
+import { CoseFailure } from "@cratestack/ts-types";
 import type { CoseClientSource, OpContracts, SealedRoute } from "./sealed.js";
 import { hexBytes, pick, sealedFetch, urlOf } from "./sealed.js";
 import { SealRequired } from "./sealed-required.js";
+
+/** Whether the call's `Accept` names a stream type: `sealedFetch` binds the
+ *  payload types an answer may be sealed under, and a stream is none. */
+function asksForStream(input: RequestInfo | URL, init: RequestInit | undefined): boolean {
+  const accept = new Headers(
+    init?.headers ?? (input instanceof Request ? input.headers : undefined),
+  );
+  return (accept.get("accept") ?? "")
+    .split(",")
+    .some((type) =>
+      ["application/cbor-seq", "text/event-stream"].includes(
+        type.split(";", 1)[0]?.trim().toLowerCase() ?? "",
+      ),
+    );
+}
 
 function trimTrailingSlashes(value: string): string {
   let end = value.length;
@@ -86,6 +102,12 @@ export function createSealedFetch(options: {
     for (const candidate of templates) {
       const match = candidate.method === method ? candidate.pattern.exec(path) : null;
       if (match === null) continue;
+      if (asksForStream(input, init)) {
+        throw new CoseFailure(
+          "misuse",
+          `a stream cannot be sealed: "${candidate.key}" asked for one (a signed subscription open is transport rpc only)`,
+        );
+      }
       const client = pick(options.cose, candidate.key, method);
       if (client === undefined) {
         if (options.requireSealed === true) throw new SealRequired(candidate.key, "declined");

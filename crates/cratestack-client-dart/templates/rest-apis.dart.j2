@@ -328,6 +328,10 @@ class ProceduresApi {
             ssePath: '{{ procedure.route }}',
             sseQuery: cratestackProcedureQuery(args.toWire()),
             socketPath: '/\$ws',
+{% if procedure.frames %}
+            frames: '{{ procedure.frames }}',
+            sealRoute: '{{ procedure.route }}',
+{% endif %}
           ),
           headers: headers,
           onReady: onReady,

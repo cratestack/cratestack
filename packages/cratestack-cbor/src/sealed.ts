@@ -8,11 +8,16 @@
 // what the request carries, as the Rust client's `request_sealed` does. It
 // holds no crypto and no canonical form: the signature, the hash, the query
 // and the AAD are the `CoseClient`'s (Rust). What is left is header plumbing.
-import { type CoseCallBinding, type CoseClient, CoseFailure } from "@cratestack/ts-types";
+import { type CoseClient, CoseFailure } from "@cratestack/ts-types";
+import { mediaTypeOf, openAnswer, type SealedRoute, sealRequest } from "./sealed-request.js";
 import { SealRequired } from "./sealed-required.js";
 
+export type { SealedRoute } from "./sealed-request.js";
+export { urlOf } from "./sealed-request.js";
 export { SealRequired } from "./sealed-required.js";
 export { createSealedFetch } from "./sealed-rest.js";
+export type { SealedSubscriptions } from "./sealed-stream.js";
+export { createSealedSubscriptions, UnsignedFramesRefused } from "./sealed-stream.js";
 
 /** The `CoseClient` a call is sealed with, or `undefined` to send it unsealed
  *  (an anonymous call, an op the client does not seal). A function picks per
@@ -23,17 +28,6 @@ export type CoseClientSource =
   | undefined
   | ((call: { readonly route: string; readonly method: string }) => CoseClient | undefined);
 
-/** One resolved route: what the call is bound to besides its bytes. */
-export interface SealedRoute {
-  readonly route: string;
-  readonly pathParams: readonly string[];
-  readonly contractSha: Uint8Array;
-}
-
-const CBOR = "application/cbor";
-const NO_BODY_STATUS = new Set([101, 204, 205, 304]);
-const PAYLOAD_TYPE_HEADER = "cratestack-payload-type";
-
 export const hexBytes = (hex: string): Uint8Array =>
   Uint8Array.from(hex.match(/../g) ?? [], (byte) => Number.parseInt(byte, 16));
 
@@ -42,21 +36,6 @@ export const pick = (
   route: string,
   method: string,
 ): CoseClient | undefined => (typeof source === "function" ? source({ route, method }) : source);
-
-async function bodyBytes(body: BodyInit | null | undefined): Promise<Uint8Array> {
-  if (body === null || body === undefined) return new Uint8Array();
-  if (typeof body === "string") return new TextEncoder().encode(body);
-  if (body instanceof Uint8Array) return body;
-  if (body instanceof ArrayBuffer) return new Uint8Array(body);
-  throw new CoseFailure("misuse", "a sealed call carries a string or bytes body");
-}
-
-/** The media type of a header value, parameters dropped. */
-const mediaTypeOf = (value: string): string => value.split(";", 1)[0]?.trim().toLowerCase() ?? "";
-
-/** The URL a `fetch` was given, whatever shape it came in. */
-export const urlOf = (input: RequestInfo | URL): URL =>
-  new URL(input instanceof Request ? input.url : input.toString());
 
 /**
  * One sealed round trip: seals `init.body` as the call `route` describes, sends
@@ -78,41 +57,7 @@ export async function sealedFetch(
   input: RequestInfo | URL,
   init: RequestInit = {},
 ): Promise<Response> {
-  const url = urlOf(input);
-  const headers = new Headers(init.headers);
-  const payload = await bodyBytes(init.body);
-  const payloadType = mediaTypeOf(headers.get("content-type") ?? "") || CBOR;
-  const accept = (headers.get("accept") ?? "")
-    .split(",")
-    .map(mediaTypeOf)
-    .filter((type) => type !== "");
-  const query = url.search.startsWith("?") ? url.search.slice(1) : url.search;
-  const binding: CoseCallBinding = {
-    method: (init.method ?? "GET").toUpperCase(),
-    route: target.route,
-    pathParams: target.pathParams,
-    query: query === "" ? undefined : cose.canonicalQuery(query),
-    contractSha: target.contractSha,
-    idempotencyKey: headers.get("idempotency-key") ?? undefined,
-    ifMatch: headers.get("if-match") ?? undefined,
-    payloadType,
-    payloadAccept: accept.length === 0 ? undefined : accept,
-  };
-  if (
-    target.route === "batch" &&
-    (payloadType !== CBOR || (accept.length > 0 && !accept.includes(CBOR)))
-  ) {
-    throw new CoseFailure("misuse", "a sealed /rpc/batch is CBOR both ways");
-  }
-  const sealed = await cose.sealRequest(payload, binding);
-  headers.set("content-type", cose.mediaType);
-  headers.set("accept", cose.mediaType);
-  headers.set("cratestack-contract", cose.contractHeader(target.contractSha));
-  for (const name of ["cratestack-payload-type", "cratestack-payload-accept"]) headers.delete(name);
-  for (const [name, value] of Object.entries(cose.selectorHeaders(binding))) {
-    headers.set(name, value);
-  }
-
+  const { url, sealed, headers, binding } = await sealRequest(cose, target, input, init);
   const response = await fetchFn(url, { ...init, headers, body: sealed as BodyInit });
   const contentType = mediaTypeOf(response.headers.get("content-type") ?? "");
   if (contentType !== mediaTypeOf(cose.mediaType)) {
@@ -121,23 +66,7 @@ export async function sealedFetch(
     }
     return response;
   }
-  const opened = await cose.openResponse(
-    new Uint8Array(await response.arrayBuffer()),
-    binding,
-    sealed,
-    response.status,
-    response.headers.get(PAYLOAD_TYPE_HEADER) ?? undefined,
-  );
-  const answered = new Headers(response.headers);
-  for (const name of ["content-length", "content-encoding", PAYLOAD_TYPE_HEADER]) {
-    answered.delete(name);
-  }
-  answered.set("content-type", opened.payloadType);
-  return new Response(NO_BODY_STATUS.has(response.status) ? null : (opened.payload as BodyInit), {
-    status: response.status,
-    statusText: response.statusText,
-    headers: answered,
-  });
+  return openAnswer(cose, response, binding, sealed);
 }
 
 /** The `OP_CONTRACTS` of a generated client. */

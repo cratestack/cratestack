@@ -10,6 +10,8 @@ Stream<Object?> _cratestackSseItems(
   void Function()? onReady,
   Future<void> abort,
   int maxEventBytes,
+  String? frames,
+  String? sealRoute,
 ) async* {
   final response = await transport.send(
     CratestackHttpRequest(
@@ -24,11 +26,13 @@ Stream<Object?> _cratestackSseItems(
         headers,
       ]),
       abort: abort,
+      extra: cratestackFramesExtra(frames, sealRoute),
     ),
   );
   if (response.status < 200 || response.status >= 300) {
     throw await _cratestackSubscriptionRefusal(response);
   }
+  await cratestackCheckFrames(response, frames, 'text/event-stream');
   // The decoded, CRLF-normalized text of the event still being read. It is
   // only ever appended to, never re-normalized, so a `\r` that ends one
   // chunk is held back in [heldCr] until the next chunk shows whether a `\n`

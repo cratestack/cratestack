@@ -25,6 +25,8 @@ Stream<Object?> cratestackSubscribeCborSeq(
   Map<String, String>? headers,
   void Function()? onReady,
   int maxEventBytes = cratestackDefaultMaxEventBytes,
+  String? frames,
+  String? sealRoute,
 }) {
   return _cratestackAbortable(
     (abort) => _cratestackCborSeqItems(
@@ -36,6 +38,8 @@ Stream<Object?> cratestackSubscribeCborSeq(
       onReady,
       abort,
       maxEventBytes,
+      frames,
+      sealRoute,
     ),
   );
 }
@@ -49,6 +53,8 @@ Stream<Object?> _cratestackCborSeqItems(
   void Function()? onReady,
   Future<void> abort,
   int maxEventBytes,
+  String? frames,
+  String? sealRoute,
 ) async* {
   final response = await transport.send(
     CratestackHttpRequest(
@@ -63,11 +69,13 @@ Stream<Object?> _cratestackCborSeqItems(
         headers,
       ]),
       abort: abort,
+      extra: cratestackFramesExtra(frames, sealRoute),
     ),
   );
   if (response.status < 200 || response.status >= 300) {
     throw await _cratestackSubscriptionRefusal(response);
   }
+  await cratestackCheckFrames(response, frames, 'application/cbor-seq');
   final contentType = response.headers['content-type'] ?? '';
   if (contentType.split(';').first.trim().toLowerCase() != 'application/cbor-seq') {
     throw CratestackSubscriptionException(
@@ -162,18 +170,21 @@ int? _cratestackSkipCborSeqItem(Uint8List buffer, int offset) {
   }
 }
 
-/// A refused subscription's JSON error body as the exception it becomes.
+/// A refused subscription's error body as the exception it becomes: JSON, or
+/// CBOR when that is what a signing transport opened a sealed refusal to
+/// (cratestack#1378).
 Future<CratestackSubscriptionException> _cratestackSubscriptionRefusal(
   CratestackHttpResponse response,
 ) async {
   final bytes = await response.bytes();
   Object? body;
   try {
-    body = jsonDecode(utf8.decode(bytes));
-  } on FormatException {
+    final type = (response.headers['content-type'] ?? '').split(';').first.trim().toLowerCase();
+    body = type == 'application/cbor' ? await _decodeCbor(bytes) : jsonDecode(utf8.decode(bytes));
+  } on Object {
     body = null;
   }
-  final map = body is Map<String, Object?> ? body : const <String, Object?>{};
+  final map = body is Map ? cratestackAsValueMap(body) : const <String, Object?>{};
   return CratestackSubscriptionException(
     code: map['code'] as String? ?? 'unknown',
     message: map['message'] as String? ?? 'HTTP ${response.status}',

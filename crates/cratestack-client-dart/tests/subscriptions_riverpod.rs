@@ -115,3 +115,16 @@ fn a_schema_without_subscriptions_emits_none_of_it() {
         assert!(!contents.contains("Stream<"), "{name}: {contents}");
     }
 }
+
+/// cratestack#1378: the riverpod `ProceduresApi` builds the same marked target
+/// the plain client does.
+#[test]
+fn a_marked_subscription_procedure_carries_its_seal_route() {
+    let procedures = file(RPC, "lib/src/procedures.dart");
+    assert!(
+        procedures
+            .contains("frames: 'unsigned',\n            sealRoute: 'subscribe/procedure.pulse',"),
+        "{procedures}"
+    );
+    assert_eq!(procedures.matches("sealRoute:").count(), 1, "{procedures}");
+}

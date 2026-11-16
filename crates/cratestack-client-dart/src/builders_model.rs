@@ -224,5 +224,6 @@ pub(crate) fn build_procedure(
             cratestack_core::ProcedureKind::Query => "query",
             cratestack_core::ProcedureKind::Mutation => "mutation",
         },
+        frames: procedure.frames().map(cratestack_core::FramesMode::as_str),
     }
 }

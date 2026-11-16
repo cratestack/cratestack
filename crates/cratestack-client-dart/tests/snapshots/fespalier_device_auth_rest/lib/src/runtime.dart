@@ -33,6 +33,24 @@ import 'constants.dart';
 ///  * Send [CratestackHttpRequest.body] exactly as given (the bytes a signer
 ///    layered above this one saw), and send no header the request does not
 ///    carry beyond what the platform adds by itself.
+///
+/// **A signed subscription open** (cratestack#1378). The generated client never
+/// seals; a transport that seals requests does, and it is the only layer that
+/// can. A subscription the schema marks `@frames(unsigned)` is opened with
+/// `cratestack.frames` (`unsigned`), `cratestack.route` (what the seal binds:
+/// `subscribe/<op id>` on RPC, the route template on REST) and
+/// `cratestack.contract` (the op's contract digest, hex) in
+/// [CratestackHttpRequest.extra]; such a transport seals the open under them
+/// and asks for the stream beside the seal (`Accept: <stream type>,
+/// application/cose`). Its answer to the reader is then either the stream
+/// itself, passed through untouched with its `Cratestack-Frames: unsigned` and
+/// `Content-Type` headers (the frames are hints, not signed), or an opened
+/// refusal as an ordinary response (a JSON or CBOR error body and its real
+/// status). It must never add the marker: the reader refuses a 2xx without it,
+/// or with another value or stream type, with a `CratestackSubscriptionException`
+/// whose code is `unsigned_frames_refused`, and refuses the marker on a
+/// subscription the schema does not mark. A socket (`webSocket`,
+/// `webTransport`) does not go through this seam and is never sealed.
 abstract interface class CratestackHttpTransport {
   Future<CratestackHttpResponse> send(CratestackHttpRequest request);
 }

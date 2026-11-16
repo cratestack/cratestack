@@ -80,6 +80,8 @@ final class CratestackSubscriptionTarget {
     required this.ssePath,
     required this.sseQuery,
     required this.socketPath,
+    this.frames,
+    this.sealRoute,
   });
 
   /// `model.<Model>.subscribe` or `procedure.<name>`.
@@ -96,6 +98,18 @@ final class CratestackSubscriptionTarget {
 
   /// `/rpc/ws`, or `/$ws` on REST, relative to the base path.
   final String socketPath;
+
+  /// The schema's `@frames` mode, `'unsigned'` for a subscription it marks
+  /// `@frames(unsigned)` (cratestack#1378), else `null`. A marked open is
+  /// the one an HTTP transport that signs requests may seal: the HTTP readers
+  /// hand it the open's route and contract in `extra` and refuse an answer
+  /// that is not the unsigned stream they asked for. The generated client
+  /// never seals; the transport does (see `CratestackHttpTransport`).
+  final String? frames;
+
+  /// The route a signed open binds: `subscribe/<op id>` on RPC, the route
+  /// template on REST. Set with [frames].
+  final String? sealRoute;
 }
 
 /// A binding that could not be opened. `auto` moves on; a pinned binding
@@ -131,7 +145,11 @@ Stream<Object?> cratestackSubscribe({
   Stream<Object?> http(bool cborSeq) =>
       (cborSeq ? cratestackSubscribeCborSeq : cratestackSubscribeSse)(
         transport, baseUri, '$basePath${target.ssePath}', target.sseQuery,
-        headers: headers, onReady: onReady, maxEventBytes: options.maxEventBytes);
+        headers: headers,
+        onReady: onReady,
+        maxEventBytes: options.maxEventBytes,
+        frames: target.frames,
+        sealRoute: target.sealRoute);
   Stream<Object?> sse() => http(false);
   Future<Stream<Object?>> webSocket() async {
     final stream = await _cratestackOpenWebSocket(options, baseUri, basePath, target, headers);

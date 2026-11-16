@@ -182,3 +182,76 @@ fn a_schema_without_subscriptions_has_no_cbor_seq_reader() {
     assert!(!runtime.contains("cratestackSubscribeCborSeq"));
     assert!(!runtime.contains("_cratestackSubscriptionRefusal"));
 }
+
+/// cratestack#1378: a subscription marked `@frames(unsigned)` carries its mode
+/// and the route a signing transport binds; the readers hand the transport
+/// those and the contract in `extra`, and refuse an answer that is not the
+/// unsigned stream asked for. The running proof is
+/// `fixtures/subscriptions_rpc_frames_test.dart` under `just verify-dart`.
+#[test]
+fn a_marked_subscription_carries_its_frames_mode_and_seal_route() {
+    let (apis, runtime) = files("tests/fixtures/subscriptions_rpc.cstack");
+    assert!(
+        apis.contains(
+            "socketPath: '/rpc/ws',\n            frames: 'unsigned',\n            sealRoute: 'subscribe/procedure.pulse',\n          ),"
+        ),
+        "{apis}"
+    );
+    // The unmarked procedure and the model feed carry neither.
+    assert_eq!(apis.matches("frames: 'unsigned',").count(), 1, "{apis}");
+    assert_eq!(apis.matches("sealRoute:").count(), 1, "{apis}");
+    for needle in [
+        "'cratestack.frames': frames,",
+        "'cratestack.route': route,",
+        "'cratestack.contract': contract,",
+        "code: 'unsigned_frames_refused',",
+        "Future<void> cratestackCheckFrames(",
+    ] {
+        assert!(runtime.contains(needle), "{needle}");
+    }
+    for (reader, stream) in [
+        ("_cratestackSseItems(", "'text/event-stream'"),
+        ("_cratestackCborSeqItems(", "'application/cbor-seq'"),
+    ] {
+        let body = &runtime[runtime.rfind(reader).expect("the reader")..];
+        let refusal = body.find("_cratestackSubscriptionRefusal(response)");
+        let check = body.find(&format!(
+            "cratestackCheckFrames(response, frames, {stream})"
+        ));
+        assert!(
+            body.contains("extra: cratestackFramesExtra(frames, sealRoute),")
+                && refusal
+                    .zip(check)
+                    .is_some_and(|(refusal, check)| refusal < check),
+            "{reader}: the marker is checked after a refusal and before a frame"
+        );
+    }
+}
+
+#[test]
+fn a_marked_rest_subscription_binds_its_route_template() {
+    let schema = cratestack_parser::parse_schema(
+        "type Room {\n  roomId String\n}\n\ntype Line {\n  body String\n}\n\n\
+         subscription procedure pulse(args: Room): Line\n  @frames(unsigned)\n",
+    )
+    .expect("parses");
+    let package = generate_package(&schema, &DartGeneratorConfig::default()).expect("renders");
+    let apis = &package
+        .files
+        .iter()
+        .find(|file| file.file_name == "lib/src/apis.dart")
+        .expect("apis")
+        .contents;
+    assert!(
+        apis.contains("frames: 'unsigned',\n            sealRoute: '/\\$procs/pulse',"),
+        "{apis}"
+    );
+}
+
+#[test]
+fn a_schema_without_a_marked_subscription_has_no_frames_in_its_targets() {
+    let (apis, _) = files("../cratestack-pg/tests/fixtures/subscription_procedures_rest.cstack");
+    assert!(!apis.contains("sealRoute"), "{apis}");
+    let (_, runtime) = files("tests/fixtures/ci_rpc.cstack");
+    assert!(!runtime.contains("cratestackCheckFrames"));
+}

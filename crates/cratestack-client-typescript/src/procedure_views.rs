@@ -25,6 +25,9 @@ pub(crate) struct ProcedureView {
     pub(crate) return_type: String,
     pub(crate) route: String,
     pub(crate) kind: &'static str,
+    /// The `@frames` mode of a subscription procedure (`"unsigned"`), which
+    /// makes a signed open possible (cratestack#1378); `None` for every other.
+    pub(crate) frames: Option<&'static str>,
     pub(crate) query_key: String,
     pub(crate) mutation_key: String,
     /// `"scalar"` when the return type is a bare revivable scalar —
@@ -91,6 +94,7 @@ pub(crate) fn build_procedure(
             ProcedureKind::Query => "query",
             ProcedureKind::Mutation => "mutation",
         },
+        frames: procedure.frames().map(cratestack_core::FramesMode::as_str),
         query_key: format!("{}Procedure", to_camel_case(&procedure.name)),
         mutation_key: format!("{}Procedure", to_camel_case(&procedure.name)),
         revival_kind,

@@ -14,5 +14,11 @@ export type {
   CoseSignerOptions,
 } from "@cratestack/ts-types";
 export { CoseFailure } from "@cratestack/ts-types";
-export type { CoseClientSource, OpContracts } from "./sealed.js";
-export { createSealedFetch, createSealedLink, SealRequired } from "./sealed.js";
+export type { CoseClientSource, OpContracts, SealedSubscriptions } from "./sealed.js";
+export {
+  createSealedFetch,
+  createSealedLink,
+  createSealedSubscriptions,
+  SealRequired,
+  UnsignedFramesRefused,
+} from "./sealed.js";

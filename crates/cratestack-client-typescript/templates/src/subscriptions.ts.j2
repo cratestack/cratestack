@@ -11,6 +11,14 @@
 // that has not reached `Ready{0}` within 3 s counts as failed, and the failure is remembered
 // per origin for 10 minutes, so a UDP-blocked network pays that wait once. A refusal (401, 403,
 // a policy or setup error) is the server's answer: it is thrown, never a reason to fall back.
+//
+// A runtime built with `subscriptions.seal` (`createSealedSubscriptions` from
+// `@cratestack/cbor/cose`, cratestack#1378) opens the subscriptions its schema marks
+// `@frames(unsigned)` signed: the open is sealed, the stream that answers is plain frames the
+// sealer has checked for `Cratestack-Frames: unsigned`. The frames are hints, so re-read through
+// a sealed call. `"auto"` picks `"cbor-seq"` then; any other subscription, a socket binding
+// (`"websocket"`, `"webtransport"`) and a REST route are refused (`streams_unsupported`, or the
+// sealer's `misuse`) before anything is sent.
 
 import { openSocketSubscription, openWebTransportSubscription, SocketUnreachable } from "./subscription-sockets.js";
 import { openCborSeq } from "./subscription-cbor-seq.js";
@@ -34,6 +42,22 @@ export interface SubscriptionClientOptions {
    *  Default `1048576` (1 MiB). A longer event, or one that never ends,
    *  throws `CratestackEventTooLargeError` and drops the connection. */
   maxEventBytes?: number;
+  /** Seals the open of a subscription the schema marks `@frames(unsigned)`
+   *  (`createSealedSubscriptions` from `@cratestack/cbor/cose`; `transport rpc` only). */
+  seal?: SubscriptionSeal;
+}
+
+/** What opens a subscription signed: a `fetch` that seals the open of `target`
+ *  and returns the unsigned stream that answers, or the (opened) refusal. */
+export interface SubscriptionSeal {
+  fetchFor(target: { opId: string; ssePath: string }, underlying: typeof fetch): typeof fetch;
+}
+
+/** How a reader sends its open: the `fetch` to use, and whether it seals, in which
+ *  case the open is a `POST` of the input's CBOR instead of a `GET` of its query. */
+export interface OpenVia {
+  fetchFn: typeof fetch;
+  sealed: boolean;
 }
 
 /** The default `SubscriptionClientOptions.maxEventBytes`: 1 MiB. */
@@ -67,6 +91,8 @@ export interface SubscriptionTarget {
   sseQuery: string;
   /** `/rpc/ws`, or `/$ws` on REST. */
   socketPath: string;
+  /** The schema's `@frames` mode: `"unsigned"` makes a signed open possible. */
+  frames?: "unsigned";
 }
 
 /** A refusal or a terminal error from the server, on any binding. */
@@ -166,6 +192,19 @@ async function* open(
 ): AsyncGenerator<Frame> {
   const transport = host.subscriptions?.transport ?? "auto";
   const headers = await subscriptionHeaders(host, options.headers);
+  const seal = host.subscriptions?.seal;
+  if (seal !== undefined) {
+    // A sealed client never opens a plain subscription, and only a marked one can be opened sealed.
+    if (target.frames !== "unsigned" || transport === "websocket" || transport === "webtransport") {
+      throw new CratestackSubscriptionError(
+        "streams_unsupported",
+        "this subscription cannot be opened over the signed transport: only one marked `@frames(unsigned)` can, over \"sse\" or \"cbor-seq\"",
+      );
+    }
+    const via = { fetchFn: seal.fetchFor({ opId: target.opId, ssePath: target.ssePath }, host.fetchFn), sealed: true };
+    if (transport === "sse") return yield* openSse(host, target, headers, options.signal, via);
+    return yield* openCborSeq(host, target, headers, options.signal, via);
+  }
   if (transport === "cbor-seq") return yield* openCborSeq(host, target, headers, options.signal);
   const wtUrl = host.subscriptions?.webTransport?.url;
   if (transport === "webtransport" || (transport === "auto" && wtUrl !== undefined && canWebTransport(wtUrl))) {

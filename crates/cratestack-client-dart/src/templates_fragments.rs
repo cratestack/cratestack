@@ -80,6 +80,10 @@ pub(super) const FRAGMENT_TEMPLATES: &[(&str, &str)] = &[
         include_str!("../templates/http_runtime/abortable.dart.j2"),
     ),
     (
+        "http_runtime/frames_marker.dart.j2",
+        include_str!("../templates/http_runtime/frames_marker.dart.j2"),
+    ),
+    (
         "http_runtime/subscription_cbor_seq.dart.j2",
         include_str!("../templates/http_runtime/subscription_cbor_seq.dart.j2"),
     ),
