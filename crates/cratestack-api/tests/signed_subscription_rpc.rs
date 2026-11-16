@@ -9,13 +9,14 @@ mod cose_support;
 mod signed_subscription_support;
 
 use std::sync::atomic::Ordering;
+use std::time::Duration;
 
 use cose_support::*;
 use cratestack::axum::Router;
 use cratestack::envelope_layer::EnvelopeMode;
 use cratestack::{CratestackContext, CratestackError, SubscriptionStream, find_contract};
 use cratestack_codec_cbor::CborCodec;
-use signed_subscription_support::{ARGS, Hits, Target};
+use signed_subscription_support::{ARGS, Hits, Target, endless_ticks};
 
 cratestack::include_server_schema!("tests/fixtures/subscription_frames_rpc.cstack", db = None);
 
@@ -30,6 +31,9 @@ impl Registry {
         to: i64,
     ) -> Result<SubscriptionStream<cratestack_schema::Tick>, CratestackError> {
         self.0.fetch_add(1, Ordering::SeqCst);
+        if to < 0 {
+            return Ok(endless_ticks(|n| cratestack_schema::Tick { n }));
+        }
         let ticks = (1..=to).rev().map(|n| Ok(cratestack_schema::Tick { n }));
         Ok(Box::pin(cratestack::futures::stream::iter(
             ticks.collect::<Vec<_>>(),
@@ -70,11 +74,16 @@ impl cratestack_schema::procedures::ProcedureRegistry for Registry {
 }
 
 fn router(allow: bool, hits: Hits, audience: &'static str) -> Router {
+    router_life(allow, hits, audience, Duration::from_secs(3600))
+}
+
+fn router_life(allow: bool, hits: Hits, audience: &'static str, life: Duration) -> Router {
     let layer = cratestack_schema::axum::envelope_layer(
         server_envelope(),
         EnvelopeMode::Required,
         audience,
     )
+    .max_signed_stream_life(life)
     .rpc("")
     .build()
     .expect("layer");
@@ -109,4 +118,4 @@ fn target(op: &str, method: &'static str) -> Target {
     }
 }
 
-signed_subscription_cases!(router: router, target: target, methods: ["POST", "GET"]);
+signed_subscription_cases!(router: router, router_life: router_life, target: target, methods: ["POST", "GET"]);
