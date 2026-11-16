@@ -19,6 +19,12 @@ use super::{Attribute, Procedure};
 /// The attribute's name.
 pub const FRAMES_ATTRIBUTE: &str = "@frames";
 
+/// The response header a server sets on the unsigned frames that answer a
+/// signed open (`Cratestack-Frames: unsigned`, ADR 0006, cratestack#1378).
+/// It is **not authenticated**: a client reads it as a label, never as proof,
+/// and refuses a stream that lacks it.
+pub const FRAMES_HEADER: &str = "Cratestack-Frames";
+
 /// How the frames of a subscription are authenticated, when the schema says.
 /// Absent (`None` from [`Procedure::frames`]) means the subscription takes
 /// no part in a signed open.
@@ -99,18 +105,24 @@ impl Procedure {
 /// [`crate::OpContracts`]. An op that is not listed is not marked, and a
 /// consumer that finds no row must fail closed.
 ///
-/// **Lookup rule.** On RPC the rows are bare op ids (`procedure.<name>`), and
+/// **Lookup rule.** The key is the route's `contract_key()`, else its `op()`.
+/// On RPC the rows are bare op ids (`procedure.<name>`), and
 /// [`crate::find_contract`] matches a bare key for any method, so a lookup
-/// must also require that the resolved route is a subscription
-/// (`is_subscription()`); a unary call to the same op id is not a
-/// subscription open. On REST the row is method-qualified
-/// (`GET /$procs/<name>`) and `is_subscription()` is always false, so the
-/// table cannot change a REST decision.
+/// must not use it: it matches the bare key only when the resolved route is a
+/// subscription (`is_subscription()`), so a unary call to the same op id is
+/// not an open. On REST the row is method-qualified (`GET /$procs/<name>`)
+/// and `is_subscription()` is always false, so a lookup matches
+/// `"<METHOD> <key>"` exactly; `HEAD` never matches.
 pub type SubscriptionFrames = &'static [(&'static str, FramesMode)];
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_frames_header_name_is_fixed() {
+        assert_eq!(FRAMES_HEADER, "Cratestack-Frames");
+    }
 
     #[test]
     fn frames_mode_serialises_as_its_schema_spelling() {

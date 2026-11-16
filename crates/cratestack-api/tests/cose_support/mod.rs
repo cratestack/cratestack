@@ -103,6 +103,12 @@ fn client() -> CoseEnvelope {
     .expect("client envelope")
 }
 
+/// The client's envelope for `cratestack_client_rust`'s `seal_call`, the
+/// same keys as [`Call`], addressed to [`AUDIENCE`].
+pub fn client_envelope() -> cratestack_client_rust::ClientEnvelope {
+    cratestack_client_rust::ClientEnvelope::new(client(), AUDIENCE).expect("client envelope")
+}
+
 /// One call, as the client binds it.
 pub struct Call {
     pub route: &'static str,

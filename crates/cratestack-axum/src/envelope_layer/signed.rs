@@ -15,12 +15,12 @@ use super::bound::Bound;
 use super::contract::{self, Choice};
 use super::layer::Config;
 use super::mode::EnvelopeMode;
-use super::principal::VerifiedRequest;
 use super::resolver::ResolvedRoute;
 use super::seal::{BindingInputs, Sealer, stream_refused};
 use super::service::{Inner, call};
+use super::signed_principal::admit;
+use super::signed_subscription::{self, Frames};
 use super::{batch, payload, refusal, request};
-use crate::ratelimit::VerifiedPrincipal;
 
 pub(super) async fn handle<S: Inner>(
     config: Arc<Config>,
@@ -75,6 +75,9 @@ pub(super) async fn handle<S: Inner>(
 
     let (payload, signer, context) = opened.into_parts();
     request::rewrite_opened(&mut parts.headers, &payload, &inputs.payload.request);
+    // Read before `rewrite_accept` replaces it: a signed subscription open
+    // names its stream type here.
+    let accept = signed_subscription::single_accept(&parts.headers);
     request::rewrite_accept(&mut parts.headers, true, &inputs.payload.accept());
     let sealer = Sealer {
         inputs,
@@ -102,12 +105,22 @@ pub(super) async fn handle<S: Inner>(
             .seal_error(StatusCode::UNSUPPORTED_MEDIA_TYPE, error)
             .await;
     }
-    // A subscription streams, which cannot be sealed yet: refused before
-    // its handler runs (API-review decision), not after.
-    if sealer.inputs.route.is_subscription() {
-        return sealer
-            .seal_error(StatusCode::NOT_ACCEPTABLE, stream_refused())
+    // A signed subscription open streams plain frames, and only a marked one
+    // (`@frames(unsigned)`) may; any other is refused before its handler runs
+    // (API-review decision), not after.
+    match signed_subscription::lookup(&config, &sealer.inputs.method, &sealer.inputs.route) {
+        Frames::Marked => {
+            return signed_subscription::handle(
+                &config, inner, parts, payload, signer, sealer, accept,
+            )
             .await;
+        }
+        Frames::Unmarked => {
+            return sealer
+                .seal_error(StatusCode::NOT_ACCEPTABLE, stream_refused())
+                .await;
+        }
+        Frames::NotSubscription => {}
     }
     if sealer.inputs.route.is_batch() {
         match batch::signed_verdict(&config, &sealer.inputs.method, &payload) {
@@ -119,29 +132,9 @@ pub(super) async fn handle<S: Inner>(
         }
     }
 
-    let verified = VerifiedRequest::new(&signer, &sealer.inputs.method, &sealer.inputs.route);
-    let principal = match config.principal.principal(&verified).await {
-        Ok(principal) if !principal.is_empty() => principal,
-        Ok(_) => {
-            let error = CratestackError::Internal("the principal mapper returned \"\"".to_owned());
-            return sealer
-                .seal_error(StatusCode::INTERNAL_SERVER_ERROR, error)
-                .await;
-        }
-        // A signer the mapper refuses is answered like one that did not
-        // verify: the same unsigned, coarse 401.
-        Err(CratestackError::Unauthorized(_)) => {
-            return refusal::unauthenticated(&sealer.headers, &sealer.path);
-        }
-        Err(error) => {
-            let error = CratestackError::Internal(format!("the principal mapper failed: {error}"));
-            return sealer
-                .seal_error(StatusCode::INTERNAL_SERVER_ERROR, error)
-                .await;
-        }
-    };
-    parts.extensions.insert(signer);
-    parts.extensions.insert(VerifiedPrincipal(principal));
+    if let Some(response) = admit(&config, &sealer, signer, &mut parts.extensions).await {
+        return response;
+    }
 
     let response = call(inner, Request::from_parts(parts, Body::from(payload))).await;
     sealer.finish(response).await

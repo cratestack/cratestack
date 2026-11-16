@@ -10,7 +10,7 @@
 
 use std::future::Future;
 
-use axum::http::{HeaderMap, HeaderValue, header};
+use axum::http::{Extensions, HeaderMap, HeaderValue, header};
 use axum::response::Response;
 use cratestack_codec_cbor::CborCodec;
 use cratestack_codec_json::JsonCodec;
@@ -20,6 +20,7 @@ use serde::Serialize;
 use super::cbor_seq_subscription::encode_subscription_cbor_seq_response;
 use super::sse::SSE_CONTENT_TYPE;
 use super::sse_subscription::encode_subscription_sse_response;
+use super::stream_deadline::{SignedStreamDeadline, until_stream_deadline};
 use super::subscribe_codec::SubscribeCodec;
 use super::subscribe_error::encode_subscribe_error;
 use crate::transport::CBOR_SEQUENCE_CONTENT_TYPE;
@@ -119,8 +120,26 @@ where
     T: Serialize + Send + 'static,
     F: Future<Output = Result<SubscriptionStream<T>, CratestackError>>,
 {
+    serve_subscription_with(binding, &Extensions::new(), open).await
+}
+
+/// [`serve_subscription`] for a handler that holds the request's
+/// `extensions`: a [`SignedStreamDeadline`] the envelope layer put there
+/// (cratestack#1378) ends the stream with `unavailable` / `"stream lifetime"`
+/// when it passes. Without one the stream is as before.
+pub async fn serve_subscription_with<T, F>(
+    binding: SubscribeBinding,
+    extensions: &Extensions,
+    open: F,
+) -> Response
+where
+    T: Serialize + Send + 'static,
+    F: Future<Output = Result<SubscriptionStream<T>, CratestackError>>,
+{
     match open.await {
         Ok(stream) => {
+            let deadline = extensions.get::<SignedStreamDeadline>().copied();
+            let stream = until_stream_deadline(stream, deadline);
             let mut response = match binding {
                 SubscribeBinding::Sse => encode_subscription_sse_response(stream),
                 SubscribeBinding::CborSeq => encode_subscription_cbor_seq_response(stream),

@@ -30,11 +30,10 @@
 //! - Through `Router::layer`, so `MatchedPath` and the path parameters are
 //!   already in the request; a `ServiceBuilder` around the whole app loses
 //!   them, and `nest_service` never sets `MatchedPath` for the outer mount.
-//! - Verification, including the key resolver and nonce store lookups,
-//!   runs **before** rate limiting, and under `Optional` so does signing
-//!   every response to a signed or nonce-bound request. Put an IP-level
-//!   limiter outside this layer to bound what an unauthenticated flood can
-//!   cost.
+//! - Verification (key resolver, nonce store) runs **before** rate limiting,
+//!   and under `Optional` so does signing every response to a signed or
+//!   nonce-bound request. Put an IP-level limiter outside this layer to
+//!   bound what an unauthenticated flood can cost.
 //!
 //! # What the layer decides, per request
 //!
@@ -65,8 +64,8 @@
 //!
 //! # Payload media types (cratestack#1168)
 //!
-//! A payload is CBOR unless the client names another type (unbound `Cratestack-Payload-Type`
-//! / `-Accept` headers, bound in the AAD): [`EnvelopeLayerBuilder::payload_media_types`].
+//! A payload is CBOR unless the client names another type (bound in the AAD):
+//! [`EnvelopeLayerBuilder::payload_media_types`].
 //!
 //! # Security invariants, enforced here and not by the plug-ins
 //!
@@ -103,18 +102,16 @@
 //!
 //! # Known limits (P0)
 //!
-//! - Streamed responses (`@stream` over `application/cbor-seq`, SSE
-//!   subscriptions) cannot be sealed until `chain` mode (ADR 0006 P1). A
-//!   signed request gets an `Accept` of sealable types only, so a `@stream`
-//!   op answers with one buffered, sealed array; a signed subscription is
-//!   refused with a sealed `406` before its handler runs. Only an unsigned
-//!   request under `Optional` can stream (plain).
+//! - A stream is never sealed (ADR 0006 P1): a signed request gets sealable
+//!   `Accept`s only, so a `@stream` op answers with one sealed array. A signed
+//!   subscription open is sealed, its frames are not, and only for a
+//!   `@frames(unsigned)` one (`Cratestack-Frames: unsigned`, lifetime capped by
+//!   `max_signed_stream_life`); any other is a sealed `406`.
 //! - A response is re-buffered to be sealed, up to
 //!   `cratestack_core::MAX_RESPONSE_REBUFFER_BYTES`; a longer one becomes a
 //!   sealed `500`. A request body is buffered up to the layer's
 //!   `max_body_bytes` (`413` beyond it).
-//! - A fallback handler (`Router::fallback`) sets no `MatchedPath`, so the
-//!   layer treats its traffic as unmatched and lets plain requests through.
+//! - A fallback handler sets no `MatchedPath`: its plain traffic passes.
 //! - The bound digest is the called op's contract digest
 //!   (`cratestack_core::op_contract_digest`, binding version 2,
 //!   cratestack#1123), so it moves only when that op's wire shape does: a
@@ -127,17 +124,17 @@
 //!   with the current one. A signed `/rpc/batch` binds the whole-contract digest until
 //!   batch frames carry their own, so any client-facing change refuses it.
 //!   Binding version 1 messages are refused.
-//! - One envelope per layer: a router accepting Sign1 devices and Mac0
-//!   services at once needs the composite of cratestack#1078, which the
-//!   per-request [`SealContext`] and [`Sealed`] media type make possible.
+//! - One envelope per layer: Sign1 devices and Mac0 services at once need the
+//!   composite of cratestack#1078 ([`SealContext`], [`Sealed`] make it possible).
 //! - The response payload is copied once into the sealed message (D1; the
-//!   zero-copy head/tail API is cratestack#1076).
+//!   zero-copy API is cratestack#1076).
 
 mod batch;
 mod bound;
 mod build;
 mod builder;
 mod builder_payload;
+mod builder_stream;
 mod contract;
 #[cfg(feature = "cose")]
 mod cose_impl;
@@ -163,6 +160,8 @@ mod server_envelope;
 mod server_envelope_arc;
 mod service;
 mod signed;
+mod signed_principal;
+mod signed_subscription;
 mod unresolved;
 mod unsealable;
 mod unsigned;
@@ -174,6 +173,7 @@ mod tests;
 /// direct `async-trait` dependency.
 pub use async_trait::async_trait;
 pub use builder::EnvelopeLayerBuilder;
+pub use builder_stream::DEFAULT_MAX_SIGNED_STREAM_LIFE;
 pub use layer::EnvelopeLayer;
 pub use mode::{EnvelopeMode, EnvelopePolicy};
 pub use opened::{OpenedRequest, SealContext, Sealed};

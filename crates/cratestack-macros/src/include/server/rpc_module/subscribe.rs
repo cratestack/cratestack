@@ -58,8 +58,9 @@ pub(super) fn build_subscribe_block(
             let body: &[u8] = &[];
             let method = "GET";
             #authenticate
-            ::cratestack::__private::serve_subscription(
+            ::cratestack::__private::serve_subscription_with(
                 binding,
+                &client_ip_ctx.extensions,
                 #dispatcher.open_query(&op_id, raw_query, ctx, binding.codec()),
             ).await
         }
@@ -93,8 +94,9 @@ pub(super) fn build_subscribe_block(
             let method = "POST";
             #authenticate
             let open = ::cratestack::SubscriptionOpen { op_id, input, ctx };
-            ::cratestack::__private::serve_subscription(
+            ::cratestack::__private::serve_subscription_with(
                 binding,
+                &client_ip_ctx.extensions,
                 ::cratestack::SubscriptionDispatcher::open(
                     &#dispatcher, open, binding.codec(),
                 ),

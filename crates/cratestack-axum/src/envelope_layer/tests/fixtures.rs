@@ -172,7 +172,10 @@ pub fn rpc_router(layer: EnvelopeLayer, hits: &Hits) -> Router {
     let echo_route = |hits: Hits| move |req: Request| echo(hits.clone(), req);
     Router::new()
         .route("/rpc/batch", post(echo_route(hits.clone())))
-        .route("/rpc/subscribe/{op_id}", get(|| async { streamed() }))
+        .route(
+            "/rpc/subscribe/{op_id}",
+            get(|| async { streamed() }).post(|| async { streamed() }),
+        )
         .route("/rpc/{op_id}", post(echo_route(hits.clone())))
         .layer(layer)
 }

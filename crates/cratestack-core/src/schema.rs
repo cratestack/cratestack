@@ -59,8 +59,8 @@ pub use device_auth_attribute::{
 pub use device_auth_role::DeviceAuthRole;
 pub use enum_ordinal::{ENUM_ORDINAL_MAX, ENUM_RESERVED_ATTRIBUTE, ReservedOrdinals};
 pub use frames_attribute::{
-    FRAMES_ATTRIBUTE, FramesMode, SubscriptionFrames, is_frames_attribute, parse_frames_argument,
-    parse_frames_attribute,
+    FRAMES_ATTRIBUTE, FRAMES_HEADER, FramesMode, SubscriptionFrames, is_frames_attribute,
+    parse_frames_argument, parse_frames_attribute,
 };
 pub use index_attribute::{ParsedIndexAttribute, parse_index_attribute};
 pub use internal_attribute::{INTERNAL_ACTIONS, model_internal_actions, parse_internal_attribute};

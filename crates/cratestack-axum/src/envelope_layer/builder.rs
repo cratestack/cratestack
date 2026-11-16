@@ -3,6 +3,7 @@
 //! changes the layer.
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use cratestack_core::{AcceptedContracts, RouteTransportDescriptor, SubscriptionFrames};
 
@@ -28,6 +29,8 @@ pub struct EnvelopeLayerBuilder {
     pub(super) max_contract_trials: usize,
     /// `subscriptions(..)`; empty by default (cratestack#1378).
     pub(super) subscriptions: SubscriptionFrames,
+    /// `max_signed_stream_life(..)`, one hour by default.
+    pub(super) max_signed_stream_life: Duration,
     pub(super) policy: Option<Box<dyn EnvelopePolicy>>,
     pub(super) transport: Transport,
     /// The prefix given to `rest(..)` / `rpc(..)`.
@@ -57,16 +60,10 @@ impl EnvelopeLayerBuilder {
     /// `cratestack_schema::SUBSCRIPTION_FRAMES`, which the generated
     /// `envelope_layer` passes for you (cratestack#1378).
     ///
-    /// **Inert for now**: the layer keeps the table and no request reads it,
-    /// so a subscription under a required envelope is refused as before.
-    /// The default is empty, which a later reader must treat as "no
-    /// subscription may open signed" (fail closed).
-    ///
-    /// **Lookup rule** for that reader: on RPC the rows are bare op ids and
-    /// `find_contract` matches a bare key for any method, so a lookup must
-    /// also require that the route is a subscription (`is_subscription()`).
-    /// On REST the row is method-qualified (`GET /$procs/<name>`) and
-    /// `is_subscription()` is always false, so the table is inert there.
+    /// A marked subscription may be opened signed (see
+    /// `signed_subscription.rs`); the default is
+    /// empty, so none may (fail closed). Lookup rule:
+    /// `cratestack_core::SubscriptionFrames`.
     pub fn subscriptions(mut self, table: SubscriptionFrames) -> Self {
         self.subscriptions = table;
         self
