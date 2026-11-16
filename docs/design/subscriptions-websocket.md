@@ -898,9 +898,11 @@ client treats them only as hints to re-read through a sealed call (ADR 0006).
   `406`); an unmarked RPC one is refused before its handler.
 - **Answer.** A 2xx stream of the requested type is returned unsealed with `Cratestack-Frames:
   unsigned` and `Cache-Control: no-store`. Every other answer is sealed, so a refusal is never
-  mistaken for frames.
+  mistaken for frames. This is the one exception to "a signed request is answered sealed", and it
+  holds in every mode that accepts a signed request (`Required`, `Optional`,
+  `UnsignedRequestSealedReply`).
 - **Lifetime.** The layer puts `SignedStreamDeadline(now + max_signed_stream_life)` (default 1 h)
-  in the request extensions; `serve_subscription_with` ends the stream with `err` `unavailable` /
+  in the request extensions (`build` refuses a lifetime of zero or above 24 h); `serve_subscription_with` ends the stream with `err` `unavailable` /
   `"stream lifetime"`, after the credential's `exp` if that is earlier. Clients resubscribe with
   jittered backoff and a fresh signed open (a nonce is single-use).
 
