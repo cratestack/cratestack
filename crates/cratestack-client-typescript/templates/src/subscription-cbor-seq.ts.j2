@@ -155,7 +155,7 @@ export async function* openCborSeq(
 
 /** `application/cbor-seq`, parameters stripped, case-insensitive. */
 function isCborSeq(contentType: string | null): boolean {
-  return (contentType ?? "").split(";")[0].trim().toLowerCase() === SUBSCRIPTION_CBOR_SEQ_CONTENT_TYPE;
+  return (contentType ?? "").split(";")[0]?.trim().toLowerCase() === SUBSCRIPTION_CBOR_SEQ_CONTENT_TYPE;
 }
 
 function isFrame(value: unknown): value is ServerFrame {
