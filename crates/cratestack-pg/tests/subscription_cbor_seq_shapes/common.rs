@@ -23,21 +23,86 @@ pub struct Row {
     pub body: String,
 }
 
-/// Every frame within `window`; the stream never ends on its own.
+/// Every byte of the body within `window`; the stream never ends on its own.
+pub async fn raw_body(response: cratestack::axum::response::Response, window: Duration) -> Vec<u8> {
+    let mut body = response.into_body().into_data_stream();
+    let mut bytes = Vec::new();
+    while let Ok(Some(chunk)) = tokio::time::timeout(window, body.next()).await {
+        bytes.extend_from_slice(&chunk.expect("body chunk"));
+    }
+    bytes
+}
+
+/// The CBOR items of a cbor-seq body, whole.
+fn items(bytes: &[u8]) -> Vec<Vec<u8>> {
+    let mut decoder = CborSeqChunkDecoder::new();
+    let items = decoder.feed_chunk(bytes).expect("a CBOR sequence");
+    assert_eq!(decoder.pending_len(), 0, "no partial frame");
+    items.into_iter().map(|item| item.to_vec()).collect()
+}
+
+/// The frames of a cbor-seq body.
+pub fn frames_of(bytes: &[u8]) -> Vec<ServerFrame> {
+    items(bytes)
+        .iter()
+        .map(|item| CborCodec.decode(item).expect("a server frame"))
+        .collect()
+}
+
+/// Every frame within `window`.
 pub async fn frames(
     response: cratestack::axum::response::Response,
     window: Duration,
 ) -> Vec<ServerFrame> {
-    let mut body = response.into_body().into_data_stream();
-    let mut decoder = CborSeqChunkDecoder::new();
-    let mut frames = Vec::new();
-    while let Ok(Some(chunk)) = tokio::time::timeout(window, body.next()).await {
-        for item in decoder.feed_chunk(&chunk.expect("body chunk")).unwrap() {
-            frames.push(CborCodec.decode(&item).expect("a server frame"));
-        }
-    }
-    assert_eq!(decoder.pending_len(), 0, "no partial frame");
-    frames
+    frames_of(&raw_body(response, window).await)
+}
+
+/// The committed hex body the TypeScript tests read
+/// (`cratestack-client-typescript/tests/js/subscriptions/cbor-seq-model-feed.hex`)
+/// must still be what the server writes for the same model and row. Compared
+/// as CBOR values with the per-run `event_id` and `occurred_at` masked.
+pub fn assert_matches_committed_fixture(live: &[u8]) {
+    const PATH: &str = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../cratestack-client-typescript/tests/js/subscriptions/cbor-seq-model-feed.hex"
+    );
+    let hex: String = std::fs::read_to_string(PATH)
+        .expect("the committed fixture")
+        .lines()
+        .filter(|line| !line.starts_with('#'))
+        .collect();
+    let hex = hex.trim();
+    let committed: Vec<u8> = (0..hex.len())
+        .step_by(2)
+        .map(|at| u8::from_str_radix(&hex[at..at + 2], 16).expect("hex"))
+        .collect();
+    let mask = |bytes: &[u8]| -> Vec<RpcFrameValue> {
+        items(bytes)
+            .iter()
+            .map(|item| {
+                let mut frame: RpcFrameValue = CborCodec.decode(item).expect("a frame");
+                if let RpcFrameValue::Object(map) = &mut frame
+                    && let Some(RpcFrameValue::Object(event)) = map.get_mut("next")
+                {
+                    for field in ["event_id", "occurred_at"] {
+                        event.insert(field.to_owned(), RpcFrameValue::Null);
+                    }
+                }
+                frame
+            })
+            .collect()
+    };
+    // The fixture stops without a terminal frame, as the live capture does.
+    let live_hex: String = live.iter().map(|byte| format!("{byte:02x}")).collect();
+    assert_eq!(
+        mask(live),
+        mask(&committed),
+        "the server's cbor-seq body for `SeqNote` no longer matches the committed fixture \
+         tests/js/subscriptions/cbor-seq-model-feed.hex (the TypeScript tests read it). \
+         Regenerate: replace the hex line of that file (keep the `#` header) with the live \
+         body below, then run the TypeScript suites that read it (`subscriptions_runtime`, \
+         `subscription_cbor_seq_rest_runtime`).\nlive body: {live_hex}"
+    );
 }
 
 /// A refusal before the stream: JSON, its own status, and `Vary: Accept`
@@ -49,10 +114,19 @@ pub fn assert_refusal(response: &cratestack::axum::response::Response, status: u
         response.headers()[cratestack::axum::http::header::CONTENT_TYPE],
         "application/json"
     );
-    assert_eq!(
-        response.headers()[cratestack::axum::http::header::VARY],
-        "Accept"
-    );
+    assert_vary_accept_once(response);
+}
+
+/// Exactly one `Vary` header, whose value is `Accept`: a second append would
+/// still pass a first-value-only check.
+pub fn assert_vary_accept_once(response: &cratestack::axum::response::Response) {
+    let values: Vec<_> = response
+        .headers()
+        .get_all(cratestack::axum::http::header::VARY)
+        .iter()
+        .collect();
+    assert_eq!(values.len(), 1, "Vary must appear once: {values:?}");
+    assert_eq!(values[0], "Accept");
 }
 
 /// `ready`, then one `next` whose `event_id` and `data.id` are 16-byte

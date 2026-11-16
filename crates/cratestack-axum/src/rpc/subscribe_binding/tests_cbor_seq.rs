@@ -7,6 +7,13 @@ use futures_util::stream;
 
 use super::*;
 
+/// One `Vary` header, valued `Accept`: a doubled header passes a first-value check.
+fn assert_vary_accept_once(response: &axum::response::Response) {
+    let vary: Vec<_> = response.headers().get_all(header::VARY).iter().collect();
+    assert_eq!(vary.len(), 1, "Vary must appear once: {vary:?}");
+    assert_eq!(vary[0], "Accept");
+}
+
 fn negotiate(accept: Option<&[u8]>) -> Result<SubscribeBinding, CratestackError> {
     let mut headers = HeaderMap::new();
     if let Some(value) = accept {
@@ -85,7 +92,7 @@ async fn serve_subscription_streams_an_opened_subscription_as_cbor_seq() {
         response.headers().get(header::CONTENT_TYPE).unwrap(),
         "application/cbor-seq"
     );
-    assert_eq!(response.headers().get(header::VARY).unwrap(), "Accept");
+    assert_vary_accept_once(&response);
 }
 
 #[tokio::test]
@@ -93,10 +100,10 @@ async fn both_bindings_and_a_refusal_vary_on_accept() {
     for binding in [SubscribeBinding::Sse, SubscribeBinding::CborSeq] {
         let opened = async { Ok(Box::pin(stream::iter([Ok(1_i64)])) as SubscriptionStream<i64>) };
         let ok = serve_subscription(binding, opened).await;
-        assert_eq!(ok.headers().get(header::VARY).unwrap(), "Accept");
+        assert_vary_accept_once(&ok);
         let error = CratestackError::Forbidden("no".to_owned());
         let refused = serve_subscription::<i64, _>(binding, async { Err(error) }).await;
-        assert_eq!(refused.headers().get(header::VARY).unwrap(), "Accept");
+        assert_vary_accept_once(&refused);
     }
 }
 

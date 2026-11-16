@@ -9,7 +9,7 @@ use cratestack_codec_cbor::CborCodec;
 use tower::util::ServiceExt;
 
 use super::HeaderCaller;
-use super::common::{TABLE, assert_one_event, assert_refusal, frames};
+use super::common::{TABLE, assert_one_event, assert_refusal, assert_vary_accept_once, frames};
 use super::support::pg;
 
 mod schema {
@@ -60,7 +60,7 @@ async fn an_rpc_model_feed_carries_byte_string_uuids_and_exact_decimals() {
         response.headers()[header::CONTENT_TYPE],
         "application/cbor-seq"
     );
-    assert_eq!(response.headers()[header::VARY], "Accept");
+    assert_vary_accept_once(&response);
 
     let row_id = uuid::Uuid::from_u128(0x0123_4567_89ab_cdef_0123_4567_89ab_cdef);
     db.seq_note()

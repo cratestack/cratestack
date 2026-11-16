@@ -4,6 +4,7 @@
 // tagged value) is a frame error, not a frame. `@cratestack/cbor` is replaced
 // by a module of the test's making, so each test loads a fresh client. REST
 // package only: an RPC package imports `@cratestack/cbor` statically.
+import { runInNewContext } from "node:vm";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 type Decode = (bytes: Uint8Array) => unknown;
@@ -18,14 +19,22 @@ async function load(mock: () => unknown, chunks: Uint8Array[] = []) {
   const fetchFn = (async () => {
     state.calls += 1;
     let i = 0;
-    const body = new ReadableStream<Uint8Array>({
-      pull(controller) {
-        if (i < chunks.length) controller.enqueue(chunks[i++]!);
+    // Closed after its chunks, so a reader that wrongly goes on fails an
+    // assertion rather than the test timeout. `highWaterMark: 0` keeps `pull`
+    // to one call per read, so the close is not eager and a `cancel` of the
+    // still-open stream is observable.
+    const body = new ReadableStream<Uint8Array>(
+      {
+        pull(controller) {
+          if (i < chunks.length) controller.enqueue(chunks[i++]!);
+          else controller.close();
+        },
+        cancel() {
+          state.cancelled = true;
+        },
       },
-      cancel() {
-        state.cancelled = true;
-      },
-    });
+      { highWaterMark: 0 },
+    );
     return new Response(body, { headers: { "content-type": "application/cbor-seq" } });
   }) as typeof fetch;
   const client = new CratestackClientClient("http://api.test", {
@@ -92,5 +101,18 @@ describe("cbor-seq codec", () => {
       expect((error as { code: string }).code).toBe("invalid_response");
       expect(state.cancelled).toBe(true);
     }
+  });
+
+  it("accepts a plain map made in another realm (a vm or Jest context)", async () => {
+    // `Object.getPrototypeOf(frame) !== Object.prototype` here, as when a
+    // native addon is loaded by the outer `require` of a sandboxed test.
+    const frames: unknown[] = [runInNewContext("({id: 1, ready: {}})"), runInNewContext("({id: 2, end: {}})")];
+    expect(Object.getPrototypeOf(frames[0])).not.toBe(Object.prototype);
+    let calls = 0;
+    const decode: Decode = () => frames[calls++];
+    const { client } = await load(() => ({ createCborCodec: async () => ({ decode }) }), [TWO_ITEMS]);
+    const { items, error } = await failure(client.seqNotes.subscribe());
+    expect(error).toBeUndefined();
+    expect(items).toEqual([]);
   });
 });

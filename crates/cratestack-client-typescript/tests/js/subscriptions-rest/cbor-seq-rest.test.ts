@@ -6,7 +6,9 @@
 // `tests/js/subscriptions/cbor-seq-frames.test.ts`.
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import { createCborCodec } from "@cratestack/cbor";
 import { CratestackClientClient } from "./src/client.js";
+import { skipItem } from "./src/cbor-item.js";
 
 function wireBody(): Uint8Array {
   const hex = readFileSync(new URL("./cbor-seq-model-feed.hex", import.meta.url), "utf8")
@@ -41,6 +43,13 @@ describe("cbor-seq over a REST client", () => {
     expect(items[0]!.data.id).toBe("01234567-89ab-cdef-0123-456789abcdef");
     expect(items[0]!.data.amount.toFixed(8)).toBe("12.50000000");
     expect(items[0]!.data.body).toBe("hello");
+    // The revived Decimal keeps the value; the wire text is the server's exact `12.50000000`.
+    const body = wireBody();
+    const start = skipItem(body, 0);
+    const wire = (await createCborCodec()).decode(body.slice(start, skipItem(body, start))) as {
+      next: { data: { amount: unknown } };
+    };
+    expect(wire.next.data.amount).toBe("12.50000000");
     // The captured body stops without an `end`, which is an error.
     expect((error as Error).message).toContain("without an `end` or `err` frame");
   });

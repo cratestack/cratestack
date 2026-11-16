@@ -13,8 +13,8 @@ use std::process::Command;
 
 use cratestack_client_typescript::{TypeScriptGeneratorConfig, generate_package};
 
-/// Keep in lockstep with `tests/js/subscriptions-rest/*.test.ts` (1 + 3).
-const EXPECTED_PASSING: &str = "4 passed";
+/// Keep in lockstep with `tests/js/subscriptions-rest/*.test.ts` (1 + 4).
+const EXPECTED_PASSING: &str = "5 passed";
 
 #[test]
 fn a_rest_client_revives_a_cbor_seq_model_event() {

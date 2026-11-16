@@ -163,8 +163,10 @@ function isCborSeq(contentType: string | null): boolean {
  *  make of a tagged item. */
 function isFrame(value: unknown): value is ServerFrame {
   if (typeof value !== "object" || value === null) return false;
+  // A plain object of any realm (a Jest or `node:vm` context has its own
+  // `Object.prototype`): no prototype, or one whose own prototype is none.
   const prototype = Object.getPrototypeOf(value);
-  return prototype === Object.prototype || prototype === null;
+  return prototype === null || Object.getPrototypeOf(prototype) === null;
 }
 
 function append(a: Uint8Array, b: Uint8Array): Uint8Array {
