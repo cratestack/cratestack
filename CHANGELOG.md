@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.20.4 (2026-11-16)
+
 ### A signed subscription open: the generated clients (cratestack#1378, part B2)
 
 Additive on the wire; **one source-breaking change for hand-built Rust code** (the first bullet). Part B2 of #1378, the client half of the signed open the server serves since B1: the generated Rust, TypeScript and Dart clients open a subscription marked `@frames(unsigned)` signed, and read the plain frames that answer. The rule that "a client with an envelope never sends a plain subscription" is unchanged: what changed is that the one kind that can be sealed now is, instead of every subscription being refused locally.
