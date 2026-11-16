@@ -68,5 +68,28 @@ pub(super) fn cbor_item<T: DeserializeOwned>(
         .map_err(|_| ClientError::InvalidResponse(format!("subscription item: {first}")))
 }
 
+/// An SSE `message` event's `next` frame as `T`.
+pub(super) fn next_of<T: DeserializeOwned>(data: &str) -> Result<T, ClientError> {
+    #[derive(serde::Deserialize)]
+    struct Next {
+        next: serde_json::Value,
+    }
+    let frame: Next = serde_json::from_str(data)
+        .map_err(|error| ClientError::InvalidResponse(format!("subscription frame: {error}")))?;
+    item(frame.next)
+}
+
+/// An SSE `error` event's `err` frame as a `ClientError`.
+pub(super) fn error_of(data: &str) -> ClientError {
+    #[derive(serde::Deserialize)]
+    struct Err {
+        err: RpcErrorBody,
+    }
+    match serde_json::from_str::<Err>(data) {
+        Ok(frame) => rpc_error_to_client(frame.err),
+        Err(error) => ClientError::InvalidResponse(format!("subscription error frame: {error}")),
+    }
+}
+
 #[cfg(test)]
 mod tests;

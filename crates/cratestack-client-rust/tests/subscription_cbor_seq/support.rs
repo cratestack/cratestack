@@ -172,6 +172,8 @@ pub fn target(name: &str) -> SubscriptionTarget {
         sse_path: format!("/rpc/subscribe/procedure.{name}"),
         sse_query: None,
         socket_path: "/rpc/ws",
+        frames: None,
+        seal_route: String::new(),
     }
 }
 

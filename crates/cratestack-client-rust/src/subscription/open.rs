@@ -27,6 +27,12 @@ impl<C: HttpClientCodec> CratestackClient<C> {
     where
         T: DeserializeOwned + Send + 'static,
     {
+        // A client with an envelope never opens a plain subscription: the
+        // open is sealed, or refused (cratestack#1378).
+        #[cfg(feature = "cose")]
+        if self.sealing.envelope.is_some() {
+            return super::sealed::open(self, &target).await;
+        }
         match self.config.subscription_transport {
             SubscriptionTransport::Sse => sse::open(self, &target).await,
             SubscriptionTransport::CborSeq => cbor_seq::open(self, &target).await,

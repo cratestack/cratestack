@@ -55,10 +55,26 @@ pub enum EnvelopeError {
     /// type it did not request. `got` is what the server named, truncated.
     #[error("the response was sealed as `{got}`, a payload type this call did not ask for")]
     UnexpectedPayloadType { got: String },
-    /// Streams and subscriptions cannot be sealed yet (ADR 0006 P1); the
-    /// call was refused locally instead of being sent in plain.
-    #[error("sealed streams are not supported yet; call a unary operation")]
+    /// This stream cannot be opened over the signed transport, so it was
+    /// refused locally instead of being sent in plain. Only a subscription
+    /// the schema marks `@frames(unsigned)` can be, over SSE or cbor-seq (an
+    /// `Auto` binding picks cbor-seq), and over REST only on a native
+    /// target; a WebSocket or WebTransport pin, an unmarked subscription and
+    /// a `@stream` procedure are refused (ADR 0006, cratestack#1378).
+    #[error(
+        "this stream cannot be opened over the signed transport: only a subscription marked \
+         `@frames(unsigned)` can, over SSE or cbor-seq"
+    )]
     StreamsUnsupported,
+    /// The server accepted a signed subscription open, but the answer is not
+    /// the unsigned stream that was asked for: it lacks `Cratestack-Frames:
+    /// unsigned` (exactly once), or its `Content-Type` is not the stream type
+    /// requested. A plain `200` can be anything a proxy made up, so its body
+    /// was not read as frames (cratestack#1378).
+    #[error(
+        "the answer to a signed subscription open is not the unsigned stream that was asked for"
+    )]
+    UnsignedFramesRefused,
 }
 
 impl EnvelopeError {
@@ -74,6 +90,7 @@ impl EnvelopeError {
             EnvelopeError::Open(_) => "envelope_open",
             EnvelopeError::UnexpectedPayloadType { .. } => "envelope_unexpected_payload_type",
             EnvelopeError::StreamsUnsupported => "envelope_streams_unsupported",
+            EnvelopeError::UnsignedFramesRefused => "envelope_unsigned_frames_refused",
         }
     }
 }

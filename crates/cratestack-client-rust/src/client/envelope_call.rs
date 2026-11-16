@@ -28,10 +28,9 @@ use crate::client::envelope_refusal::refused_op;
 use crate::client::helpers::build_url;
 use crate::client::route::RouteRef;
 use crate::codec::HttpClientCodec;
-use crate::envelope::{ClientEnvelope, SealCall, SealedCall, is_cose};
+use crate::envelope::{ClientEnvelope, SealCall, is_cose};
 use crate::envelope_error::EnvelopeError;
 use crate::error::{ClientError, HeaderPair};
-use crate::idempotency::RequestIdempotency;
 use crate::runtime::wire::RuntimeResponseWire;
 
 impl<C> CratestackClient<C>
@@ -119,30 +118,9 @@ where
         if let Some(if_match) = bound.if_match.as_deref() {
             call = call.if_match(if_match);
         }
-        let SealedCall {
-            body: sealed,
-            headers: sealed_headers,
-            pending,
-        } = envelope.seal_call(call).await?;
-        // The seal's own headers win over whatever built them first.
-        for (name, value) in sealed_headers {
-            header_map.insert(name, value);
-        }
-
-        let response = self
-            .http
-            .request(method.clone(), url.clone())
-            .headers(header_map)
-            .body(sealed)
-            // A replay carries the same `cti`, which the server refuses.
-            .with_extension(RequestIdempotency::new(false))
-            .send()
+        let (response, pending) = self
+            .seal_and_send(envelope, &method, url, header_map, call, None)
             .await?;
-        // A client that follows redirects (a caller-supplied one) may have
-        // answered from somewhere the request was never sealed for.
-        if response.url() != &url {
-            return Err(EnvelopeError::Unverified.into());
-        }
         let status = response.status();
         let response_headers = response.headers().clone();
         let bytes = response.bytes().await?;

@@ -22,7 +22,7 @@ use cratestack::envelope_layer::{EnvelopeLayer, EnvelopeLayerBuilder, EnvelopeMo
 use cratestack_client_rust::{CborCodec, ClientConfig, ClientEnvelope, CratestackClient};
 use p256::ecdsa::signature::Signer as _;
 
-pub use proxy::{Proxy, Tamper, proxy};
+pub use proxy::{Captured, Proxy, Tamper, proxy};
 
 pub const AUDIENCE: &str = "payments";
 
@@ -179,6 +179,22 @@ pub fn runtime_with<C: cratestack_client_rust::HttpClientCodec>(
 
 /// The payload types a layer that opted in to JSON allows, both ways.
 pub const CBOR_AND_JSON: [&str; 2] = ["application/cbor", "application/json"];
+
+/// A signing client for `addr` that opens its subscriptions over `transport`.
+pub fn runtime_subscribing(
+    addr: SocketAddr,
+    envelope: ClientEnvelope,
+    transport: cratestack_client_rust::SubscriptionTransport,
+) -> CratestackClient {
+    let _ = rustls::crypto::ring::default_provider().install_default();
+    let base = reqwest::Url::parse(&format!("http://{addr}")).unwrap();
+    CratestackClient::new(
+        ClientConfig::new(base).with_subscription_transport(transport),
+        CborCodec,
+    )
+    .with_envelope(envelope)
+    .expect("CBOR client takes an envelope")
+}
 
 /// A signing client for `addr` whose base URL carries `path` (a mount).
 pub fn runtime_at(addr: SocketAddr, path: &str, envelope: ClientEnvelope) -> CratestackClient {

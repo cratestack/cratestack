@@ -17,6 +17,8 @@ mod envelope_call;
 mod envelope_headers;
 #[cfg(feature = "cose")]
 mod envelope_refusal;
+#[cfg(feature = "cose")]
+mod envelope_send;
 mod headers;
 pub(crate) mod helpers;
 pub(crate) mod http;
@@ -28,6 +30,8 @@ mod prepared_validation;
 pub(crate) mod raw_path;
 mod response;
 pub(crate) mod route;
+#[cfg(feature = "cose")]
+mod sealed_stream;
 pub(crate) mod sealing;
 mod streaming;
 mod transport;

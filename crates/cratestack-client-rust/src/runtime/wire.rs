@@ -143,6 +143,7 @@ impl From<ClientError> for RuntimeErrorWire {
                     EnvelopeError::Unsigned { .. }
                     | EnvelopeError::ContractUnsupported { .. }
                     | EnvelopeError::Unverified
+                    | EnvelopeError::UnsignedFramesRefused
                     | EnvelopeError::Open(_) => RuntimeErrorCode::InvalidResponse,
                     EnvelopeError::StreamsUnsupported => RuntimeErrorCode::BadInput,
                     _ => RuntimeErrorCode::Transport,

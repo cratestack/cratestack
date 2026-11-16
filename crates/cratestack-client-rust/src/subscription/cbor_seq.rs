@@ -25,7 +25,7 @@ use crate::client::CratestackClient;
 use crate::codec::HttpClientCodec;
 use crate::error::ClientError;
 
-const ACCEPT: &str = "application/cbor-seq";
+pub(super) const ACCEPT: &str = "application/cbor-seq";
 
 /// The keep-alive: a CBOR `null`.
 const KEEPALIVE: &[u8] = &[0xf6];
@@ -44,6 +44,14 @@ pub(super) async fn open<C: HttpClientCodec, T: DeserializeOwned + Send + 'stati
             ACCEPT,
         )
         .await?;
+    read(client, response).await
+}
+
+/// The subscription an answered open carries, however the open was sent.
+pub(super) async fn read<C: HttpClientCodec, T: DeserializeOwned + Send + 'static>(
+    client: &CratestackClient<C>,
+    response: reqwest::Response,
+) -> Result<ClientSubscription<T>, ClientError> {
     let content_type = response
         .headers()
         .get(reqwest::header::CONTENT_TYPE)

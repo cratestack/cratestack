@@ -4,16 +4,18 @@
 //! `event: error` ends it. `: keepalive` comments are skipped.
 
 use bytes::Bytes;
-use cratestack_core::rpc::RpcErrorBody;
 use futures_util::{Stream, StreamExt};
 use reqwest::Method;
 use serde::de::DeserializeOwned;
 
-use super::frames::{item, rpc_error_to_client};
+use super::frames::{error_of, next_of};
 use super::{ClientSubscription, SubscriptionTarget};
 use crate::client::CratestackClient;
 use crate::codec::HttpClientCodec;
 use crate::error::ClientError;
+
+/// The `Accept` of an SSE subscription.
+pub(super) const ACCEPT: &str = "text/event-stream";
 
 pub(super) async fn open<C: HttpClientCodec, T: DeserializeOwned + Send + 'static>(
     client: &CratestackClient<C>,
@@ -26,9 +28,17 @@ pub(super) async fn open<C: HttpClientCodec, T: DeserializeOwned + Send + 'stati
             None,
             target.sse_query.as_deref(),
             &[],
-            "text/event-stream",
+            ACCEPT,
         )
         .await?;
+    read(client, response).await
+}
+
+/// The subscription an answered open carries, however the open was sent.
+pub(super) async fn read<C: HttpClientCodec, T: DeserializeOwned + Send + 'static>(
+    client: &CratestackClient<C>,
+    response: reqwest::Response,
+) -> Result<ClientSubscription<T>, ClientError> {
     let mut events = Box::pin(events(
         response.bytes_stream(),
         client.config.max_sse_event_bytes,
@@ -59,27 +69,6 @@ pub(super) async fn open<C: HttpClientCodec, T: DeserializeOwned + Send + 'stati
         }
     });
     Ok(rx)
-}
-
-fn next_of<T: DeserializeOwned>(data: &str) -> Result<T, ClientError> {
-    #[derive(serde::Deserialize)]
-    struct Next {
-        next: serde_json::Value,
-    }
-    let frame: Next = serde_json::from_str(data)
-        .map_err(|error| ClientError::InvalidResponse(format!("subscription frame: {error}")))?;
-    item(frame.next)
-}
-
-fn error_of(data: &str) -> ClientError {
-    #[derive(serde::Deserialize)]
-    struct Err {
-        err: RpcErrorBody,
-    }
-    match serde_json::from_str::<Err>(data) {
-        Ok(frame) => rpc_error_to_client(frame.err),
-        Err(error) => ClientError::InvalidResponse(format!("subscription error frame: {error}")),
-    }
 }
 
 /// One server-sent event.

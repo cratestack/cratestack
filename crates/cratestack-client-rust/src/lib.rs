@@ -84,5 +84,5 @@ pub use step_up::{
 pub use streaming::CborSeqChunkDecoder;
 pub use streaming_callback::RuntimeChunkWire;
 pub use subscription::{
-    ClientSubscription, SubscriptionTarget, SubscriptionTransport, rpc_error_to_client,
+    ClientSubscription, FramesMode, SubscriptionTarget, SubscriptionTransport, rpc_error_to_client,
 };
