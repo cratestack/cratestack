@@ -70,7 +70,8 @@ pub enum ClientError {
     InvalidResponse(String),
     #[error("bad input: {0}")]
     BadInput(String),
-    /// One server-sent event outgrew the per-event byte cap
+    /// One server-sent event, or one `application/cbor-seq` frame, outgrew
+    /// the per-event byte cap
     /// (`ClientConfig::with_max_sse_event_bytes`, default 1 MiB), so the
     /// subscription was ended and its connection dropped (cratestack#1379).
     /// `limit` is the cap that was exceeded.
