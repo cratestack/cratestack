@@ -98,3 +98,55 @@ async fn an_endless_frame_ends_with_event_too_large_and_drops_the_connection() {
     }
     panic!("the server's response body was never dropped: the connection stayed open");
 }
+
+#[tokio::test]
+async fn an_sse_body_answered_to_a_cbor_seq_request_is_refused_by_its_media_type() {
+    let client = client(app(), 1 << 20).await;
+    let error = client
+        .subscribe::<Reading>(target("wrong_media_type"))
+        .await
+        .map(|_| ())
+        .unwrap_err();
+    assert!(
+        matches!(&error, ClientError::InvalidResponse(m) if m.contains("text/event-stream")),
+        "{error:?}"
+    );
+}
+
+#[tokio::test]
+async fn the_media_type_is_matched_without_case_and_ignoring_parameters() {
+    let client = client(app(), 1 << 20).await;
+    let mut subscription = client
+        .subscribe::<Reading>(target("media_type_params"))
+        .await
+        .unwrap();
+    assert!(subscription.recv().await.is_none());
+}
+
+#[tokio::test]
+async fn a_stream_whose_first_frame_is_not_ready_is_refused() {
+    let client = client(app(), 1 << 20).await;
+    let error = client
+        .subscribe::<Reading>(target("next_first"))
+        .await
+        .map(|_| ())
+        .unwrap_err();
+    assert!(
+        matches!(&error, ClientError::InvalidResponse(m) if m.contains("`ready`")),
+        "{error:?}"
+    );
+}
+
+#[tokio::test]
+async fn an_err_before_ready_is_the_open_refusal() {
+    let client = client(app(), 1 << 20).await;
+    let error = client
+        .subscribe::<Reading>(target("err_first"))
+        .await
+        .map(|_| ())
+        .unwrap_err();
+    assert!(
+        matches!(error, ClientError::Remote { status, .. } if status == 403),
+        "{error:?}"
+    );
+}

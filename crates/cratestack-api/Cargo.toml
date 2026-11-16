@@ -235,6 +235,9 @@ serde_urlencoded.workspace = true
 # bind and serve through — only the *client* side moved to `reqwest`.
 # `io-util`/`time`: the MCP suites (`tests/mcp_*.rs`, cratestack#1038) drive
 # the stdio server over an in-memory `tokio::io::duplex` with a timeout.
+# `test-util`: `tests/subscription_cbor_seq_{rest,rpc}.rs` pause the clock
+# (`start_paused`) so the 15 s cbor-seq keep-alive is asserted without
+# waiting for it.
 tokio = { workspace = true, features = ["net", "io-util", "time", "test-util"] }
 tower.workspace = true
 tracing-subscriber.workspace = true

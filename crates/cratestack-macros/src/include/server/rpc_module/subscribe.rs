@@ -3,8 +3,8 @@
 //!
 //! `GET` takes the subscription's input as the query string (a model feed's
 //! `list` filters, a subscription procedure's JSON-valued arguments), so an
-//! `EventSource` can open it. `POST` takes it as a body, JSON or CBOR by `Content-Type`, the input a
-//! WebTransport request carries. Both check `Accept`, authenticate the
+//! `EventSource` can open it. `POST` takes it as a body, JSON or CBOR by
+//! `Content-Type`, the input a WebTransport request carries. Both check `Accept`, authenticate the
 //! canonical request, open through the schema's dispatcher and encode the
 //! stream; a refusal is a JSON body with its own status.
 

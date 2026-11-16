@@ -44,15 +44,23 @@ pub(super) async fn open<C: HttpClientCodec, T: DeserializeOwned + Send + 'stati
             ACCEPT,
         )
         .await?;
+    let content_type = response
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or("");
+    if !is_cbor_seq(content_type) {
+        return Err(ClientError::InvalidResponse(format!(
+            "expected a {ACCEPT} subscription body, got Content-Type `{content_type}`"
+        )));
+    }
     let mut frames = Box::pin(frames(
         response.bytes_stream(),
         client.config.max_sse_event_bytes,
     ));
     match frames.next().await {
         Some(Ok(frame)) if frame.ready.is_some() => {}
-        Some(Ok(frame)) if frame.err.is_some() => {
-            return Err(rpc_error_to_client(frame.err.expect("checked")));
-        }
+        Some(Ok(ServerFrame { err: Some(err), .. })) => return Err(rpc_error_to_client(err)),
         Some(Err(error)) => return Err(error),
         _ => {
             return Err(ClientError::InvalidResponse(
@@ -64,11 +72,11 @@ pub(super) async fn open<C: HttpClientCodec, T: DeserializeOwned + Send + 'stati
     crate::task::spawn(async move {
         loop {
             let (item, last) = match frames.next().await {
-                Some(Ok(frame)) if frame.next.is_some() => {
-                    (cbor_item(frame.next.expect("checked")), false)
-                }
-                Some(Ok(frame)) if frame.err.is_some() => {
-                    (Err(rpc_error_to_client(frame.err.expect("checked"))), true)
+                Some(Ok(ServerFrame {
+                    next: Some(next), ..
+                })) => (cbor_item(next), false),
+                Some(Ok(ServerFrame { err: Some(err), .. })) => {
+                    (Err(rpc_error_to_client(err)), true)
                 }
                 Some(Ok(frame)) if frame.end.is_some() => return,
                 Some(Ok(_)) => continue,
@@ -82,6 +90,13 @@ pub(super) async fn open<C: HttpClientCodec, T: DeserializeOwned + Send + 'stati
         }
     });
     Ok(rx)
+}
+
+/// Whether a `Content-Type` is `application/cbor-seq`: parameters stripped,
+/// compared without case.
+fn is_cbor_seq(content_type: &str) -> bool {
+    let media_type = content_type.split(';').next().unwrap_or("").trim();
+    media_type.eq_ignore_ascii_case(ACCEPT)
 }
 
 fn missing_terminal() -> ClientError {

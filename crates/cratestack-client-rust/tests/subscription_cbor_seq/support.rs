@@ -87,6 +87,41 @@ pub async fn stops() -> Response<Body> {
     respond(vec![wire])
 }
 
+/// An SSE body answered to a cbor-seq request.
+pub async fn wrong_media_type() -> Response<Body> {
+    Response::builder()
+        .header(header::CONTENT_TYPE, "text/event-stream")
+        .body(Body::from(
+            "event: ready\ndata: {\"id\":1,\"ready\":{}}\n\n",
+        ))
+        .unwrap()
+}
+
+/// A feed whose first frame is an item, not `ready`.
+pub async fn next_first() -> Response<Body> {
+    respond(vec![encode(&ServerFrame::next(1, reading()))])
+}
+
+/// A feed that refuses before `ready`: the open itself fails.
+pub async fn err_first() -> Response<Body> {
+    respond(vec![encode(&ServerFrame::err(
+        1,
+        &CratestackError::Forbidden("not yours".to_owned()),
+    ))])
+}
+
+/// The media type with a parameter and odd case, which is still cbor-seq.
+pub async fn media_type_params() -> Response<Body> {
+    let mut wire = encode(&ServerFrame::ready(1));
+    wire.extend(encode(&ServerFrame::end(2)));
+    let mut response = respond(vec![wire]);
+    response.headers_mut().insert(
+        header::CONTENT_TYPE,
+        "Application/CBOR-Seq; charset=binary".parse().unwrap(),
+    );
+    response
+}
+
 pub async fn truncated() -> Response<Body> {
     let mut wire = encode(&ServerFrame::ready(1));
     let item = encode(&ServerFrame::next(2, reading()));
@@ -146,4 +181,14 @@ pub fn app() -> Router {
         .route("/rpc/subscribe/procedure.errored", get(errored))
         .route("/rpc/subscribe/procedure.stops", get(stops))
         .route("/rpc/subscribe/procedure.truncated", get(truncated))
+        .route(
+            "/rpc/subscribe/procedure.wrong_media_type",
+            get(wrong_media_type),
+        )
+        .route("/rpc/subscribe/procedure.next_first", get(next_first))
+        .route("/rpc/subscribe/procedure.err_first", get(err_first))
+        .route(
+            "/rpc/subscribe/procedure.media_type_params",
+            get(media_type_params),
+        )
 }

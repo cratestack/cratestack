@@ -1,6 +1,7 @@
 //! The `application/cbor-seq` subscription binding
 //! (`docs/design/subscriptions-websocket.md` §6a.3, cratestack#1001): the
-//! same frames a WebTransport stream carries, as an HTTP response body.
+//! SSE binding's frames (ids counting up per frame), CBOR-encoded, as an HTTP
+//! response body. WebTransport differs: it carries one subscription id.
 //!
 //! Each item of the CBOR sequence (RFC 8742) is one
 //! [`ServerFrame`]. First `{id: 1, ready: {}}`: the subscription is live and
@@ -27,10 +28,7 @@ use futures_util::stream::{self, StreamExt};
 use serde::Serialize;
 
 use super::sse_subscription::KEEPALIVE;
-use crate::transport::StreamedResponseMarker;
-
-/// The media type a client asks for with `Accept`, and the response carries.
-pub const CBOR_SEQ_CONTENT_TYPE: &str = "application/cbor-seq";
+use crate::transport::{CBOR_SEQUENCE_CONTENT_TYPE, StreamedResponseMarker};
 
 /// A CBOR `null`: the keep-alive item.
 const KEEPALIVE_ITEM: &[u8] = &[0xf6];
@@ -65,7 +63,7 @@ pub fn encode_subscription_cbor_seq_response<T: Serialize + Send + 'static>(
     *response.status_mut() = StatusCode::OK;
     response.headers_mut().insert(
         header::CONTENT_TYPE,
-        HeaderValue::from_static(CBOR_SEQ_CONTENT_TYPE),
+        HeaderValue::from_static(CBOR_SEQUENCE_CONTENT_TYPE),
     );
     response
         .headers_mut()

@@ -71,7 +71,7 @@ pub use cratestack_core::rpc::{
 };
 
 pub use batch::response_to_frame;
-pub use cbor_seq_subscription::{CBOR_SEQ_CONTENT_TYPE, encode_subscription_cbor_seq_response};
+pub use cbor_seq_subscription::encode_subscription_cbor_seq_response;
 pub use codec_helpers::{decode_rpc_body, encode_rpc_value};
 pub use credential_expiry::until_credential_expires;
 pub use error_encode::{convert_handler_error_response, encode_rpc_error};

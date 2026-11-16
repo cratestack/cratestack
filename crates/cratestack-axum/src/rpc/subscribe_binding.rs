@@ -10,18 +10,19 @@
 
 use std::future::Future;
 
-use axum::http::{HeaderMap, header};
+use axum::http::{HeaderMap, HeaderValue, header};
 use axum::response::Response;
 use cratestack_codec_cbor::CborCodec;
 use cratestack_codec_json::JsonCodec;
 use cratestack_core::{CratestackError, SubscriptionStream};
 use serde::Serialize;
 
-use super::cbor_seq_subscription::{CBOR_SEQ_CONTENT_TYPE, encode_subscription_cbor_seq_response};
+use super::cbor_seq_subscription::encode_subscription_cbor_seq_response;
 use super::sse::SSE_CONTENT_TYPE;
 use super::sse_subscription::encode_subscription_sse_response;
 use super::subscribe_codec::SubscribeCodec;
 use super::subscribe_error::encode_subscribe_error;
+use crate::transport::CBOR_SEQUENCE_CONTENT_TYPE;
 
 /// The wire binding a subscribe request asked for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -29,8 +30,8 @@ use super::subscribe_error::encode_subscribe_error;
 pub enum SubscribeBinding {
     /// `text/event-stream`: JSON events.
     Sse,
-    /// `application/cbor-seq`: one CBOR `ServerFrame` per item, the framing
-    /// WebTransport uses (design §6a.3).
+    /// `application/cbor-seq`: one CBOR `ServerFrame` per item, the SSE
+    /// frames CBOR-encoded (design §6a.3).
     CborSeq,
 }
 
@@ -69,7 +70,7 @@ pub fn negotiate_subscribe_binding(
         .split(',')
         .map(str::trim)
         .find_map(|value| match value {
-            CBOR_SEQ_CONTENT_TYPE => Some(SubscribeBinding::CborSeq),
+            CBOR_SEQUENCE_CONTENT_TYPE => Some(SubscribeBinding::CborSeq),
             SSE_CONTENT_TYPE | "*/*" => Some(SubscribeBinding::Sse),
             _ => None,
         })
@@ -118,13 +119,19 @@ where
     T: Serialize + Send + 'static,
     F: Future<Output = Result<SubscriptionStream<T>, CratestackError>>,
 {
-    match open.await {
+    let mut response = match open.await {
         Ok(stream) => match binding {
             SubscribeBinding::Sse => encode_subscription_sse_response(stream),
             SubscribeBinding::CborSeq => encode_subscription_cbor_seq_response(stream),
         },
         Err(error) => encode_subscribe_error(&error),
-    }
+    };
+    // The body depends on `Accept`: a cache must not serve one binding's
+    // bytes for the other's request.
+    response
+        .headers_mut()
+        .append(header::VARY, HeaderValue::from_static("Accept"));
+    response
 }
 
 #[cfg(test)]

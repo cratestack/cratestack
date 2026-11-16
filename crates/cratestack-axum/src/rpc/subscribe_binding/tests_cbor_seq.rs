@@ -85,6 +85,19 @@ async fn serve_subscription_streams_an_opened_subscription_as_cbor_seq() {
         response.headers().get(header::CONTENT_TYPE).unwrap(),
         "application/cbor-seq"
     );
+    assert_eq!(response.headers().get(header::VARY).unwrap(), "Accept");
+}
+
+#[tokio::test]
+async fn both_bindings_and_a_refusal_vary_on_accept() {
+    for binding in [SubscribeBinding::Sse, SubscribeBinding::CborSeq] {
+        let opened = async { Ok(Box::pin(stream::iter([Ok(1_i64)])) as SubscriptionStream<i64>) };
+        let ok = serve_subscription(binding, opened).await;
+        assert_eq!(ok.headers().get(header::VARY).unwrap(), "Accept");
+        let error = CratestackError::Forbidden("no".to_owned());
+        let refused = serve_subscription::<i64, _>(binding, async { Err(error) }).await;
+        assert_eq!(refused.headers().get(header::VARY).unwrap(), "Accept");
+    }
 }
 
 #[tokio::test]
