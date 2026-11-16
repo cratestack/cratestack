@@ -15,8 +15,8 @@ importers:
         specifier: ^58.0.13
         version: 58.0.13(expo@58.0.23)(react-native@0.86.2(@babel/core@7.29.7(supports-color@8.1.1))(@types/react@19.3.0)(react@19.3.1)(supports-color@8.1.1))
       expo-modules-core:
-        specifier: ^58.0.30
-        version: 58.0.30(react-native@0.86.2(@babel/core@7.29.7(supports-color@8.1.1))(@types/react@19.3.0)(react@19.3.1)(supports-color@8.1.1))(react@19.3.1)
+        specifier: ^58.1.0
+        version: 58.1.0(react-native@0.86.2(@babel/core@7.29.7(supports-color@8.1.1))(@types/react@19.3.0)(react@19.3.1)(supports-color@8.1.1))(react@19.3.1)
       react:
         specifier: 19.3.1
         version: 19.3.1
@@ -498,8 +498,20 @@ packages:
     os: [linux]
     libc: [glibc]
 
+  '@expo/modules-macros-linux-arm64@0.33.0':
+    resolution: {integrity: sha512-5F4L/IJThOBq3oRo9NB5BI4+Od8K2YDTbU+2IHgsnXsrTc5icQtOlLwHOEfExghjo0PHCXGap4zprfOKvtANxw==}
+    cpu: [arm64]
+    os: [linux]
+    libc: [glibc]
+
   '@expo/modules-macros-linux-x64@0.29.0':
     resolution: {integrity: sha512-ESYAz3/NZVdEiNyt1pRQ63Px05bZcgn5xHinX90kYTbuRXFxBXYIrjLH27wl8DfasYHP7hnbwUMLo3YLBe/2ag==}
+    cpu: [x64]
+    os: [linux]
+    libc: [glibc]
+
+  '@expo/modules-macros-linux-x64@0.33.0':
+    resolution: {integrity: sha512-G3kxfmMpH7BDtoeBVeJA4vh5O3kQ3wmjmSfDremRBWENHKwHJXTOsyerLQqkJC39oPKCuXgXhzvp+/5qy+DyvA==}
     cpu: [x64]
     os: [linux]
     libc: [glibc]
@@ -509,8 +521,18 @@ packages:
     cpu: [arm64]
     os: [win32]
 
+  '@expo/modules-macros-win32-arm64@0.33.0':
+    resolution: {integrity: sha512-sAYEhKqywo+38UcWt1KLNzJkSkpba4HYybSSZfpFsoA28/MCBupFZggkbU/E9z81fZeuiWVA2Ote1fp8ogqRAA==}
+    cpu: [arm64]
+    os: [win32]
+
   '@expo/modules-macros-win32-x64@0.29.0':
     resolution: {integrity: sha512-qdJzIIB0oitXD3tErciv5zTxk4zkCNHuG5nnubJ3pFa9Y3VPd2/70lFwWmAjMWZUGwvBiePZhNVAuehdHaOcyQ==}
+    cpu: [x64]
+    os: [win32]
+
+  '@expo/modules-macros-win32-x64@0.33.0':
+    resolution: {integrity: sha512-O7tmET8ehVpmocxpVUlXkV9yfKCNo3uKvpN7wNyWcJlEIM6xo+WZuN4RDtndExI6CE5wn8Io608US+BYtrE9+w==}
     cpu: [x64]
     os: [win32]
 
@@ -1314,13 +1336,26 @@ packages:
       react-native-worklets:
         optional: true
 
-  expo-modules-jsi@58.0.22:
-    resolution: {integrity: sha512-sWyOUEsRHZdobItrerWxVR32uiABSijoVJGoIW1dubfZuNNaRG+Hgis4u+92Gle1gEdH2Z4qKqm0JxSZCzk9AA==}
+  expo-modules-core@58.1.0:
+    resolution: {integrity: sha512-eXHOPyxHkDyTxUWnKEatC+Hx4tLoPWCPd5pCynAU4WkaBvAG/l5t/wu5jXiE5eh2CRr2NU4iAQePX2zUfNEVhA==}
+    peerDependencies:
+      react: '*'
+      react-native: '*'
+      react-native-worklets: '>=0.13.0'
+    peerDependenciesMeta:
+      react-native-worklets:
+        optional: true
+
+  expo-modules-jsi@58.0.23:
+    resolution: {integrity: sha512-ex3CnT8KLubsPjUG0RpEL5VgmpnWxf7Ouc+WXEr8jEbIwqcULEWtA2tfhGZwjg6jS3zeNwjygF1w8QSstP7JfQ==}
     peerDependencies:
       react-native: '*'
 
   expo-modules-macros@0.29.0:
     resolution: {integrity: sha512-kpkJHrFnHMXfUfvFkDuKRXXqi+CUIIhJ6G8v/4rC09VjmXcdQ30imoY1oNDVEho6tPbJFV0Ux21sZ9wK0XYajQ==}
+
+  expo-modules-macros@0.33.0:
+    resolution: {integrity: sha512-ddrT2jbYPYmiHmzcYOixRemFUUK9qQEb5pOBWgoFoW0gj3sGld1CZX0GwblUXeZMyEX65S9vc1bEhIAGVDRA9w==}
 
   expo-server@58.0.6:
     resolution: {integrity: sha512-6DBlSZwxk3J0y1j2s4XebAWNiwGaMp32NcWX7b2kJC2+EFf1g+pCcVmx8ylawt2tyLmbDHswm4MHOfrd4bqfvA==}
@@ -3091,13 +3126,25 @@ snapshots:
   '@expo/modules-macros-linux-arm64@0.29.0':
     optional: true
 
+  '@expo/modules-macros-linux-arm64@0.33.0':
+    optional: true
+
   '@expo/modules-macros-linux-x64@0.29.0':
+    optional: true
+
+  '@expo/modules-macros-linux-x64@0.33.0':
     optional: true
 
   '@expo/modules-macros-win32-arm64@0.29.0':
     optional: true
 
+  '@expo/modules-macros-win32-arm64@0.33.0':
+    optional: true
+
   '@expo/modules-macros-win32-x64@0.29.0':
+    optional: true
+
+  '@expo/modules-macros-win32-x64@0.33.0':
     optional: true
 
   '@expo/osascript@2.8.1':
@@ -3868,13 +3915,21 @@ snapshots:
 
   expo-modules-core@58.0.30(react-native@0.86.2(@babel/core@7.29.7(supports-color@8.1.1))(@types/react@19.3.0)(react@19.3.1)(supports-color@8.1.1))(react@19.3.1):
     dependencies:
-      expo-modules-jsi: 58.0.22(react-native@0.86.2(@babel/core@7.29.7(supports-color@8.1.1))(@types/react@19.3.0)(react@19.3.1)(supports-color@8.1.1))
+      expo-modules-jsi: 58.0.23(react-native@0.86.2(@babel/core@7.29.7(supports-color@8.1.1))(@types/react@19.3.0)(react@19.3.1)(supports-color@8.1.1))
       expo-modules-macros: 0.29.0
       invariant: 2.2.4
       react: 19.3.1
       react-native: 0.86.2(@babel/core@7.29.7(supports-color@8.1.1))(@types/react@19.3.0)(react@19.3.1)(supports-color@8.1.1)
 
-  expo-modules-jsi@58.0.22(react-native@0.86.2(@babel/core@7.29.7(supports-color@8.1.1))(@types/react@19.3.0)(react@19.3.1)(supports-color@8.1.1)):
+  expo-modules-core@58.1.0(react-native@0.86.2(@babel/core@7.29.7(supports-color@8.1.1))(@types/react@19.3.0)(react@19.3.1)(supports-color@8.1.1))(react@19.3.1):
+    dependencies:
+      expo-modules-jsi: 58.0.23(react-native@0.86.2(@babel/core@7.29.7(supports-color@8.1.1))(@types/react@19.3.0)(react@19.3.1)(supports-color@8.1.1))
+      expo-modules-macros: 0.33.0
+      invariant: 2.2.4
+      react: 19.3.1
+      react-native: 0.86.2(@babel/core@7.29.7(supports-color@8.1.1))(@types/react@19.3.0)(react@19.3.1)(supports-color@8.1.1)
+
+  expo-modules-jsi@58.0.23(react-native@0.86.2(@babel/core@7.29.7(supports-color@8.1.1))(@types/react@19.3.0)(react@19.3.1)(supports-color@8.1.1)):
     dependencies:
       react-native: 0.86.2(@babel/core@7.29.7(supports-color@8.1.1))(@types/react@19.3.0)(react@19.3.1)(supports-color@8.1.1)
 
@@ -3884,6 +3939,13 @@ snapshots:
       '@expo/modules-macros-linux-x64': 0.29.0
       '@expo/modules-macros-win32-arm64': 0.29.0
       '@expo/modules-macros-win32-x64': 0.29.0
+
+  expo-modules-macros@0.33.0:
+    optionalDependencies:
+      '@expo/modules-macros-linux-arm64': 0.33.0
+      '@expo/modules-macros-linux-x64': 0.33.0
+      '@expo/modules-macros-win32-arm64': 0.33.0
+      '@expo/modules-macros-win32-x64': 0.33.0
 
   expo-server@58.0.6: {}
 
