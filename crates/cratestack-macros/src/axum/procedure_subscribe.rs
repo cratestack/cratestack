@@ -46,7 +46,7 @@ pub(crate) fn generate_subscription_procedure_axum(
             ::cratestack::__private::serve_subscription(
                 binding,
                 super::subscriptions::#open(
-                    &state.db, &state.registry, raw_query, ctx, ::cratestack::__private::SseCodec,
+                    &state.db, &state.registry, raw_query, ctx, binding.codec(),
                 ),
             )
             .await

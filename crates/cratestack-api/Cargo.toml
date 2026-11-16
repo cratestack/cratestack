@@ -235,7 +235,7 @@ serde_urlencoded.workspace = true
 # bind and serve through — only the *client* side moved to `reqwest`.
 # `io-util`/`time`: the MCP suites (`tests/mcp_*.rs`, cratestack#1038) drive
 # the stdio server over an in-memory `tokio::io::duplex` with a timeout.
-tokio = { workspace = true, features = ["net", "io-util", "time"] }
+tokio = { workspace = true, features = ["net", "io-util", "time", "test-util"] }
 tower.workspace = true
 tracing-subscriber.workspace = true
 

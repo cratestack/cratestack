@@ -1,0 +1,22 @@
+// The `application/cbor-seq` subscription binding (cratestack#1001) on a REST
+// schema with no database: a subscription procedure whose items carry the
+// types whose CBOR form differs from their JSON form. Dedicated to
+// `tests/subscription_cbor_seq_rest.rs`.
+
+datasource db {
+  provider = "none"
+}
+
+type ReadArgs {
+  count Int
+}
+
+type Reading {
+  id Uuid
+  data Bytes
+  amount Decimal
+  n Int
+}
+
+subscription procedure readings(args: ReadArgs): Reading
+  @allow(auth() != null)

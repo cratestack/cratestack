@@ -1,7 +1,7 @@
-//! Pins `Accept` negotiation exactly as it behaved before the binding was
-//! factored out (the table was captured from the old
-//! `validate_subscribe_accept_header`), so PR 2 of cratestack#1001 widens it
-//! on purpose or not at all.
+//! Pins `Accept` negotiation. The SSE rows are the table captured from the
+//! pre-#1001 `validate_subscribe_accept_header`; `application/cbor-seq` is
+//! the one deliberate widening (cratestack#1001, PR 2), and the 406 message
+//! now names it.
 
 use axum::body::to_bytes;
 use axum::http::{HeaderValue, StatusCode};
@@ -9,7 +9,10 @@ use futures_util::stream;
 
 use super::*;
 
-const NEED: &str = "subscription endpoint requires Accept: text/event-stream";
+const NEED: &str =
+    "subscription endpoint requires Accept: text/event-stream or application/cbor-seq";
+/// What the deprecated SSE-only wrapper still says.
+const OLD_NEED: &str = "subscription endpoint requires Accept: text/event-stream";
 
 fn negotiate(accept: Option<&[u8]>) -> Result<SubscribeBinding, CratestackError> {
     let mut headers = HeaderMap::new();
@@ -115,12 +118,12 @@ fn deprecated_validate_wrapper_keeps_the_old_results() {
         assert!(matches!(error, CratestackError::NotAcceptable(_)), "{got}");
         assert_eq!(
             error.to_string(),
-            format!("not acceptable: {NEED}, got {got}"),
+            format!("not acceptable: {OLD_NEED}, got {got}"),
         );
     }
     let error = check(None).unwrap_err();
     assert!(matches!(error, CratestackError::NotAcceptable(_)));
-    assert_eq!(error.to_string(), format!("not acceptable: {NEED}"));
+    assert_eq!(error.to_string(), format!("not acceptable: {OLD_NEED}"));
     let error = check(Some(b"\xff\xfe")).unwrap_err();
     assert!(matches!(error, CratestackError::BadRequest(_)));
 }
