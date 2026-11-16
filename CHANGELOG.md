@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+### `cratestack::rpc`: `negotiate_subscribe_binding` and `serve_subscription`; a bad `Accept` is 406 before authentication, now tested (cratestack#1001)
+
+Additive; no behaviour change. PR 1 of 2 for #1001: the four generated subscribe routes (RPC `GET` and `POST /rpc/subscribe/{op_id}`, REST procedure `GET /$procs/<name>`, REST model `GET /<plural>/$subscribe`) now share one path, so the cbor-seq binding in PR 2 lands in one place.
+
+- **New, in `cratestack::rpc` (`cratestack-axum`).** `negotiate_subscribe_binding(&HeaderMap) -> Result<SubscribeBinding, CratestackError>` chooses the wire binding from `Accept`, with exactly the old matching (`text/event-stream` or `*/*`, literal per comma-separated entry). `serve_subscription(binding, open)` awaits the open future and encodes its stream, or the open failure as the subscribe endpoint's JSON refusal. `SubscribeBinding` is `#[non_exhaustive]` (only `Sse` today), so a later binding is not a breaking change. These are for generated code; hand-written code rarely needs them.
+- **Deprecated, unchanged behaviour.** `cratestack::rpc::validate_subscribe_accept_header` keeps its signature and results (a test pins the full 16-row negotiation table) and now calls `negotiate_subscribe_binding`. Move to that function; the old one is deprecated since 0.20.3.
+- **The 406-before-401 guarantee, now tested.** A subscribe request with a wrong or missing `Accept` is refused `406` before the caller is authenticated, so an unauthenticated caller with the wrong media type gets `406`, not `401`, and no credential work or feed registration happens. This was already the behaviour; integration tests now pin it at all four routes.
+
+**Transport parity.** No request surface changes. MCP is exempt (ADR 0002 D5).
+
 ### Published crates require their siblings exactly (cratestack#1390)
 
 Release hygiene, non-breaking for a consumer that already moved every `cratestack-*` pin together. Every `cratestack-*` crate now requires its siblings as `=x.y.z`, not a caret, so one consumer build resolves exactly one CrateStack version. Before, a consumer pinning `cratestack-client = "=0.20.0"` could still resolve `cratestack-core` and `cratestack-policy` at 0.20.1 beside 0.20.0 of everything else, and `cratestack-macros` 0.20.0 then generated code against a core API it was not built with.

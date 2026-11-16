@@ -18,37 +18,38 @@ pub(super) fn build_subscribe_handler(model: &Model) -> proc_macro2::TokenStream
     let route = cratestack_core::model_subscribe_route(&model.name);
     let open = ident(&format!("open_{}", to_snake_case(&model.name)));
     quote! {
-            async fn #handler<CR, C, Auth>(
-                State(state): State<ModelRouterState<CR, C, Auth>>,
-                headers: HeaderMap,
-                RawQuery(raw_query): RawQuery,
-                client_ip_ctx: ClientIpContext,
-            ) -> Response
-            where
-                CR: super::computed::ComputedFieldResolver,
-                C: HttpTransport,
-                Auth: ::cratestack::AuthProvider,
-            {
-                let binding = match ::cratestack::__private::negotiate_subscribe_binding(&headers) {
-                    Ok(binding) => binding,
-                    Err(error) => return ::cratestack::__private::encode_subscribe_error(&error),
-                };
-                let request = request_context("GET", #route, raw_query.as_deref(), &headers, &[], &client_ip_ctx.extensions);
-                let ctx = match state.auth_provider.authenticate(&request).await {
-                    Ok(ctx) => ::cratestack::enrich_context_from_envelope(::cratestack::enrich_context_from_headers(ctx, &headers, client_ip_ctx.trusted_proxy.as_ref(), client_ip_ctx.peer), &client_ip_ctx.extensions),
-                    Err(error) => {
-                        let error: CratestackError = error.into();
-                        return ::cratestack::__private::encode_subscribe_error(&error);
-                    }
-                };
-                // The model's own feed, not the dispatcher: this router holds no
-                // `ProcedureRegistry` for a schema's subscription procedures.
-    ::cratestack::__private::serve_subscription(
-                    binding,
-                    super::subscriptions::#open(&state.db, raw_query, ctx, ::cratestack::__private::SseCodec),
-                ).await
-            }
+        async fn #handler<CR, C, Auth>(
+            State(state): State<ModelRouterState<CR, C, Auth>>,
+            headers: HeaderMap,
+            RawQuery(raw_query): RawQuery,
+            client_ip_ctx: ClientIpContext,
+        ) -> Response
+        where
+            CR: super::computed::ComputedFieldResolver,
+            C: HttpTransport,
+            Auth: ::cratestack::AuthProvider,
+        {
+            let binding = match ::cratestack::__private::negotiate_subscribe_binding(&headers) {
+                Ok(binding) => binding,
+                Err(error) => return ::cratestack::__private::encode_subscribe_error(&error),
+            };
+            let request = request_context("GET", #route, raw_query.as_deref(), &headers, &[], &client_ip_ctx.extensions);
+            let ctx = match state.auth_provider.authenticate(&request).await {
+                Ok(ctx) => ::cratestack::enrich_context_from_envelope(::cratestack::enrich_context_from_headers(ctx, &headers, client_ip_ctx.trusted_proxy.as_ref(), client_ip_ctx.peer), &client_ip_ctx.extensions),
+                Err(error) => {
+                    let error: CratestackError = error.into();
+                    return ::cratestack::__private::encode_subscribe_error(&error);
+                }
+            };
+            // The model's own feed, not the dispatcher: this router holds no
+            // `ProcedureRegistry` for a schema's subscription procedures.
+            ::cratestack::__private::serve_subscription(
+                binding,
+                super::subscriptions::#open(&state.db, raw_query, ctx, ::cratestack::__private::SseCodec),
+            )
+            .await
         }
+    }
 }
 
 pub(crate) fn subscribe_handler_ident(model: &Model) -> syn::Ident {

@@ -23,6 +23,7 @@ use super::subscribe_error::encode_subscribe_error;
 /// `CborSeq` arrives in cratestack#1001 PR 2; until then SSE is the only
 /// binding, and `Accept` negotiation answers it or refuses.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum SubscribeBinding {
     /// `text/event-stream`.
     Sse,
@@ -57,6 +58,15 @@ pub fn negotiate_subscribe_binding(
             "subscription endpoint requires Accept: {SSE_CONTENT_TYPE}, got {accept}"
         )))
     }
+}
+
+/// The pre-#1001 `Accept` check, kept so existing callers still compile.
+///
+/// Same signature and same results as before; it now defers to
+/// [`negotiate_subscribe_binding`] and drops the binding it chose.
+#[deprecated(since = "0.20.3", note = "use negotiate_subscribe_binding")]
+pub fn validate_subscribe_accept_header(headers: &HeaderMap) -> Result<(), CratestackError> {
+    negotiate_subscribe_binding(headers).map(|_| ())
 }
 
 /// Await `open` and encode its stream in `binding`'s framing; an open
