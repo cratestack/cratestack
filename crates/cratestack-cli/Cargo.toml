@@ -108,6 +108,10 @@ cratestack-migrate = { workspace = true, features = [
 # `cratestack-client-dart`/`-typescript`.
 cratestack-mock-wiremock = { workspace = true, default-features = false }
 cratestack-parser.workspace = true
+# The policy analysis `contract ops` reports is the one the macros lower from
+# (cratestack#1388); default features off, as this crate forwards decimal
+# selection to its other core-consuming dependencies itself.
+cratestack-policy = { workspace = true, default-features = false }
 # `cratestack-cli`'s first dependency on the runtime migrations-table
 # shape (issue #205): `migrate baseline` seeds a synthetic row via
 # `cratestack_sqlx::{Migration, apply_pending}` so the authoring side

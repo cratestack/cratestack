@@ -99,10 +99,10 @@ pub use backplane::{
     SubscriptionBackplane, TopicHandle, model_event_channel, topic_channel,
 };
 pub use client_contract::{
-    AcceptedContracts, BATCH_CONTRACT_KEY, CLIENT_CONTRACT_DOMAIN, ContractLock, Generation,
-    Incompatible, LOCK_FORMAT, LockError, OP_CONTRACT_DOMAIN, OpContracts, Pruned, Verdict,
-    bound_contracts, classify, client_contract_digest, digest_hex, find_contract,
-    op_contract_digest, op_contract_digests, op_contract_json, op_keys,
+    AcceptedContracts, BATCH_CONTRACT_KEY, CLIENT_CONTRACT_DOMAIN, ClientOp, ContractLock,
+    Generation, Incompatible, LOCK_FORMAT, LockError, OP_CONTRACT_DOMAIN, OpContracts, OpTarget,
+    Pruned, Verdict, bound_contracts, classify, client_contract_digest, client_ops, digest_hex,
+    find_contract, op_contract_digest, op_contract_digests, op_contract_json, op_keys,
 };
 pub use credential::Credential;
 pub use cursor::{MAX_CURSOR_LEN, cursor_scalar, decode_cursor, encode_cursor};

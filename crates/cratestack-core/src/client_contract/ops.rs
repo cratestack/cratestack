@@ -11,8 +11,11 @@ use crate::schema::{Model, Procedure, Schema, TransportStyle};
 
 /// The declaration an op is about.
 #[derive(Debug, Clone, Copy)]
-pub(crate) enum OpTarget<'a> {
+#[non_exhaustive]
+pub enum OpTarget<'a> {
+    /// A model's CRUD or subscribe verb.
     Model(&'a Model, ModelVerb),
+    /// A `procedure` (or `query`).
     Procedure(&'a Procedure),
     /// A `subscription procedure` (slice S4).
     SubscriptionProcedure(&'a Procedure),
@@ -20,8 +23,11 @@ pub(crate) enum OpTarget<'a> {
 
 /// One client-facing op.
 #[derive(Debug, Clone)]
-pub(crate) struct ClientOp<'a> {
+#[non_exhaustive]
+pub struct ClientOp<'a> {
+    /// The RPC `op_id`, or `"<METHOD> <route template>"` on REST.
     pub key: String,
+    /// The declaration the op is about.
     pub target: OpTarget<'a>,
 }
 
@@ -54,6 +60,14 @@ pub(crate) fn ops(schema: &Schema) -> Vec<ClientOp<'_>> {
     }
     out.sort_by(|a, b| a.key.cmp(&b.key));
     out
+}
+
+/// [`ops`] for a tool outside this crate (`cratestack contract ops`,
+/// cratestack#1388): it reads per-op facts off the declarations, and
+/// enumerating through the same list is what keeps its keys equal to the
+/// ones the contract digests are keyed by.
+pub fn client_ops(schema: &Schema) -> Vec<ClientOp<'_>> {
+    ops(schema)
 }
 
 /// The key of every op `schema` exposes, sorted: the keys the generated

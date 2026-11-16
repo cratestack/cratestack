@@ -1,6 +1,34 @@
-//! The drop list's readers from `@length` on. See `tests_readers_table.rs`.
+//! The drop list's readers from `@isolation` on (moved here for the
+//! file-length ceiling). See `tests_readers_table.rs`.
 
 pub(super) const TAIL_READERS: &[(&str, &[&str])] = &[
+    (
+        "@isolation",
+        &[
+            "cratestack-macros/src/include/server/isolated.rs",
+            "cratestack-macros/src/shared/procedure_attrs.rs",
+            "cratestack-sqlx/src/bound.rs",
+            "cratestack-sqlx/src/bound/deferred.rs",
+            "cratestack-sqlx/src/bound/join.rs",
+            "cratestack-sqlx/src/bound/nested.rs",
+            "cratestack-sqlx/src/isolated_run.rs",
+        ],
+    ),
+    // Read through `cratestack_core::schema::authn_attribute`; the LSP
+    // only shows the attribute in its completion popup.
+    ("@authn", &["cratestack-lsp/src/authn_completion.rs"]),
+    // Read through `schema::device_auth_attribute`; the LSP shows it in completion.
+    // `cratestack-client-dart/src/config.rs` names it only in the
+    // `FespalierRefNotATag` error: the Dart generator gates an extra client-side
+    // helper class and the pubspec on it, and no wire type, route, op id or
+    // decode moves.
+    (
+        "@device_auth",
+        &[
+            "cratestack-client-dart/src/config.rs",
+            "cratestack-lsp/src/device_auth_completion.rs",
+        ],
+    ),
     (
         "@length",
         &[

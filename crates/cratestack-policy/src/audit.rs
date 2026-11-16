@@ -1,4 +1,7 @@
-//! Defence in depth for policy attributes (GHSA-69g4-xvcm-vm2j).
+//! Defence in depth for policy attributes (GHSA-69g4-xvcm-vm2j), shared by
+//! the macros (which refuse to generate) and `cratestack contract ops`
+//! (which reports the rule as unanalysed), so the two read the same set of
+//! attributes as dropped.
 //!
 //! The policy readers (`super::procedure`, `crate::procedure::authorizer`,
 //! `super::model`) recognise an attribute only in its exact spelling and
@@ -28,8 +31,10 @@ use cratestack_core::schema::attribute_text::{
     invisible_character_in_policy, loose_attribute_names,
 };
 
+use crate::syntax::{authorize_attribute_inner, model_rule_expression, procedure_rule_expression};
+
 /// How many attribute names in `raw` read as one of `names`.
-pub(crate) fn policy_names_in(raw: &str, names: &[&str]) -> usize {
+pub fn policy_names_in(raw: &str, names: &[&str]) -> usize {
     loose_attribute_names(raw)
         .iter()
         .filter(|name| names.contains(&name.as_str()))
@@ -41,7 +46,7 @@ pub(crate) fn policy_names_in(raw: &str, names: &[&str]) -> usize {
 /// policy refuses every variation selector, whatever `core` reads its name
 /// as. The attribute is quoted with its control and invisible characters
 /// escaped, never raw.
-pub(crate) fn check_attribute(
+pub fn check_attribute(
     owner: &str,
     attribute: &Attribute,
     names: &[&str],
@@ -78,7 +83,7 @@ pub(crate) fn check_attribute(
 
 /// Check 2 for `owner`: `named` policy names read loosely, `produced`
 /// policies generated.
-pub(crate) fn check_count(owner: &str, named: usize, produced: usize) -> Result<(), String> {
+pub fn check_count(owner: &str, named: usize, produced: usize) -> Result<(), String> {
     if named == produced {
         return Ok(());
     }
@@ -88,4 +93,55 @@ pub(crate) fn check_count(owner: &str, named: usize, produced: usize) -> Result<
          written. Refusing to generate it (GHSA-69g4-xvcm-vm2j); write each policy attribute \
          exactly as documented, as an attribute of its own"
     ))
+}
+
+/// Attribute names a procedure or query reader takes for a policy. `authorize`
+/// is included for queries too: a query has no reader for it, so one there
+/// can only be a skipped rule.
+pub const PROCEDURE_POLICY_NAMES: &[&str] = &["allow", "deny", "authorize"];
+
+/// Attribute names a model reader takes for a policy.
+const MODEL_POLICY_NAMES: &[&str] = &["allow", "deny"];
+
+/// The macros' audit of one model's attributes: every `@@allow`/`@@deny`
+/// that reads as a policy must be taken by one of `actions` (or `all`), in
+/// its exact spelling, or the model would generate with a rule dropped.
+pub fn audit_model_attributes(
+    owner: &str,
+    attributes: &[Attribute],
+    actions: &[&str],
+) -> Result<(), String> {
+    let mut named = 0;
+    let mut produced = 0;
+    for attribute in attributes {
+        named += policy_names_in(&attribute.raw, MODEL_POLICY_NAMES);
+        let read = ["@@allow", "@@deny"]
+            .into_iter()
+            .filter_map(|directive| model_rule_expression(&attribute.raw, directive, actions))
+            .collect::<Result<Vec<_>, _>>()?
+            .len();
+        check_attribute(owner, attribute, MODEL_POLICY_NAMES, read)?;
+        produced += read;
+    }
+    check_count(owner, named, produced)
+}
+
+/// The macros' audit of one procedure's or query's attributes: an `@allow`,
+/// `@deny` or `@authorize` that reads as a policy must be in the exact
+/// spelling the generator applies.
+pub fn audit_procedure_attributes(owner: &str, attributes: &[Attribute]) -> Result<(), String> {
+    let mut named = 0;
+    let mut produced = 0;
+    for attribute in attributes {
+        named += policy_names_in(&attribute.raw, PROCEDURE_POLICY_NAMES);
+        let read = ["@allow", "@deny"]
+            .into_iter()
+            .filter_map(|directive| procedure_rule_expression(&attribute.raw, directive))
+            .collect::<Result<Vec<_>, _>>()?
+            .len()
+            + usize::from(authorize_attribute_inner(&attribute.raw).is_some());
+        check_attribute(owner, attribute, PROCEDURE_POLICY_NAMES, read)?;
+        produced += read;
+    }
+    check_count(owner, named, produced)
 }

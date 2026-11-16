@@ -6,31 +6,34 @@
 //! (cratestack#1307). Those stubs are test doubles: they shape no wire
 //! type, route or client, so the validators stay on `DROPPED_ATTRIBUTES`.
 
-/// The first part of the drop list's readers; the rest, from `@length` on, is
+/// The first part of the drop list's readers; the rest, from `@isolation` on, is
 /// `tests_readers_table_tail::TAIL_READERS` (file-length ceiling).
 pub(super) const READERS: &[(&str, &[&str])] = &[
     (
         "@@allow",
         &[
+            "cratestack-cli/src/contract/ops_cmd/collect.rs",
             "cratestack-client-typescript/src/types.rs",
             "cratestack-lsp/src/completion.rs",
             "cratestack-lsp/src/mcp_completion.rs",
             "cratestack-macros/src/axum/policy_attr.rs",
             "cratestack-macros/src/include/mcp_gate.rs",
             "cratestack-macros/src/policy/model.rs",
-            "cratestack-macros/src/policy/model/audit.rs",
+            "cratestack-policy/src/audit.rs",
         ],
     ),
     (
         "@@deny",
         &[
+            "cratestack-cli/src/contract/ops_cmd/collect.rs",
             "cratestack-macros/src/policy/model.rs",
-            "cratestack-macros/src/policy/model/audit.rs",
+            "cratestack-policy/src/audit.rs",
         ],
     ),
     (
         "@allow",
         &[
+            "cratestack-cli/src/contract/ops_cmd/collect.rs",
             "cratestack-core/src/procedure_route.rs",
             "cratestack-lsp/src/completion.rs",
             "cratestack-lsp/src/mcp_completion.rs",
@@ -38,12 +41,23 @@ pub(super) const READERS: &[(&str, &[&str])] = &[
             "cratestack-macros/src/include/mcp_gate.rs",
             "cratestack-macros/src/include/server/query_guard.rs",
             "cratestack-macros/src/policy/procedure.rs",
+            "cratestack-policy/src/audit.rs",
         ],
     ),
-    ("@deny", &["cratestack-macros/src/policy/procedure.rs"]),
+    (
+        "@deny",
+        &[
+            "cratestack-cli/src/contract/ops_cmd/collect.rs",
+            "cratestack-macros/src/policy/procedure.rs",
+            "cratestack-policy/src/audit.rs",
+        ],
+    ),
     (
         "@authorize",
-        &["cratestack-macros/src/procedure/authorizer.rs"],
+        &[
+            "cratestack-macros/src/procedure/authorizer.rs",
+            "cratestack-policy/src/syntax/directive.rs",
+        ],
     ),
     ("@@index", &["cratestack-migrate/src/convert/indexes.rs"]),
     (
@@ -163,33 +177,6 @@ pub(super) const READERS: &[(&str, &[&str])] = &[
         &[
             "cratestack-axum/src/ratelimit/rest_ops_filter.rs",
             "cratestack-macros/src/transport/rate_limit.rs",
-        ],
-    ),
-    (
-        "@isolation",
-        &[
-            "cratestack-macros/src/include/server/isolated.rs",
-            "cratestack-macros/src/shared/procedure_attrs.rs",
-            "cratestack-sqlx/src/bound.rs",
-            "cratestack-sqlx/src/bound/deferred.rs",
-            "cratestack-sqlx/src/bound/join.rs",
-            "cratestack-sqlx/src/bound/nested.rs",
-            "cratestack-sqlx/src/isolated_run.rs",
-        ],
-    ),
-    // Read through `cratestack_core::schema::authn_attribute`; the LSP
-    // only shows the attribute in its completion popup.
-    ("@authn", &["cratestack-lsp/src/authn_completion.rs"]),
-    // Read through `schema::device_auth_attribute`; the LSP shows it in completion.
-    // `cratestack-client-dart/src/config.rs` names it only in the
-    // `FespalierRefNotATag` error: the Dart generator gates an extra client-side
-    // helper class and the pubspec on it, and no wire type, route, op id or
-    // decode moves.
-    (
-        "@device_auth",
-        &[
-            "cratestack-client-dart/src/config.rs",
-            "cratestack-lsp/src/device_auth_completion.rs",
         ],
     ),
 ];

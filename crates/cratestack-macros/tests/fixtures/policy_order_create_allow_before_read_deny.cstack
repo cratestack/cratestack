@@ -1,0 +1,13 @@
+// Two faulty policy attributes: main reports `bogus1` (the create allow is lowered before the read deny).
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+model User {
+  id Int @id
+  banned Boolean
+
+  @@allow("create", bogus1)
+  @@deny("read", bogus2)
+}

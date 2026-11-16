@@ -15,8 +15,7 @@ use quote::quote;
 
 use crate::event::model_emitted_events;
 use crate::policy::{
-    audit_model_policies, generate_denies_for_action, generate_denies_for_actions,
-    generate_policies_for_action, generate_policies_for_actions,
+    audit_model_policies, generate_denies_for_actions, generate_policies_for_actions,
 };
 use crate::shared::{ident, is_primary_key, rust_type_tokens, to_snake_case};
 
@@ -52,26 +51,29 @@ pub(crate) fn generate_model_descriptor(
     let owner = format!("model `{}`", model.name);
     let slots = ["list", "read", "detail", "create", "update", "delete"];
     audit_model_policies(&owner, model, &slots)?;
-    let read_policies =
-        generate_policies_for_actions(model, models, types, enums, auth, &["list", "read"])?;
-    let detail_policies =
-        generate_policies_for_actions(model, models, types, enums, auth, &["detail", "read"])?;
-    let create_policies =
-        generate_policies_for_action(model, models, types, enums, auth, "create")?;
-    let create_deny_policies =
-        generate_denies_for_action(model, models, types, enums, auth, "create")?;
-    let update_policies =
-        generate_policies_for_action(model, models, types, enums, auth, "update")?;
-    let update_deny_policies =
-        generate_denies_for_action(model, models, types, enums, auth, "update")?;
-    let delete_policies =
-        generate_policies_for_action(model, models, types, enums, auth, "delete")?;
-    let delete_deny_policies =
-        generate_denies_for_action(model, models, types, enums, auth, "delete")?;
-    let read_deny_policies =
-        generate_denies_for_actions(model, models, types, enums, auth, &["list", "read"])?;
-    let detail_deny_policies =
-        generate_denies_for_actions(model, models, types, enums, auth, &["detail", "read"])?;
+    // The slot each verb reads is `cratestack_policy::model_verb_policy_slot`'s
+    // table, shared with `cratestack contract ops` (cratestack#1388).
+    use cratestack_policy::ModelPolicySlot::{Create, Delete, Detail, List, Update};
+    let allow = |slot: cratestack_policy::ModelPolicySlot| {
+        generate_policies_for_actions(model, models, types, enums, auth, slot.actions())
+    };
+    let deny = |slot: cratestack_policy::ModelPolicySlot| {
+        generate_denies_for_actions(model, models, types, enums, auth, slot.actions())
+    };
+    // Lowered in main's order (all of list/detail/create/update/delete's allows,
+    // with create/update/delete each followed by its deny, then the read and
+    // detail denies), so a schema with two faulty attributes reports the same
+    // first error it always did.
+    let read_policies = allow(List)?;
+    let detail_policies = allow(Detail)?;
+    let create_policies = allow(Create)?;
+    let create_deny_policies = deny(Create)?;
+    let update_policies = allow(Update)?;
+    let update_deny_policies = deny(Update)?;
+    let delete_policies = allow(Delete)?;
+    let delete_deny_policies = deny(Delete)?;
+    let read_deny_policies = deny(List)?;
+    let detail_deny_policies = deny(Detail)?;
 
     let create_defaults = collect_create_defaults(model, models, types, auth)?;
     let generated_defaults = collect_generated_defaults(model, models);

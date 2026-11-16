@@ -10,10 +10,8 @@
 use cratestack_core::{Model, Procedure, TypeDecl};
 
 use super::authorizer::{generate_procedure_model_authorizer, parse_procedure_model_authorizer};
-use crate::policy::{
-    PROCEDURE_POLICY_NAMES, check_attribute, check_count, parse_procedure_allow_expression,
-    parse_procedure_deny_expression, policy_names_in,
-};
+use crate::policy::{parse_procedure_allow_expression, parse_procedure_deny_expression};
+use cratestack_policy::{PROCEDURE_POLICY_NAMES, check_attribute, check_count, policy_names_in};
 
 /// `@allow` expressions, `@deny` expressions, and one
 /// `authorize_with_db` check per `@authorize`.
@@ -40,6 +38,11 @@ pub(super) fn collect_procedure_policies<'a>(
         deny: Vec::new(),
         authorizers: Vec::new(),
     };
+    // The checks are `cratestack_policy`'s, the ones `cratestack contract ops`
+    // also runs (`audit_procedure_attributes`), so the two cannot drift on
+    // which attributes read as a dropped policy. They run per attribute, after
+    // it is lowered, exactly as on main, so that a schema with two faulty
+    // attributes reports the same first error it always did.
     let mut named = 0;
     for attribute in &procedure.attributes {
         named += policy_names_in(&attribute.raw, PROCEDURE_POLICY_NAMES);

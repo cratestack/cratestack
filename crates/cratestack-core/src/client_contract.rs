@@ -91,7 +91,7 @@ pub use compat::{Verdict, classify};
 pub use lock::{ContractLock, Generation, LOCK_FORMAT, LockError};
 pub use lock_ops::Incompatible;
 pub use lock_prune::Pruned;
-pub use ops::op_keys;
+pub use ops::{ClientOp, OpTarget, client_ops, op_keys};
 pub use table::{
     AcceptedContracts, BATCH_CONTRACT_KEY, OpContracts, bound_contracts, find_contract,
 };

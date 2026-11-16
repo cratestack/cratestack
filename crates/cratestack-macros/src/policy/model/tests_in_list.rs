@@ -6,8 +6,8 @@
 //! inspect the emitted tokens.
 //!
 //! Unit coverage of the term splitter itself (the `join` false-positive
-//! guard, quoted commas, empty lists) lives in [`super::in_list`]'s own
-//! `tests` module. What is proved here is the *lowering*: that the
+//! guard, quoted commas, empty lists) lives in `cratestack-policy`'s `syntax` modules, in
+//! their own `tests` modules. What is proved here is the *lowering*: that the
 //! syntax reaches `FieldInLiterals` rather than being mis-parsed as an
 //! unknown field, and that each element is still validated as a real
 //! variant.
@@ -139,7 +139,7 @@ fn an_empty_list_is_a_compile_error() {
     assert!(message.contains("at least one value"), "got: {message}");
 }
 
-/// Decisive test for the whole-word guard in `in_list::strip_keyword`,
+/// Decisive test for the whole-word guard in `cratestack_policy`'s `strip_keyword`,
 /// written against the case where removing it is dangerous rather than
 /// merely confusing: a bracketed term with no `in` keyword. Without the
 /// guard, `join [...]` has the trailing `in` stripped off the *field
