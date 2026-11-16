@@ -185,14 +185,20 @@ describe("createSealedSubscriptions", () => {
 
   it("does not tag an opened (sealed) refusal", async () => {
     const { send } = open(
-      () => new Response(new Uint8Array([0xd2, 9]), { status: 403, headers: { "content-type": MEDIA } }),
+      () =>
+        new Response(new Uint8Array([0xd2, 9]), {
+          status: 403,
+          headers: { "content-type": MEDIA },
+        }),
     );
     const refusal = await send();
     expect((refusal as unknown as Record<symbol, unknown>)[UNSIGNED_REFUSAL]).toBeUndefined();
   });
 
   it("sends the open with redirect: error, and refuses an answer that was redirected anyway", async () => {
-    const { send, calls } = open(() => stream({ "content-type": SEQ, "cratestack-frames": "unsigned" }));
+    const { send, calls } = open(() =>
+      stream({ "content-type": SEQ, "cratestack-frames": "unsigned" }),
+    );
     await send();
     expect(calls[0]?.init.redirect).toBe("error");
     const redirected = open(() => {

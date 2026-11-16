@@ -115,14 +115,18 @@ export function createSealedSubscriptions(options: {
         });
         if (response.redirected) {
           await response.body?.cancel().catch(() => undefined);
-          throw new CoseFailure("rejected", "a signed subscription open was redirected, which is never followed");
+          throw new CoseFailure(
+            "rejected",
+            "a signed subscription open was redirected, which is never followed",
+          );
         }
         if (
           mediaTypeOf(response.headers.get("content-type") ?? "") === mediaTypeOf(cose.mediaType)
         ) {
           // A sealed answer is a refusal, opened; a sealed success is no stream.
           const answer = await openAnswer(cose, response, binding, sealed);
-          if (answer.ok) throw new CoseFailure("rejected", "a subscription answered with a sealed success");
+          if (answer.ok)
+            throw new CoseFailure("rejected", "a subscription answered with a sealed success");
           return answer;
         }
         // An unsigned refusal is a hint, never the server's word: it is returned as a status with
