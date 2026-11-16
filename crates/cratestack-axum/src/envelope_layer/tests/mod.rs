@@ -82,3 +82,5 @@ mod rpc_rules;
 mod sealed_reply;
 #[cfg(feature = "cose")]
 mod streams;
+#[cfg(feature = "cose")]
+mod subscription_frames;

@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+### `@frames(unsigned)` on a `subscription procedure`: accepted and recorded in the contract, no runtime effect yet (cratestack#1378, part A)
+
+Additive; **no behaviour change at runtime.** Part A of #1378, the signed subscription open: the schema syntax, its checks, its place in the contract digest and a generated table. The runtime half, where a sealed open actually streams, is the second half of #1378 and is **not in this release**: until it lands, a subscription under a required envelope is still refused with the sealed `406`, marked or not.
+
+- **Syntax.** `subscription procedure feed(args: A): T @frames(unsigned)`. `@frames(sealed)` (signed frames, #1020) and `@frames(chain)` (chain mode, #1008) are reserved and refused with a message naming that issue; any other argument is refused; so is a second `@frames`. `@frames` is refused on a unary `procedure`, a `model` (including an `@@subscribe` model feed, which is deferred) and a field. Model feeds take no frames mode yet.
+- **Contract.** `@frames` is **not** on the drop list, so adding or removing it moves that subscription's op-contract digest and the whole-client digest, and no other op's digest. **Marking an existing subscription `@frames(unsigned)` therefore changes the whole-client digest:** an older signed client then gets a `426` on a signed `/rpc/batch` bound to the old digest, as with any breaking contract change. In the contract classifier, adding or removing it is **wire-incompatible** and fails closed, with a reason that says it is a trust decision on the stream: `contract check` refuses a lock whose older generation lacked, or had, the attribute. `print-ir` and `contract print` show it.
+- **New, in `cratestack-core` (all four facades glob-re-export `cratestack_core::*`).** `FramesMode` (`#[non_exhaustive]`, one variant `Unsigned`, serialised as `"unsigned"`), `Procedure::frames()`, `parse_frames_attribute`, `parse_frames_argument`, `is_frames_attribute`, `SubscriptionFrames` and `subscription_frames(&Schema)`.
+- **Generated.** `include_server_schema!` emits `SUBSCRIPTION_FRAMES: &[(&str, FramesMode)]` beside `ACCEPTED_CONTRACTS`, keyed like it (`procedure.<name>` on RPC, `GET /$procs/<name>` on REST): exactly the marked subscriptions, empty when there are none. The generated `axum::envelope_layer` passes it to the new `EnvelopeLayerBuilder::subscriptions(..)`, which stores it. **Nothing reads it**: the default is empty, which the runtime half must treat as "no subscription may open signed" (fail closed).
+- **Skills and docs.** Not updated in this release, on purpose: the attribute does nothing at runtime, and documenting a surface that does not work yet would teach agents to generate code that fails. Both are written with the runtime half.
+
 ## 0.20.3 (2026-11-16)
 
 ### Subscriptions over `application/cbor-seq`: the server binding and the Rust, TypeScript and Dart clients (cratestack#1001)

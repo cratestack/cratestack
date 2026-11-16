@@ -4,7 +4,7 @@
 
 use std::sync::Arc;
 
-use cratestack_core::{AcceptedContracts, RouteTransportDescriptor};
+use cratestack_core::{AcceptedContracts, RouteTransportDescriptor, SubscriptionFrames};
 
 use super::mode::{EnvelopeMode, EnvelopePolicy};
 use super::principal::PrincipalMapper;
@@ -26,6 +26,8 @@ pub struct EnvelopeLayerBuilder {
     pub(super) audience: String,
     pub(super) contracts: AcceptedContracts,
     pub(super) max_contract_trials: usize,
+    /// `subscriptions(..)`; empty by default (cratestack#1378).
+    pub(super) subscriptions: SubscriptionFrames,
     pub(super) policy: Option<Box<dyn EnvelopePolicy>>,
     pub(super) transport: Transport,
     /// The prefix given to `rest(..)` / `rpc(..)`.
@@ -48,6 +50,25 @@ impl EnvelopeLayerBuilder {
     /// them, or a closure per op. Required (decision D9).
     pub fn policy(mut self, policy: impl EnvelopePolicy) -> Self {
         self.policy = Some(Box::new(policy));
+        self
+    }
+
+    /// The subscriptions the schema marks `@frames(unsigned)`: the generated
+    /// `cratestack_schema::SUBSCRIPTION_FRAMES`, which the generated
+    /// `envelope_layer` passes for you (cratestack#1378).
+    ///
+    /// **Inert for now**: the layer keeps the table and no request reads it,
+    /// so a subscription under a required envelope is refused as before.
+    /// The default is empty, which a later reader must treat as "no
+    /// subscription may open signed" (fail closed).
+    ///
+    /// **Lookup rule** for that reader: on RPC the rows are bare op ids and
+    /// `find_contract` matches a bare key for any method, so a lookup must
+    /// also require that the route is a subscription (`is_subscription()`).
+    /// On REST the row is method-qualified (`GET /$procs/<name>`) and
+    /// `is_subscription()` is always false, so the table is inert there.
+    pub fn subscriptions(mut self, table: SubscriptionFrames) -> Self {
+        self.subscriptions = table;
         self
     }
 

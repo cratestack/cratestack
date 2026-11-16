@@ -1,0 +1,26 @@
+// `@frames(unsigned)` on an RPC schema (`tests/subscription_frames_table.rs`):
+// one marked subscription, one unmarked, and a unary procedure.
+
+transport rpc
+
+datasource db {
+  provider = "none"
+}
+
+type CountArgs {
+  to Int
+}
+
+type Tick {
+  n Int
+}
+
+subscription procedure hinted(args: CountArgs): Tick
+  @allow(auth() != null)
+  @frames(unsigned)
+
+subscription procedure plain(args: CountArgs): Tick
+  @allow(auth() != null)
+
+procedure ping(args: CountArgs): Tick
+  @allow(auth() != null)

@@ -69,3 +69,11 @@ fn attributes_with_no_semantics_today_are_not_pre_approved() {
         assert!(!is_dropped(raw), "{raw} must stay in until it is reviewed");
     }
 }
+
+#[test]
+fn frames_stays_in_the_contract() {
+    assert!(
+        !is_dropped("@frames(unsigned)"),
+        "@frames is a trust decision on the stream (cratestack#1378): it must move the digest"
+    );
+}

@@ -58,6 +58,7 @@ pub(super) fn compose_server_schema(
         Err(error) => return error.to_compile_error().into(),
     };
     let accepted_contracts = schema_sha_consts.accepted();
+    let subscription_frames = super::frames_table::subscription_frames(&schema);
     let mcp_plan = match super::mcp_gate::guard_server_mcp(schema_path, &schema, decimal) {
         Ok(plan) => plan,
         Err(error) => return error,
@@ -282,6 +283,7 @@ pub(super) fn compose_server_schema(
                 /// never rejects. See issue #178.
                 #schema_sha_consts
                 #accepted_contracts
+                #subscription_frames
                 #key_tables
                 #lock_track
                 pub const MIXINS: &[&str] = &[#(#mixin_names),*];

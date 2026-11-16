@@ -38,6 +38,7 @@ mod compat;
 mod compat_decl;
 mod compat_enum;
 mod compat_op;
+mod frames_table;
 mod lock;
 mod lock_date;
 mod lock_ops;
@@ -88,6 +89,7 @@ use build::canonical;
 use ops::ops;
 
 pub use compat::{Verdict, classify};
+pub use frames_table::subscription_frames;
 pub use lock::{ContractLock, Generation, LOCK_FORMAT, LockError};
 pub use lock_ops::Incompatible;
 pub use lock_prune::Pruned;

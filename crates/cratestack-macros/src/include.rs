@@ -26,6 +26,7 @@ mod datasource_guard;
 mod decimal_arg;
 mod embedded;
 mod extension_gate;
+mod frames_table;
 mod lock_arg;
 mod mcp_gate;
 mod parse;

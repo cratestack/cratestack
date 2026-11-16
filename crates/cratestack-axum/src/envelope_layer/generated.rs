@@ -1,8 +1,9 @@
 //! The body of the generated per-schema `envelope_layer(envelope, policy,
 //! audience)` (cratestack#1006): an [`super::EnvelopeLayerBuilder`] already
-//! set to the schema's transport, its `ROUTE_TRANSPORTS` and its
-//! `ACCEPTED_CONTRACTS`, so a REST schema's layer cannot be built as RPC
-//! (or over another schema's descriptors).
+//! set to the schema's transport, its `ROUTE_TRANSPORTS`, its
+//! `ACCEPTED_CONTRACTS` and its `SUBSCRIPTION_FRAMES` (inert, #1378), so a
+//! REST schema's layer cannot be built as RPC (or over another schema's
+//! descriptors).
 //!
 //! **Who decides whether it is emitted** (second-review decision S-1,
 //! 2026-09-26): not this crate and not `cratestack-macros`, whose features
@@ -17,9 +18,10 @@
 //! facade only forwards here when its `envelope` feature is on, which
 //! turns this crate's on too.
 //!
-//! `ROUTE_TRANSPORTS` and `super::ACCEPTED_CONTRACTS` resolve where the
-//! macro is invoked (the generated `axum` module): `macro_rules!` hygiene
-//! is call-site for everything but local variables, labels and `$crate`.
+//! `ROUTE_TRANSPORTS`, `super::ACCEPTED_CONTRACTS` and
+//! `super::SUBSCRIPTION_FRAMES` resolve where the macro is invoked (the
+//! generated `axum` module): `macro_rules!` hygiene is call-site for
+//! everything but local variables, labels and `$crate`.
 
 /// Not public API: invoked only through a facade's `__envelope_layer_fn!`.
 #[doc(hidden)]
@@ -52,6 +54,7 @@ macro_rules! __envelope_layer_fn_body {
                 super::ACCEPTED_CONTRACTS,
             )
             .policy(policy)
+            .subscriptions(super::SUBSCRIPTION_FRAMES)
             $($transport)*
             .max_body_bytes($crate::envelope_layer::DEFAULT_MAX_BODY_BYTES)
         }
