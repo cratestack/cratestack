@@ -1,7 +1,8 @@
 //! Subscriptions in the generated package (slice S6,
 //! `docs/design/subscriptions-websocket.md` §8): `src/subscriptions.ts` and
 //! `src/subscription-end.ts` (typed end reasons, cratestack#1381) and
-//! `src/subscription-sockets.ts` (WebTransport, WebSocket, SSE, `"auto"`) and
+//! `src/subscription-sockets.ts` (WebSocket), `src/subscription-webtransport.ts` and
+//! `src/subscription-socket-support.ts` (what both sockets share) and
 //! `src/subscription-cbor-seq.ts` (`application/cbor-seq`, chosen not auto),
 //! `src/subscription-open.ts` (the open and codec both readers share) and
 //! `src/subscription-sealed.ts` (a signed open, cratestack#1378),
@@ -53,6 +54,16 @@ pub(crate) const SUBSCRIPTION_TEMPLATE_SPECS: &[TemplateSpec] = &[
         template_name: "subscription-cbor-seq.ts.j2",
         output_path: OutputPath::Fixed("src/subscription-cbor-seq.ts"),
         default_source: include_str!("../templates/src/subscription-cbor-seq.ts.j2"),
+    },
+    TemplateSpec {
+        template_name: "subscription-socket-support.ts.j2",
+        output_path: OutputPath::Fixed("src/subscription-socket-support.ts"),
+        default_source: include_str!("../templates/src/subscription-socket-support.ts.j2"),
+    },
+    TemplateSpec {
+        template_name: "subscription-webtransport.ts.j2",
+        output_path: OutputPath::Fixed("src/subscription-webtransport.ts"),
+        default_source: include_str!("../templates/src/subscription-webtransport.ts.j2"),
     },
     TemplateSpec {
         template_name: "subscription-sockets.ts.j2",

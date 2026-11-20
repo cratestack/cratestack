@@ -112,4 +112,22 @@ describe("useSubscriptionQuery retry", () => {
       expect(await opensFor(reason, code)).toBe(1);
     }
   });
+
+  it("never caps the retries of an end a retry fixes", () => {
+    const options = subscriptionQueryOptions(new QueryClient(), ["lines"], () => {
+      throw new Error("not opened");
+    });
+    const retry = options.retry as (failureCount: number, error: Error) => boolean;
+    const ended = (reason: StreamEndReason) =>
+      new CratestackSubscriptionError("unavailable", "ended", { reason });
+    // A stream ending `stream_lifetime` every hour must still be retried
+    // after the fifth hour: the count only grows while it delivers items.
+    for (const reason of ["stream_lifetime", "revocation_resync"] as const) {
+      expect(retry(0, ended(reason))).toBe(true);
+      expect(retry(5, ended(reason))).toBe(true);
+      expect(retry(10_000, ended(reason))).toBe(true);
+    }
+    expect(retry(0, ended("session_ended"))).toBe(false);
+    expect(retry(0, new Error("boom"))).toBe(false);
+  });
 });

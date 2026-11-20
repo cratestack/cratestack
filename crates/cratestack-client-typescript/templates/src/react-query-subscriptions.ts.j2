@@ -42,10 +42,12 @@ export function subscriptionQueryOptions<T>(
     // A live query has no staleness to refetch: a failure is a refusal or the
     // end of the subscription. Only an end that needs nothing from the caller
     // (`stream_lifetime`, `revocation_resync`, cratestack#1381) is reopened,
-    // after a jittered backoff; a suspended principal, a revoked device and an
-    // ended session are never retried.
+    // after a jittered backoff, with no cap on how often: a stream that ends
+    // `stream_lifetime` every hour is retried every hour for as long as it is
+    // observed. A suspended principal, a revoked device and an ended session
+    // are never retried.
     staleTime: Infinity,
-    retry: (failureCount: number, error: Error) => failureCount < 5 && shouldResubscribe(error),
+    retry: (_failureCount: number, error: Error) => shouldResubscribe(error),
     retryDelay: (failureCount: number) => resubscribeDelayMs(failureCount),
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,

@@ -286,6 +286,57 @@ describe("WebSocket", () => {
     await notes.return!();
   });
 
+  it("fans a session's {id: 0, err} out to every open subscription as its terminal error", async () => {
+    (globalThis as { WebSocket?: unknown }).WebSocket = FakeSocket;
+    // Its own credentials: a socket is shared by url and credentials.
+    const client = new CratestackClient("https://api.test", {
+      headers: { authorization: "Bearer 3" },
+      subscriptions: { transport: "websocket" },
+    });
+    const lines = client.procedures.lines({ args: { roomId: "r1" } })[Symbol.asyncIterator]();
+    const notes = client.notes.subscribe()[Symbol.asyncIterator]();
+    await lines.next();
+    await notes.next();
+    const waiting = [lines.next(), notes.next()];
+    const socket = FakeSocket.instances[0]!;
+    // The server's own per-stream err frames can lose the race to the close:
+    // the session's frame is then the only word, and it is read as theirs.
+    socket.onmessage?.({
+      data: JSON.stringify({
+        id: 0,
+        err: { code: "unauthenticated", message: "session ended", details: { reason: "session_ended" } },
+      }),
+    });
+    socket.onclose?.({ code: 4401 });
+    for (const next of waiting) {
+      const error = (await next.then(
+        () => undefined,
+        (rejection: unknown) => rejection,
+      )) as CratestackSubscriptionError;
+      expect(error).toBeInstanceOf(CratestackSubscriptionError);
+      expect(error.code).toBe("unauthenticated");
+      expect(error.endReason).toBe("session_ended");
+    }
+  });
+
+  it("a socket that closes with no session frame is a plain unavailable", async () => {
+    (globalThis as { WebSocket?: unknown }).WebSocket = FakeSocket;
+    const client = new CratestackClient("https://api.test", {
+      headers: { authorization: "Bearer 2" },
+      subscriptions: { transport: "websocket" },
+    });
+    const lines = client.procedures.lines({ args: { roomId: "r1" } })[Symbol.asyncIterator]();
+    await lines.next();
+    const waiting = lines.next();
+    FakeSocket.instances[0]!.onclose?.({ code: 1006 });
+    const error = (await waiting.then(
+      () => undefined,
+      (rejection: unknown) => rejection,
+    )) as CratestackSubscriptionError;
+    expect(error.code).toBe("unavailable");
+    expect(error.endReason).toBeUndefined();
+  });
+
   it("auto falls back to SSE when no socket opens, but not on a refusal", async () => {
     (globalThis as { WebSocket?: unknown }).WebSocket = FakeSocket;
     FakeSocket.unreachable = true;

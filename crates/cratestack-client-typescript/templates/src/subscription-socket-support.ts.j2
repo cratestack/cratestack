@@ -1,0 +1,27 @@
+// Shared by the two session bindings (`./subscription-sockets.js`, `./subscription-webtransport.js`):
+// the "not reachable here" signal, the server frame shape and how sessions are keyed.
+
+/** The binding is not reachable here: fall back to the next one. */
+export class SocketUnreachable extends Error {}
+
+export const LINGER_MS = 5000;
+
+export interface ServerFrame {
+  id: number;
+  ready?: object;
+  next?: unknown;
+  end?: object;
+  err?: { code: string; message: string; details?: unknown };
+}
+
+export function headerRecord(headers: Headers): Record<string, string> {
+  const record: Record<string, string> = {};
+  headers.forEach((value, name) => (record[name] = value));
+  return record;
+}
+
+/** A session is shared only by subscriptions with the same credentials:
+ *  `Init` authenticates the whole session. */
+export function sessionKey(url: string, headers: Headers): string {
+  return `${url}\n${JSON.stringify(headerRecord(headers))}`;
+}

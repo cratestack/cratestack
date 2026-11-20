@@ -1,0 +1,147 @@
+// The WebTransport binding behind `./subscriptions.js` (docs/design/subscriptions-websocket.md §6a):
+// one session per URL and credentials, opened lazily and closed 5 s after the last subscription
+// ends, with one bidirectional stream per subscription (read to its end, cancelled by cancelling
+// the read). It authenticates with an `Init` carrying the client's headers, since a browser cannot
+// set headers on the handshake. A session that never opens throws `SocketUnreachable`, which
+// `"auto"` reads as "fall back"; a refusal throws `CratestackSubscriptionError` and is final.
+
+import { CratestackSubscriptionError, type Frame, type SubscriptionHost, type SubscriptionTarget } from "./subscriptions.js";
+import {
+  headerRecord,
+  LINGER_MS,
+  SocketUnreachable,
+  sessionKey,
+  type ServerFrame,
+} from "./subscription-socket-support.js";
+
+const WT_READY_MS = 3000;
+
+interface WebTransportLike {
+  ready: Promise<void>;
+  closed: Promise<unknown>;
+  close(): void;
+  createBidirectionalStream(): Promise<{ readable: ReadableStream<Uint8Array>; writable: WritableStream<Uint8Array> }>;
+}
+
+async function* ndjson(
+  readable: ReadableStream<Uint8Array>,
+  cancel: { reader?: ReadableStreamDefaultReader<Uint8Array> },
+): AsyncGenerator<ServerFrame> {
+  const reader = readable.getReader();
+  cancel.reader = reader;
+  const decoder = new TextDecoder();
+  let buffer = "";
+  for (;;) {
+    const newline = buffer.indexOf("\n");
+    if (newline >= 0) {
+      const line = buffer.slice(0, newline);
+      buffer = buffer.slice(newline + 1);
+      if (line.trim()) yield JSON.parse(line) as ServerFrame;
+      continue;
+    }
+    const { value, done } = await reader.read();
+    if (done) return;
+    buffer += decoder.decode(value, { stream: true });
+  }
+}
+
+async function writeFrame(writable: WritableStream<Uint8Array>, frame: object, close: boolean): Promise<void> {
+  const writer = writable.getWriter();
+  await writer.write(new TextEncoder().encode(`${JSON.stringify(frame)}\n`));
+  if (close) await writer.close();
+  else writer.releaseLock();
+}
+
+class WtSession {
+  readonly ready: Promise<WebTransportLike>;
+  private refs = 0;
+  private linger: ReturnType<typeof setTimeout> | undefined;
+  private transport: WebTransportLike | undefined;
+
+  constructor(private readonly key: string, url: string, host: SubscriptionHost, headers: Headers) {
+    this.ready = this.open(url, host, headers);
+    this.ready.catch(() => sessions.delete(this.key));
+  }
+
+  private async open(url: string, host: SubscriptionHost, headers: Headers): Promise<WebTransportLike> {
+    const Ctor = (globalThis as unknown as { WebTransport: new (url: string, init?: object) => WebTransportLike }).WebTransport;
+    const hashes = host.subscriptions?.webTransport?.serverCertificateHashes;
+    const withCodec = new URL(url);
+    withCodec.searchParams.set("codec", "json");
+    const timeout = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new SocketUnreachable("WebTransport not ready in time")), WT_READY_MS),
+    );
+    let transport: WebTransportLike;
+    let control: AsyncGenerator<ServerFrame>;
+    try {
+      transport = new Ctor(withCodec.toString(), hashes ? { serverCertificateHashes: hashes } : undefined);
+      this.transport = transport;
+      transport.closed.catch(() => undefined).finally(() => sessions.delete(this.key));
+      await Promise.race([transport.ready, timeout]);
+      const stream = await transport.createBidirectionalStream();
+      await writeFrame(stream.writable, { id: 0, init: { headers: headerRecord(headers) } }, false);
+      control = ndjson(stream.readable, {});
+    } catch (error) {
+      throw error instanceof SocketUnreachable ? error : new SocketUnreachable(String(error));
+    }
+    const first = await Promise.race([control.next(), timeout]);
+    const frame = first.value as ServerFrame | undefined;
+    if (frame?.err) throw new CratestackSubscriptionError(frame.err.code, frame.err.message, frame.err.details);
+    if (!frame?.ready) throw new SocketUnreachable("WebTransport session did not become ready");
+    return transport;
+  }
+
+  acquire(): void {
+    this.refs += 1;
+    clearTimeout(this.linger);
+  }
+
+  release(): void {
+    this.refs -= 1;
+    if (this.refs === 0) {
+      this.linger = setTimeout(() => {
+        sessions.delete(this.key);
+        this.transport?.close();
+      }, LINGER_MS);
+    }
+  }
+}
+
+const sessions = new Map<string, WtSession>();
+let wtIds = 1;
+
+export async function* openWebTransportSubscription(
+  host: SubscriptionHost,
+  target: SubscriptionTarget,
+  headers: Headers,
+  signal: AbortSignal | undefined,
+): AsyncGenerator<Frame> {
+  const url = host.subscriptions?.webTransport?.url;
+  if (url === undefined) throw new SocketUnreachable("no WebTransport URL configured");
+  const key = sessionKey(url, headers);
+  let session = sessions.get(key);
+  if (session === undefined) {
+    session = new WtSession(key, url, host, headers);
+    sessions.set(key, session);
+  }
+  session.acquire();
+  const cancel: { reader?: ReadableStreamDefaultReader<Uint8Array> } = {};
+  const onAbort = () => void cancel.reader?.cancel().catch(() => undefined);
+  signal?.addEventListener("abort", onAbort);
+  try {
+    const transport = await session.ready;
+    const stream = await transport.createBidirectionalStream();
+    const id = wtIds++;
+    await writeFrame(stream.writable, { id, op: target.opId, input: target.input }, true);
+    for await (const frame of ndjson(stream.readable, cancel)) {
+      if (frame.err) throw new CratestackSubscriptionError(frame.err.code, frame.err.message, frame.err.details);
+      if (frame.end) return;
+      yield frame.ready ? { kind: "ready" } : { kind: "item", value: frame.next };
+    }
+    throw new CratestackSubscriptionError("unavailable", "the subscription stream ended without end or err");
+  } finally {
+    signal?.removeEventListener("abort", onAbort);
+    await cancel.reader?.cancel().catch(() => undefined);
+    session.release();
+  }
+}
