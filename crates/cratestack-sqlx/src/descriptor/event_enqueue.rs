@@ -142,12 +142,23 @@ where
         CratestackError::Codec(format!("failed to encode event envelope: {error}"))
     })?;
     let notification = if notify {
+        // Too large even by reference (a model name that long): fail the
+        // write, as an oversize `NOTIFY` failed the statement before, rather
+        // than commit an event no subscriber is told of.
         notify_payload::encode(
             &model_event_channel(model),
             &envelope_json,
             Some(envelope.event_id),
         )
-        .unwrap_or_default()
+        .ok_or_else(|| {
+            tracing::warn!(target: "cratestack", model, "model event notification over the NOTIFY limit even by reference");
+            // The model name is the schema's, not the caller's: not a bad request.
+            CratestackError::Internal(format!(
+                "a model event's notification must stay under Postgres' {}-byte NOTIFY limit \
+                 even by reference to its outbox row; the model name is too long",
+                notify_payload::NOTIFY_LIMIT
+            ))
+        })?
     } else {
         String::new()
     };

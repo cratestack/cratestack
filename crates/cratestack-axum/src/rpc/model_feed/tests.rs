@@ -87,16 +87,21 @@ async fn backplane_messages_decode_or_end_the_feed() {
     });
     let receiver: BackplaneReceiver = Box::pin(stream::iter([
         BackplaneMessage::Payload(Arc::from(envelope.to_string())),
+        // A stray byte payload is skipped, not an error and not the end.
+        BackplaneMessage::Bytes(Arc::from(&b"\xa0"[..])),
+        BackplaneMessage::Payload(Arc::from(envelope.to_string())),
         BackplaneMessage::Lagged,
         BackplaneMessage::Resync,
     ]));
     let decoded: Vec<_> = model_events::<u32>(receiver).collect().await;
+    assert_eq!(decoded.len(), 4, "the bytes message yields nothing");
     assert_eq!(decoded[0].as_ref().unwrap().event.data, 7);
+    assert_eq!(decoded[1].as_ref().unwrap().event.data, 7);
     assert!(
-        matches!(&decoded[1], Err(CratestackError::Unavailable(m)) if m == "subscription lagged")
+        matches!(&decoded[2], Err(CratestackError::Unavailable(m)) if m == "subscription lagged")
     );
     assert!(
-        matches!(&decoded[2], Err(CratestackError::Unavailable(m)) if m == "subscription interrupted")
+        matches!(&decoded[3], Err(CratestackError::Unavailable(m)) if m == "subscription interrupted")
     );
 }
 

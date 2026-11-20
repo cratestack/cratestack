@@ -92,6 +92,27 @@ async fn a_malformed_payload_is_skipped() {
     follower.abort();
 }
 
+#[tokio::test]
+async fn a_byte_message_is_skipped_and_the_follower_keeps_running() {
+    let backplane = Arc::new(InProcessBackplane::default());
+    let (replica_a, replica_b) = (StreamRevocations::default(), StreamRevocations::default());
+    let mut watch = replica_b.watch(vec![key()]).unwrap();
+    let follower = tokio::spawn(replica_b.follow(backplane.clone()));
+    for _ in 0..20 {
+        backplane
+            .publish_bytes(REVOCATION_CHANNEL, b"\xa1\x01\x02")
+            .await
+            .unwrap();
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+    assert!(watch.try_ended().is_none(), "bytes revoked nothing");
+    assert!(!follower.is_finished());
+    // Still listening: a real revocation after the stray bytes lands.
+    let end = publish_until_ended(&replica_a, &backplane, &mut watch).await;
+    assert_eq!(end.reason, StreamEndReason::SessionEnded);
+    follower.abort();
+}
+
 /// Publishes `payload` until the follower has applied a revoke of `key()`.
 async fn publish_raw_until_ended(
     backplane: &InProcessBackplane,

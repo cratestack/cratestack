@@ -84,6 +84,10 @@ chrono.workspace = true
 cratestack-core = { workspace = true, features = ["sqlx-postgres"] }
 cratestack-policy.workspace = true
 cratestack-sql.workspace = true
+# The `PgNotifyBackplane` NOTIFY envelope: a small CBOR map, base64 inside the
+# text a `NOTIFY` must carry. Both already sit under `cratestack-core`.
+base64.workspace = true
+minicbor = { workspace = true, features = ["alloc"] }
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true

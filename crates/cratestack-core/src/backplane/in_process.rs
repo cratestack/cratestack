@@ -4,7 +4,9 @@
 
 use std::sync::Arc;
 
-use super::{BackplaneFuture, BackplaneReceiver, LocalHub, SubscriptionBackplane};
+use super::{
+    BackplaneFuture, BackplaneMessage, BackplaneReceiver, LocalHub, SubscriptionBackplane,
+};
 use crate::error::CratestackError;
 
 #[derive(Default)]
@@ -24,7 +26,18 @@ impl SubscriptionBackplane for InProcessBackplane {
         channel: &'a str,
         payload: &'a str,
     ) -> BackplaneFuture<'a, Result<(), CratestackError>> {
-        self.hub.deliver(channel, Arc::from(payload));
+        self.hub
+            .deliver(channel, BackplaneMessage::Payload(Arc::from(payload)));
+        Box::pin(std::future::ready(Ok(())))
+    }
+
+    fn publish_bytes<'a>(
+        &'a self,
+        channel: &'a str,
+        payload: &'a [u8],
+    ) -> BackplaneFuture<'a, Result<(), CratestackError>> {
+        self.hub
+            .deliver(channel, BackplaneMessage::Bytes(Arc::from(payload)));
         Box::pin(std::future::ready(Ok(())))
     }
 

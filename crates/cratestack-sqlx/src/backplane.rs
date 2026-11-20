@@ -5,6 +5,7 @@
 //! which lives in `cratestack-core` with [`InProcessBackplane`], so a
 //! `db = None` service can use it without sqlx.
 
+mod deliver;
 pub(crate) mod notify_payload;
 mod pg_notify;
 
@@ -13,3 +14,5 @@ pub use pg_notify::PgNotifyBackplane;
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tests_strict;

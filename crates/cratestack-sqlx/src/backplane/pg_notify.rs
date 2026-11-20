@@ -7,7 +7,10 @@
 //! or not); local subscribers fan out from it. Model
 //! events are notified by the writing transaction itself
 //! (`enqueue_event_outbox`), so Postgres delivers them only if it commits, to
-//! every listener, in commit order. When the listener's connection drops,
+//! every listener, in commit order. A notification is a CBOR envelope
+//! (`notify_payload`), or the 0.20.5 JSON one for a rolling deploy
+//! ([`PgNotifyBackplane::use_json_envelope`], a switch for the whole process);
+//! text and byte payloads both travel in it. When the listener's connection drops,
 //! notifications sent meanwhile are lost: every local subscription gets
 //! `Resync` and ends (§4.5).
 
@@ -18,7 +21,8 @@ use cratestack_core::backplane::LocalHub;
 use cratestack_core::{BackplaneFuture, BackplaneReceiver, CratestackError, SubscriptionBackplane};
 use tokio::sync::{OnceCell, watch};
 
-use super::notify_payload::{NOTIFY_CHANNEL, Notification, encode};
+use super::deliver::deliver;
+use super::notify_payload::{Envelope, NOTIFY_CHANNEL, NOTIFY_LIMIT, encode_bytes, encode_text};
 use crate::error::cratestack_error_from_sqlx;
 use crate::sqlx;
 use crate::sqlx::postgres::PgListener;
@@ -43,6 +47,46 @@ impl PgNotifyBackplane {
             listening: OnceCell::new(),
             alive: watch::channel(()).0,
         }
+    }
+
+    /// Makes every notification this **process** writes use the legacy JSON
+    /// envelope (0.20.5 and earlier) instead of the CBOR one, for a rolling
+    /// deploy from those versions. A 0.20.5 replica cannot read CBOR: it
+    /// skips the notification as unreadable. Every 0.20.6 replica reads both.
+    ///
+    /// Call it once at startup, before the first write. **It is a process
+    /// switch, not a property of one backplane:** it covers every
+    /// `PgNotifyBackplane` in the process, built before or after the call
+    /// (another schema's default runtime included), and the writers that
+    /// hold no backplane (a model event's write path, a topic's
+    /// `publish_in_tx`). Writes made *before* the call went out as CBOR, and
+    /// it cannot be undone in-process: to go back, redeploy without it.
+    ///
+    /// **Rollout.** Step 1: deploy 0.20.6 with this on every replica; they
+    /// write what the old replicas read, and read both. Step 2, once no
+    /// 0.20.5 replica is left: remove it and redeploy; they write CBOR.
+    /// A byte payload goes as base64 in a field (`b`)
+    /// that 0.20.5 readers ignore, so it reaches 0.20.6 replicas only, and
+    /// its size limit is the base64 text's.
+    pub fn use_json_envelope() {
+        Envelope::make_default_json();
+    }
+
+    /// [`Self::use_json_envelope`] in a builder chain: process-wide, not `self`'s.
+    #[must_use]
+    pub fn with_json_envelope(self) -> Self {
+        Self::use_json_envelope();
+        self
+    }
+
+    async fn notify(&self, notification: String) -> Result<(), CratestackError> {
+        sqlx::query("SELECT pg_notify($1, $2)")
+            .bind(NOTIFY_CHANNEL)
+            .bind(notification)
+            .execute(&self.pool)
+            .await
+            .map_err(cratestack_error_from_sqlx)?;
+        Ok(())
     }
 
     async fn ensure_listening(&self) -> Result<(), CratestackError> {
@@ -75,19 +119,34 @@ impl SubscriptionBackplane for PgNotifyBackplane {
         payload: &'a str,
     ) -> BackplaneFuture<'a, Result<(), CratestackError>> {
         Box::pin(async move {
-            let Some(notification) = encode(channel, payload, None) else {
+            let Some(notification) = encode_text(Envelope::current(), channel, payload, None)
+            else {
                 return Err(CratestackError::BadRequest(
                     "a backplane payload must stay under Postgres' 8000-byte NOTIFY limit"
                         .to_owned(),
                 ));
             };
-            sqlx::query("SELECT pg_notify($1, $2)")
-                .bind(NOTIFY_CHANNEL)
-                .bind(notification)
-                .execute(&self.pool)
-                .await
-                .map_err(cratestack_error_from_sqlx)?;
-            Ok(())
+            self.notify(notification).await
+        })
+    }
+
+    fn publish_bytes<'a>(
+        &'a self,
+        channel: &'a str,
+        payload: &'a [u8],
+    ) -> BackplaneFuture<'a, Result<(), CratestackError>> {
+        Box::pin(async move {
+            // No outbox row exists for a byte payload to refer to, so it
+            // is refused whole, never truncated.
+            let notification =
+                encode_bytes(Envelope::current(), channel, payload).map_err(|size| {
+                    CratestackError::BadRequest(format!(
+                        "a backplane byte payload of {} bytes encodes to a {size}-byte NOTIFY, \
+                     over Postgres' limit of {NOTIFY_LIMIT} bytes",
+                        payload.len()
+                    ))
+                })?;
+            self.notify(notification).await
         })
     }
 
@@ -138,27 +197,4 @@ async fn listen(
             }
         }
     }
-}
-
-async fn deliver(hub: &LocalHub, pool: &sqlx::PgPool, raw: &str) {
-    let Ok(notification) = serde_json::from_str::<Notification<'_>>(raw) else {
-        tracing::warn!(target: "cratestack", "unreadable backplane notification ignored");
-        return;
-    };
-    let payload = match (notification.payload, notification.event_id) {
-        (Some(payload), _) => Arc::from(payload.as_ref()),
-        (None, Some(event_id)) => {
-            match crate::descriptor::outbox_envelope_json(pool, event_id).await {
-                Ok(payload) => Arc::from(payload),
-                Err(error) => {
-                    // The event is lost for this replica: say so rather than skip it.
-                    tracing::warn!(target: "cratestack", %error, "large model event unreadable; its channel resyncs");
-                    hub.resync(&notification.channel);
-                    return;
-                }
-            }
-        }
-        (None, None) => return,
-    };
-    hub.deliver(&notification.channel, payload);
 }

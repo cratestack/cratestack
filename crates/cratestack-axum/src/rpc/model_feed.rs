@@ -76,12 +76,27 @@ pub fn model_events<T>(
 where
     T: DeserializeOwned + Send + 'static,
 {
-    receiver.map(|message| match message {
-        BackplaneMessage::Payload(json) => serde_json::from_str::<CratestackEventEnvelope>(&json)
-            .map_err(|error| CratestackError::Codec(format!("unreadable model event: {error}")))
-            .and_then(FeedEvent::try_from),
-        BackplaneMessage::Lagged => Err(lagged()),
-        BackplaneMessage::Resync => Err(interrupted()),
+    receiver.filter_map(|message| {
+        std::future::ready(match message {
+            BackplaneMessage::Payload(json) => Some(
+                serde_json::from_str::<CratestackEventEnvelope>(&json)
+                    .map_err(|error| {
+                        CratestackError::Codec(format!("unreadable model event: {error}"))
+                    })
+                    .and_then(FeedEvent::try_from),
+            ),
+            BackplaneMessage::Lagged => Some(Err(lagged())),
+            BackplaneMessage::Resync => Some(Err(interrupted())),
+            // Model events are JSON text; a byte payload on the channel is
+            // malformed. Skip it: the feed stays up.
+            other => {
+                tracing::warn!(
+                    target: "cratestack",
+                    "non-text backplane message on a model channel skipped: {other:?}"
+                );
+                None
+            }
+        })
     })
 }
 

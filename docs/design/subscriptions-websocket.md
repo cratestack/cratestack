@@ -1085,6 +1085,14 @@ such as anonymous on `auth() != null`, still gets `Ready` and an empty feed, nev
   descriptor's new `subscribed` flag, read through `EventTarget`, so an `@@emit`-only model never
   takes Postgres' commit-time `NOTIFY` lock. An event over the 8000-byte limit goes as a reference to
   its outbox row, which the listener reads.
+- **The `NOTIFY` envelope (0.20.6).** The text on `cratestack_events` is `cbor:` + base64 of a CBOR map
+  `{"v": 1, "c": channel, "t": text | "b": bytes | "r": outbox event_id, "n": nonce}`; the 7900-byte
+  limit applies to that final text. `SubscriptionBackplane::publish_bytes` carries a byte payload
+  (`BackplaneMessage::Bytes`); one over the limit has no outbox row and is refused. The reader also reads
+  the earlier JSON envelope (`{"c","p","r","n"}`, which starts with `{`), and a notification it cannot read
+  is logged and skipped. For a rolling deploy from 0.20.5, which cannot read CBOR,
+  `PgNotifyBackplane::with_json_envelope()` writes the JSON one (bytes as base64 in a field `b` that
+  0.20.5 ignores); remove it once no 0.20.5 replica is left.
 - **The drain claims rows with `FOR UPDATE SKIP LOCKED`** in one transaction. When the backplane is
   not notified in-transaction (in-process), the drain publishes each row's event after commit, on
   its first attempt only (at most once).
