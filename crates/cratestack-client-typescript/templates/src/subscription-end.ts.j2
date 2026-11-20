@@ -1,0 +1,58 @@
+// Why the server ended a live subscription (cratestack#1381): the typed reader over the
+// `details.reason` of the terminal `err` frame, and the one rule every retrying hook consults.
+//
+//   credential_expired   unauthenticated 401   refresh credentials, then resubscribe
+//   stream_lifetime      unavailable 503       resubscribe (a fresh signed open)
+//   session_ended        unauthenticated 401   sign in again; never auto-retry
+//   principal_suspended  permission_denied 403 never retry
+//   device_revoked       permission_denied 403 re-enrol; never retry
+//   revocation_resync    unavailable 503       resubscribe with jittered backoff
+//
+// A reason this package does not know (a newer server) reads as `undefined`: fall back to the
+// error's `code`, as before.
+
+/** Why the server ended a subscription. A future server may send more: match with a default. */
+export type StreamEndReason =
+  | "credential_expired"
+  | "stream_lifetime"
+  | "session_ended"
+  | "principal_suspended"
+  | "device_revoked"
+  | "revocation_resync";
+
+const END_REASONS: readonly StreamEndReason[] = [
+  "credential_expired",
+  "stream_lifetime",
+  "session_ended",
+  "principal_suspended",
+  "device_revoked",
+  "revocation_resync",
+];
+
+/** The reason in an error's `details`, or `undefined` when absent or unknown. */
+export function parseStreamEndReason(details: unknown): StreamEndReason | undefined {
+  if (typeof details !== "object" || details === null) return undefined;
+  const reason = (details as { reason?: unknown }).reason;
+  return END_REASONS.find((known) => known === reason);
+}
+
+/** Ends the server will not undo: do not resubscribe on your own (sign in again, re-enrol, or give up). */
+export function isTerminalEndReason(reason: StreamEndReason | undefined): boolean {
+  return reason === "session_ended" || reason === "principal_suspended" || reason === "device_revoked";
+}
+
+/**
+ * Whether a hook should reopen a subscription that failed with `error` by itself: only the two
+ * ends that need no new credential (`stream_lifetime`, `revocation_resync`). Everything else,
+ * including `credential_expired`, which needs a refreshed credential only your app has, is the
+ * caller's to handle.
+ */
+export function shouldResubscribe(error: unknown): boolean {
+  const reason = (error as { endReason?: StreamEndReason } | null)?.endReason;
+  return reason === "stream_lifetime" || reason === "revocation_resync";
+}
+
+/** Full-jitter exponential backoff before resubscribe number `attempt` (0 based), capped at 30 s. */
+export function resubscribeDelayMs(attempt: number, random: () => number = Math.random): number {
+  return Math.floor(random() * Math.min(30_000, 500 * 2 ** Math.max(0, attempt)));
+}

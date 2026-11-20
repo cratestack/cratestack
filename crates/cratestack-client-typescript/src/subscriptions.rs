@@ -1,5 +1,6 @@
 //! Subscriptions in the generated package (slice S6,
 //! `docs/design/subscriptions-websocket.md` §8): `src/subscriptions.ts` and
+//! `src/subscription-end.ts` (typed end reasons, cratestack#1381) and
 //! `src/subscription-sockets.ts` (WebTransport, WebSocket, SSE, `"auto"`) and
 //! `src/subscription-cbor-seq.ts` (`application/cbor-seq`, chosen not auto),
 //! `src/subscription-open.ts` (the open and codec both readers share) and
@@ -27,6 +28,11 @@ pub(crate) const SUBSCRIPTION_TEMPLATE_SPECS: &[TemplateSpec] = &[
         template_name: "subscriptions.ts.j2",
         output_path: OutputPath::Fixed("src/subscriptions.ts"),
         default_source: include_str!("../templates/src/subscriptions.ts.j2"),
+    },
+    TemplateSpec {
+        template_name: "subscription-end.ts.j2",
+        output_path: OutputPath::Fixed("src/subscription-end.ts"),
+        default_source: include_str!("../templates/src/subscription-end.ts.j2"),
     },
     TemplateSpec {
         template_name: "subscription-sse.ts.j2",
