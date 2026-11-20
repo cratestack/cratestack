@@ -20,7 +20,7 @@ use tokio::sync::{Notify, mpsc};
 use tokio::time::Instant;
 use tracing::Instrument;
 
-use super::io::{expiry_of, send, sleep_until};
+use super::io::{drain_close, expiry_of, send, sleep_until};
 use crate::close::{Sink, close, end_session, refuse, ws_close};
 use crate::codec::WireCodec;
 use crate::server::Shared;
@@ -151,4 +151,5 @@ pub(super) async fn established<A: AuthProvider, D: SubscriptionDispatcher>(
     for task in open.into_values() {
         task.abort();
     }
+    drain_close(&mut stream).await;
 }
