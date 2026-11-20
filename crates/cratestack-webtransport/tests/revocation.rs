@@ -200,19 +200,20 @@ async fn the_session_closes_4401_when_its_credential_expires() {
 }
 
 /// A refresh before `exp` moves the session's expiry: it outlives the
-/// credential it opened with.
+/// credential it opened with. A 3 s ttl (whole-second `exp`, so 2-3 s) keeps
+/// the refresh from racing the expiry; the sleep outlasts it.
 #[tokio::test]
 async fn a_refresh_before_expiry_keeps_the_session_open() {
     let revocations = StreamRevocations::default();
     let server = start(&revocations);
-    let mut client = server.session(Some("u1.s1.1")).await;
+    let mut client = server.session(Some("u1.s1.3")).await;
     client
         .send_control(&ClientFrame::init(BTreeMap::from([(
             "authorization".to_owned(),
             "Bearer u1.s1.3600".to_owned(),
         )])))
         .await;
-    tokio::time::sleep(Duration::from_millis(1500)).await;
+    tokio::time::sleep(Duration::from_millis(3500)).await;
     let mut stream = client
         .subscribe(2, "test.forever", serde_json::Value::Null)
         .await;

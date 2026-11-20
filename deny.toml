@@ -121,7 +121,7 @@ ignore = [
     # is a breaking, workspace-wide migration, tracked separately from this
     # advisory. Revisit when that migration lands (or chrono is maintained
     # again).
-    { id = "RUSTSEC-2026-0543", reason = "chrono, unmaintained upstream (no safe upgrade); a direct dependency of cratestack-core and most framework crates with no drop-in replacement; migration to a maintained time crate is tracked separately; revisit then" },
+    { id = "RUSTSEC-2026-0543", reason = "chrono, unmaintained upstream (no safe upgrade); a direct dependency of cratestack-core and most framework crates with no drop-in replacement; migration to a maintained time crate is tracked in https://github.com/cratestack/cratestack/issues/1412; revisit then" },
 
     # --- Vulnerabilities: quick-xml (via plist, via tauri) — RESOLVED ---
     # RUSTSEC-2026-0194 and RUSTSEC-2026-0195 used to be ignored here. Their

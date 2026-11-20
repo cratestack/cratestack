@@ -30,7 +30,7 @@ fn now() -> i64 {
 pub static ENTERED: tokio::sync::Notify = tokio::sync::Notify::const_new();
 pub static GATE: tokio::sync::Notify = tokio::sync::Notify::const_new();
 
-/// `authorization: short` is user `u1`, session `s1`, valid for one second;
+/// `authorization: short` is user `u1`, session `s1`, valid for three seconds (whole-second `exp`, so 2-3 s: long enough that a refresh sent right after opening wins the race against expiry);
 /// `long` is the same session for an hour; `rotated` is the same user on
 /// session `s2` for an hour; anything else is refused.
 #[derive(Clone)]
@@ -48,7 +48,7 @@ impl AuthProvider for Auth {
             .get("authorization")
             .and_then(|v| v.to_str().ok());
         let (sid, exp) = match token {
-            Some("short") => ("s1", Some(now() + 1)),
+            Some("short") => ("s1", Some(now() + 3)),
             Some("long" | "gated") => ("s1", Some(now() + 3600)),
             Some("rotated") => ("s2", Some(now() + 3600)),
             _ => ("", None),
