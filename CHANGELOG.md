@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+### Ending a live subscription when its principal is revoked, suspended or signed out (cratestack#1381)
+
+Additive on the wire; **one source-breaking edge**: `CratestackError` (already `#[non_exhaustive]`) gains the variant `StreamEnded(StreamEndNotice)`, so an exhaustive-looking `match` with a wildcard is unaffected but a hand-written mapping of every variant needs an arm. A stream authenticated once, at open, and only its credential's `exp` ended it; a device revoked a minute later kept receiving events. Now the app calls `revoke` and every stream and socket session of that principal ends, on every binding (SSE, cbor-seq, WebSocket, WebTransport), REST and RPC alike.
+
+- **New in `cratestack_core` (re-exported by the facades):** `StreamRevocations` (`revoke(key, reason, until) -> usize`, `watch`, `watch_context`, `end_all`, `publish`, `follow`, `follow_with`, `with_max_tombstones`, `with_keys`, `with_clock`, `keys_of`, `watching`, `tombstones`), `RevocationKey::{Subject, Session, Signer, Custom}`, `RevocationWatch`, `RevocationKeysFn`, `default_revocation_keys`, `ResyncPolicy::{EndAll, Ignore}` (default `EndAll`), `REVOCATION_CHANNEL` (`"cratestack.revocation"`), `DEFAULT_MAX_TOMBSTONES`, `StreamEndReason` (`#[non_exhaustive]`: `CredentialExpired`, `StreamLifetime`, `SessionEnded`, `PrincipalSuspended`, `DeviceRevoked`, `RevocationResync`), `StreamEndNotice { reason, message }`, `CratestackError::StreamEnded`, and `SubscriptionDispatcher::revocations()` (defaulted to `None`). In `cratestack-axum`: `until_principal_ends` and `StreamBounds` (`until_credential_expires` stays, as a wrapper). Runtime: `SqlxRuntime::{with_stream_revocations, stream_revocations}`; generated `Cratestack::stream_revocations()` and `CratestackBuilder::with_stream_revocations(..)` (on `db = None`, only for a schema that declares a `topic` or a `subscription procedure`, as `Cratestack` stays the zero-field `Copy` marker otherwise).
+- **Wire.** Every terminal end carries `details: {"reason": "<snake_case>"}`. The two ends that existed keep their code and message (`unauthenticated` / `"credential expired"`, `unavailable` / `"stream lifetime"`); new: `session_ended` (401), `principal_suspended` and `device_revoked` (403 `permission_denied`), `revocation_resync` (503 `unavailable`). A socket session gets its own `{id: 0, err}` and closes 4401 / 4403 / 4500 (4500 = retry, not sign out).
+- **Tombstones.** `until` keeps the key refused for new stream opens (and socket `Init`s) until then, so a cached context cannot reopen; `None` ends live streams only. They refuse stream opens only: refusing unary calls stays the `AuthProvider`'s job. A flood is bounded by `with_max_tombstones` (soonest-lapsing dropped first).
+- **Keys.** `default_revocation_keys` reads `subject()`, a `sid` claim only when it is a string (`sid` is not a reserved claim), and the signer thumbprint of a signed open. `with_keys` replaces it for streams and sockets alike.
+- **Across replicas.** `publish(&backplane, key, reason, until)` revokes locally and sends on `cratestack.revocation`; `tokio::spawn(registry.follow(backplane))` applies what other replicas send (resubscribing after a gap). A `Resync` / `Lagged` / dropped listener ends every watched stream with `revocation_resync` unless `follow_with(.., ResyncPolicy::Ignore)`.
+- **Behaviour changes.** WebTransport now closes the session with 4401 at the credential's `exp` (WebSocket already did). A WebSocket / WebTransport `Init` refresh re-registers the session but does not extend streams already open (unchanged, now pinned by a test). A hand-written `SubscriptionDispatcher` gets none of this, as with expiry.
+- **Not in this change.** The generated clients' typed readers (`endReason`) and retry helpers; a periodic policy re-check.
+
+**Transport parity.** The bound sits in the generated open functions every REST and RPC subscription open goes through; MCP is exempt (ADR 0002 D5).
+
 ## 0.20.4 (2026-11-16)
 
 ### A signed subscription open: the generated clients (cratestack#1378, part B2)

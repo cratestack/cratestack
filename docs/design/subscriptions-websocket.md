@@ -506,6 +506,25 @@ A refused refresh is refused as above. The new context must name the same princi
 refusal (4403). If the context carries an expiry, the server closes with 4401 at that instant unless a
 refresh arrived first.
 
+**Revocation (cratestack#1381).** A credential's `exp` is not the only way a principal stops being
+allowed to listen. `StreamRevocations` (`db.stream_revocations()`, on the generated runtime of every
+schema that has a subscription) is the registry every generated open registers its stream in, under the
+keys of its context (`default_revocation_keys`: `subject()`, a string `sid` claim when present, and the
+thumbprint of the key that signed a signed open; `sid` is not a reserved claim, so an app that names its
+session id otherwise supplies `with_keys`). `revoke(key, reason, until)` ends every stream and every
+WebSocket / WebTransport session holding the key, on every binding, with a typed end: the terminal
+`err` frame carries `details: {"reason": ..}` (`credential_expired`, `stream_lifetime`, `session_ended`,
+`principal_suspended`, `device_revoked`, `revocation_resync`); a socket session is closed 4401 / 4403 /
+4500 after its own `{id: 0, err}`. `until` keeps a tombstone that refuses a later *stream open* (and a
+socket `Init`) with a cached context until then; refusing a unary call stays the `AuthProvider`'s job.
+The bound is `until_principal_ends`: revocation first, then the credential clock, then the items. A
+`WebSocket` / WebTransport `Init` refresh re-registers the session but does not extend streams already
+open. Across replicas, `publish` / `follow` carry revocations on the backplane channel
+`cratestack.revocation` (server-internal JSON, at-most-once); a `Resync` / `Lagged` ends every watched
+stream with `revocation_resync` by default (`ResyncPolicy::EndAll`, fail closed) or is ignored
+(`ResyncPolicy::Ignore`). A hand-written `SubscriptionDispatcher` gets none of this unless it
+implements `revocations()` and bounds its streams itself.
+
 ### 6.4 Frames
 
 The §2.3 envelope plus two variants, `Init` and `Ready`. The envelope is discriminated by which key
