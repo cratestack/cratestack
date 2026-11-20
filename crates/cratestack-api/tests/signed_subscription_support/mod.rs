@@ -51,6 +51,7 @@ pub fn endless(mut target: Target) -> Target {
 
 mod cases;
 mod fixtures;
+mod revocation_cases;
 mod stream_cases;
 
 pub use fixtures::*;

@@ -1,0 +1,18 @@
+// Ending a live subscription when its principal is revoked (cratestack#1381)
+// on a REST schema with no database. Dedicated to
+// `tests/subscription_revocation_rest.rs`.
+
+datasource db {
+  provider = "none"
+}
+
+type TickArgs {
+  count Int
+}
+
+type Tick {
+  n Int
+}
+
+subscription procedure ticks(args: TickArgs): Tick
+  @allow(auth() != null)

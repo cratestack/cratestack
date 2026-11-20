@@ -79,6 +79,22 @@ fn router(allow: bool, hits: Hits, audience: &'static str) -> Router {
 }
 
 fn router_life(allow: bool, hits: Hits, audience: &'static str, life: Duration) -> Router {
+    router_with(allow, hits, audience, life, Default::default())
+}
+
+/// The router with `revocations` as its registry of live streams
+/// (cratestack#1381), which the test revokes through.
+fn router_revoking(hits: Hits, revocations: cratestack::StreamRevocations) -> Router {
+    router_with(true, hits, AUDIENCE, Duration::from_secs(3600), revocations)
+}
+
+fn router_with(
+    allow: bool,
+    hits: Hits,
+    audience: &'static str,
+    life: Duration,
+    revocations: cratestack::StreamRevocations,
+) -> Router {
     let layer = cratestack_schema::axum::envelope_layer(
         server_envelope(),
         EnvelopeMode::Required,
@@ -89,7 +105,9 @@ fn router_life(allow: bool, hits: Hits, audience: &'static str, life: Duration) 
     .build()
     .expect("layer");
     cratestack_schema::axum::router(
-        cratestack_schema::Cratestack::builder().build(),
+        cratestack_schema::Cratestack::builder()
+            .with_stream_revocations(revocations)
+            .build(),
         Registry(hits),
         (),
         CborCodec,
@@ -113,3 +131,4 @@ fn target(op: &str, method: &'static str) -> Target {
 
 signed_subscription_cases!(router: router, target: target, methods: ["GET"]);
 signed_subscription_stream_cases!(router: router, router_life: router_life, target: target, methods: ["GET"]);
+signed_subscription_revocation_cases!(router: router_revoking, target: target, methods: ["GET"]);
