@@ -108,7 +108,12 @@ async fn pump<T: DeserializeOwned + Send + 'static>(
             }
         };
         let (item, last) = match frame {
-            Some(Ok(frame)) if frame.id != ID => continue,
+            // `{id: 0, err}` is the session's end, and so this stream's: a
+            // server whose own `err` for it lost the race to the close
+            // leaves this as the only word on why.
+            Some(Ok(frame)) if frame.id != ID && !(frame.id == 0 && frame.err.is_some()) => {
+                continue;
+            }
             Some(Ok(frame)) if frame.next.is_some() => {
                 (cbor_item(frame.next.expect("checked")), false)
             }

@@ -267,3 +267,35 @@ async fn a_revoke_during_a_refresh_still_ends_the_session() {
     assert_eq!(reason(&frame), "session_ended");
     assert_eq!(client.close_code().await, close_code::UNAUTHENTICATED);
 }
+
+/// The native client, end to end: a revoke surfaces on the subscription as
+/// its terminal error, typed, rather than as a bare stream that stopped.
+#[cfg(feature = "client")]
+#[tokio::test]
+async fn the_native_client_reads_the_typed_end_of_a_revoked_subscription() {
+    use cratestack_webtransport::{ClientFailure, ServerTrust, WebTransportClient};
+
+    let revocations = StreamRevocations::default();
+    let server = start(&revocations);
+    let url = server.url.parse().unwrap();
+    let trust = ServerTrust::CertificateHashes(vec![server.hash.clone().try_into().unwrap()]);
+    let headers = [("authorization".to_owned(), "Bearer u1.s1.3600".to_owned())].into();
+    let client = WebTransportClient::connect(&url, &trust, headers)
+        .await
+        .expect("the session opens");
+    let mut stream = client
+        .subscribe("test.forever", serde_json::Value::Null)
+        .await
+        .expect("the subscription opens");
+    revocations.revoke(
+        RevocationKey::Session("s1".into()),
+        StreamEndReason::DeviceRevoked,
+        None,
+    );
+    let Some(Err(ClientFailure::Refused(body))) = stream.next().await else {
+        panic!("the subscription must end with the typed refusal");
+    };
+    assert_eq!(body.code, "permission_denied");
+    assert_eq!(body.details.unwrap()["reason"], "device_revoked");
+    assert!(stream.next().await.is_none());
+}
