@@ -54,6 +54,9 @@ impl RpcErrorBody {
                 .map(|(name, value)| (name.to_owned(), cratestack_value_to_json(value)))
                 .collect();
         }
+        if let CratestackError::StreamEnded(end) = error {
+            body.details = Some(end.details());
+        }
         body
     }
 

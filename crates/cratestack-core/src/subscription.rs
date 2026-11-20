@@ -25,6 +25,7 @@ use crate::codec::CratestackCodec;
 use crate::context::CratestackContext;
 use crate::error::CratestackError;
 use crate::rpc::RpcFrameValue;
+use crate::subscription_revocation::StreamRevocations;
 
 /// A live subscription's items. Ending (`None`) means the subscription is
 /// over; an `Err` item is terminal too — the binding sends it and stops.
@@ -64,4 +65,13 @@ pub trait SubscriptionDispatcher: Clone + Send + Sync + 'static {
         request: SubscriptionOpen,
         codec: C,
     ) -> impl Future<Output = Result<SubscriptionStream<RpcFrameValue>, CratestackError>> + Send;
+
+    /// The registry the streams this dispatcher opens are watched in
+    /// (cratestack#1381). A binding registers each socket *session* in it
+    /// too, so a revocation closes the socket as well as the streams on it.
+    /// `None` (the default, and every hand-written dispatcher): nothing is
+    /// revoked, as before.
+    fn revocations(&self) -> Option<&StreamRevocations> {
+        None
+    }
 }

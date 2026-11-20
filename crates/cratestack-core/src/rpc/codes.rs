@@ -37,6 +37,11 @@ pub const fn rpc_code(error: &CratestackError) -> &'static str {
             AuthRefusalKind::Unauthenticated => "unauthenticated",
             AuthRefusalKind::Forbidden => "permission_denied",
         },
+        // cratestack#1381: by reason, the same three codes the two older
+        // ends (`credential_expired`, `stream_lifetime`) always had.
+        CratestackError::StreamEnded(end) if end.reason.is_forbidden() => "permission_denied",
+        CratestackError::StreamEnded(end) if end.reason.is_unavailable() => "unavailable",
+        CratestackError::StreamEnded(_) => "unauthenticated",
     }
 }
 

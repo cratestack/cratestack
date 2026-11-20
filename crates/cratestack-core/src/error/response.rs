@@ -115,6 +115,12 @@ impl CratestackError {
                     extra,
                 }
             }
+            Self::StreamEnded(end) => CratestackErrorResponse {
+                code,
+                details: Some(end.details_value()),
+                message: end.message,
+                ..Default::default()
+            },
             other => CratestackErrorResponse {
                 code,
                 message: other.public_message().into_owned(),
