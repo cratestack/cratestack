@@ -18,6 +18,10 @@ use crate::reader::FrameReader;
 use crate::session::StreamEnding;
 use crate::transport::{RecvHalf, SendHalf};
 
+mod io;
+
+use io::{finish_with, span_end, write};
+
 /// How long a finished subscription waits for the client's FIN.
 const DRAIN_GRACE: std::time::Duration = std::time::Duration::from_secs(2);
 
@@ -178,29 +182,4 @@ async fn drive<D: SubscriptionDispatcher>(
         }
         delivered += 1;
     }
-}
-
-async fn write(send: &mut SendHalf, codec: WireCodec, frame: &ServerFrame) -> Result<(), ()> {
-    let bytes = codec.encode(frame).map_err(|error| {
-        tracing::warn!(target: "cratestack", %error, "WebTransport frame failed to encode");
-    })?;
-    send.write_all(&bytes).await.map_err(|_| ())
-}
-
-async fn finish_with(
-    span: &tracing::Span,
-    send: &mut SendHalf,
-    codec: WireCodec,
-    frame: ServerFrame,
-    reason: &str,
-) {
-    if write(send, codec, &frame).await.is_ok() {
-        send.finish();
-    }
-    span.record("end_reason", reason);
-}
-
-fn span_end(span: &tracing::Span, reason: &str, delivered: u64) {
-    span.record("end_reason", reason);
-    span.record("delivered", delivered);
 }
