@@ -48,6 +48,20 @@ fn a_schema_with_subscriptions_gets_streams_over_sse() {
     // cratestack#1379: the SSE reader is bounded; the behaviour itself is
     // proven by `fixtures/subscriptions_rpc_test.dart` under `just verify-dart`.
     assert!(runtime.contains("final class CratestackEventTooLargeException"));
+    // cratestack#1381: why the server ended the stream, as a typed reader.
+    assert!(runtime.contains("CratestackStreamEndReason? get endReason {"));
+    assert!(runtime.contains("enum CratestackStreamEndReason {"));
+    for reason in [
+        "credential_expired",
+        "stream_lifetime",
+        "session_ended",
+        "principal_suspended",
+        "device_revoked",
+        "revocation_resync",
+    ] {
+        assert!(runtime.contains(&format!("('{reason}')")), "{reason}");
+    }
+    assert!(runtime.contains("unknown('unknown');"));
     assert!(runtime.contains("int maxEventBytes = cratestackDefaultMaxEventBytes,"));
 }
 

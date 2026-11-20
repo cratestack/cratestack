@@ -123,6 +123,56 @@ void main() {
     );
   });
 
+  test('endReason reads details.reason; the retry rule follows it (cratestack#1381)', () async {
+    Future<CratestackSubscriptionException> endedWith(String body) async {
+      final transport = _SseTransport(200, <String>[
+        'event: ready\ndata: {"id":1,"ready":{}}\n\n',
+        'event: error\ndata: {"id":2,"err":$body}\n\n',
+      ]);
+      try {
+        await _client(transport)
+            .procedures
+            .lines(const LinesArgs(args: Room(roomId: 'r1')))
+            .toList();
+      } on CratestackSubscriptionException catch (error) {
+        return error;
+      }
+      fail('the stream should have ended with an error');
+    }
+
+    const cases = <String, List<Object>>{
+      'credential_expired': ['unauthenticated', CratestackStreamEndReason.credentialExpired],
+      'stream_lifetime': ['unavailable', CratestackStreamEndReason.streamLifetime],
+      'session_ended': ['unauthenticated', CratestackStreamEndReason.sessionEnded],
+      'principal_suspended': ['permission_denied', CratestackStreamEndReason.principalSuspended],
+      'device_revoked': ['permission_denied', CratestackStreamEndReason.deviceRevoked],
+      'revocation_resync': ['unavailable', CratestackStreamEndReason.revocationResync],
+    };
+    for (final entry in cases.entries) {
+      final error = await endedWith(
+        '{"code":"${entry.value[0]}","message":"ended","details":{"reason":"${entry.key}"}}',
+      );
+      expect(error.endReason, entry.value[1], reason: entry.key);
+    }
+    expect(CratestackStreamEndReason.sessionEnded.isTerminal, isTrue);
+    expect(CratestackStreamEndReason.principalSuspended.isTerminal, isTrue);
+    expect(CratestackStreamEndReason.deviceRevoked.isTerminal, isTrue);
+    expect(CratestackStreamEndReason.credentialExpired.isTerminal, isFalse);
+    expect(CratestackStreamEndReason.streamLifetime.resubscribes, isTrue);
+    expect(CratestackStreamEndReason.revocationResync.resubscribes, isTrue);
+    expect(CratestackStreamEndReason.credentialExpired.resubscribes, isFalse);
+
+    final unknown = await endedWith(
+      '{"code":"unavailable","message":"ended","details":{"reason":"from_the_future"}}',
+    );
+    expect(unknown.endReason, CratestackStreamEndReason.unknown);
+    expect(unknown.code, 'unavailable');
+    final bare = await endedWith('{"code":"unavailable","message":"ended"}');
+    expect(bare.endReason, isNull);
+    final odd = await endedWith('{"code":"unavailable","message":"ended","details":"x"}');
+    expect(odd.endReason, isNull);
+  });
+
   group('the per-event byte cap', () {
     const limit = 200;
     const ready = 'event: ready\ndata: {"id":1,"ready":{}}\n\n';

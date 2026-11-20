@@ -31,7 +31,7 @@ fn file(fixture: &str, name: &str) -> String {
 /// the function must defer to the public `ProviderContainer.defaultRetry`.
 fn assert_retry_function(client: &str) {
     assert!(
-        client.contains("Duration? cratestackSubscriptionRetry(int retryCount, Object error) {\n  if (error is CratestackEventTooLargeException) return null;\n  if (error is CratestackSubscriptionException &&\n      const <String>{'unsigned_frames_refused', 'streams_unsupported', 'unsigned_refusal'}\n          .contains(error.code)) {\n    return null;\n  }\n  return ProviderContainer.defaultRetry(retryCount, error);\n}"),
+        client.contains("Duration? cratestackSubscriptionRetry(int retryCount, Object error) {\n  if (error is CratestackEventTooLargeException) return null;\n  if (error is CratestackSubscriptionException &&\n      const <String>{'unsigned_frames_refused', 'streams_unsupported', 'unsigned_refusal'}\n          .contains(error.code)) {\n    return null;\n  }\n  final reason = error is CratestackSubscriptionException ? error.endReason : null;\n  if (reason != null && reason.isTerminal) return null;\n  final delay = ProviderContainer.defaultRetry(retryCount, error);"),
         "{client}"
     );
     assert!(!client.contains("ProviderException"), "{client}");
