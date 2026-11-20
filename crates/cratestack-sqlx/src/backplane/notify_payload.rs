@@ -36,8 +36,10 @@ pub(crate) const CBOR_PREFIX: &str = "cbor:";
 /// apart, so a counter is enough.
 static NONCE: AtomicU64 = AtomicU64::new(0);
 
-/// Set by `PgNotifyBackplane::with_json_envelope`: what the writers that hold
-/// no backplane (a model event's write path, `publish_in_tx`) use.
+/// Set by `PgNotifyBackplane::use_json_envelope` (and its builder wrapper):
+/// the one switch every writer in the process reads, `PgNotifyBackplane`
+/// instances and the writers that hold no backplane (a model event's write
+/// path, `publish_in_tx`) alike. Never cleared in-process.
 static JSON_BY_DEFAULT: AtomicBool = AtomicBool::new(false);
 
 /// Which envelope a notification is written in.
@@ -48,7 +50,8 @@ pub(crate) enum Envelope {
 }
 
 impl Envelope {
-    /// The process default: CBOR unless a backplane asked for JSON.
+    /// What every writer in the process writes: CBOR, unless
+    /// `PgNotifyBackplane::use_json_envelope` switched the process to JSON.
     pub(crate) fn current() -> Self {
         if JSON_BY_DEFAULT.load(Ordering::Relaxed) {
             Self::Json
@@ -138,7 +141,7 @@ pub(crate) fn encode_bytes(
 /// Reads a notification in either envelope. `Err` says why it is unreadable.
 pub(crate) fn decode(raw: &str) -> Result<Notification<'_>, String> {
     // 0.20.5 parsed JSON that began with whitespace: so does this.
-    let raw = raw.trim_start();
+    let raw = raw.trim_start_matches(|c: char| c.is_ascii_whitespace());
     match raw.strip_prefix(CBOR_PREFIX) {
         Some(encoded) => cbor::read(encoded),
         None if raw.starts_with('{') => json::read(raw),

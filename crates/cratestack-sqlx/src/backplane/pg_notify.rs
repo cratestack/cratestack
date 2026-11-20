@@ -9,8 +9,8 @@
 //! (`enqueue_event_outbox`), so Postgres delivers them only if it commits, to
 //! every listener, in commit order. A notification is a CBOR envelope
 //! (`notify_payload`), or the 0.20.5 JSON one for a rolling deploy
-//! ([`PgNotifyBackplane::with_json_envelope`]); text and byte payloads both
-//! travel in it. When the listener's connection drops,
+//! ([`PgNotifyBackplane::use_json_envelope`], a switch for the whole process);
+//! text and byte payloads both travel in it. When the listener's connection drops,
 //! notifications sent meanwhile are lost: every local subscription gets
 //! `Resync` and ends (§4.5).
 

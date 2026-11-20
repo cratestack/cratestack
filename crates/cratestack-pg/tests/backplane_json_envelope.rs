@@ -1,4 +1,5 @@
-//! The rolling-deploy switch `PgNotifyBackplane::use_json_envelope()`: a
+//! The rolling-deploy switch `PgNotifyBackplane::use_json_envelope()` (turned
+//! on here through its `with_json_envelope()` wrapper): a
 //! 0.20.6 process writing what a 0.20.5 replica reads. Its own test binary
 //! because the switch is process-wide and cannot be undone in-process, so it
 //! must not leak into the CBOR tests; and one test, because what it checks
@@ -97,7 +98,9 @@ async fn once_switched_every_writer_in_the_process_writes_what_an_older_reader_p
     before.publish("early", "{}").await.unwrap();
     assert!(raw(&mut listener).await.starts_with("cbor:"));
 
-    PgNotifyBackplane::use_json_envelope();
+    // Through the builder users are told to call: the switch is the process's,
+    // not this backplane's, so `before` and the one built next follow it.
+    let switched = PgNotifyBackplane::new(pool.clone()).with_json_envelope();
     let after = PgNotifyBackplane::new(pool.clone());
 
     // A backplane built before the call, one built after it, and the writers
@@ -143,6 +146,5 @@ async fn once_switched_every_writer_in_the_process_writes_what_an_older_reader_p
             .expect("open");
         assert_eq!(got, expected);
     }
-    // The wrapper is the same switch.
-    let _ = PgNotifyBackplane::new(pool.clone()).with_json_envelope();
+    drop(switched);
 }

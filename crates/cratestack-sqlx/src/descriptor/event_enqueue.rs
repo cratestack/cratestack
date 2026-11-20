@@ -152,9 +152,10 @@ where
         )
         .ok_or_else(|| {
             tracing::warn!(target: "cratestack", model, "model event notification over the NOTIFY limit even by reference");
-            CratestackError::BadRequest(format!(
+            // The model name is the schema's, not the caller's: not a bad request.
+            CratestackError::Internal(format!(
                 "a model event's notification must stay under Postgres' {}-byte NOTIFY limit \
-                 even by reference to its outbox row",
+                 even by reference to its outbox row; the model name is too long",
                 notify_payload::NOTIFY_LIMIT
             ))
         })?

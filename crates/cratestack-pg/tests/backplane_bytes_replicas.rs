@@ -223,7 +223,7 @@ async fn a_model_event_whose_notification_cannot_fit_fails_the_write() {
     )
     .await
     .unwrap_err();
-    assert!(matches!(error, CratestackError::BadRequest(_)), "{error:?}");
+    assert!(matches!(error, CratestackError::Internal(_)), "{error:?}");
     let rows: (i64,) =
         cratestack::sqlx::query_as("SELECT count(*) FROM cratestack_event_outbox WHERE model = $1")
             .bind(&model)
