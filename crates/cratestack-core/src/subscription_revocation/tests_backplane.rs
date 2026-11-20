@@ -85,6 +85,73 @@ async fn a_malformed_payload_is_skipped() {
         tokio::time::sleep(Duration::from_millis(5)).await;
     }
     assert!(watch.try_ended().is_none());
+    assert!(
+        !follower.is_finished(),
+        "the follower must outlive a bad payload"
+    );
+    follower.abort();
+}
+
+/// Publishes `payload` until the follower has applied a revoke of `key()`.
+async fn publish_raw_until_ended(
+    backplane: &InProcessBackplane,
+    payload: &str,
+    watch: &mut RevocationWatch,
+) -> Option<crate::StreamEndNotice> {
+    for _ in 0..100 {
+        backplane
+            .publish(REVOCATION_CHANNEL, payload)
+            .await
+            .unwrap();
+        if let Ok(end) = tokio::time::timeout(Duration::from_millis(10), watch.ended()).await {
+            return Some(end);
+        }
+    }
+    None
+}
+
+#[tokio::test]
+async fn an_overflowing_until_still_revokes_and_keeps_the_follower_alive() {
+    let backplane = Arc::new(InProcessBackplane::default());
+    let registry = StreamRevocations::default();
+    let mut watch = registry.watch(vec![key()]).unwrap();
+    let follower = tokio::spawn(registry.follow(backplane.clone()));
+    let hostile =
+        r#"{"kind":"session","key":"s","reason":"session_ended","until":18446744073709551615}"#;
+    let end = publish_raw_until_ended(&backplane, hostile, &mut watch).await;
+    assert_eq!(
+        end.expect("the key must still be revoked").reason,
+        StreamEndReason::SessionEnded
+    );
+    assert!(
+        !follower.is_finished(),
+        "the follower must survive the payload"
+    );
+    // The key is tombstoned (clamped), and a later revoke of another key lands.
+    assert!(registry.watch(vec![key()]).is_err());
+    let other = RevocationKey::Session("t".to_owned());
+    let mut other_watch = registry.watch(vec![other]).unwrap();
+    let later = r#"{"kind":"session","key":"t","reason":"device_revoked","until":null}"#;
+    let end = publish_raw_until_ended(&backplane, later, &mut other_watch).await;
+    assert_eq!(
+        end.expect("a later revoke must land").reason,
+        StreamEndReason::DeviceRevoked
+    );
+    follower.abort();
+}
+
+#[tokio::test]
+async fn an_unknown_reason_still_revokes_as_session_ended() {
+    let backplane = Arc::new(InProcessBackplane::default());
+    let registry = StreamRevocations::default();
+    let mut watch = registry.watch(vec![key()]).unwrap();
+    let follower = tokio::spawn(registry.follow(backplane.clone()));
+    let newer = r#"{"kind":"session","key":"s","reason":"quarantined","until":null}"#;
+    let end = publish_raw_until_ended(&backplane, newer, &mut watch).await;
+    assert_eq!(
+        end.expect("an unknown reason must still revoke").reason,
+        StreamEndReason::SessionEnded
+    );
     follower.abort();
 }
 

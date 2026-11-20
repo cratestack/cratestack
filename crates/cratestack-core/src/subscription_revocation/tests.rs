@@ -120,6 +120,38 @@ fn a_revoke_flood_cannot_grow_the_tombstones_past_the_cap() {
 }
 
 #[test]
+fn extending_a_tombstone_moves_it_in_the_eviction_order() {
+    let far = SystemTime::now() + Duration::from_secs(3_600);
+    let later = |secs| Some(far + Duration::from_secs(secs));
+    let revocations = StreamRevocations::default().with_max_tombstones(2);
+    revocations.revoke(session("a"), StreamEndReason::SessionEnded, later(1));
+    revocations.revoke(session("b"), StreamEndReason::SessionEnded, later(2));
+    // `a` now lapses after `b`, so `c` evicts `b`, not `a`.
+    revocations.revoke(session("a"), StreamEndReason::SessionEnded, later(3));
+    revocations.revoke(session("c"), StreamEndReason::SessionEnded, later(4));
+    assert_eq!(revocations.tombstones(), 2);
+    assert!(revocations.watch(vec![session("a")]).is_err());
+    assert!(revocations.watch(vec![session("c")]).is_err());
+    assert!(revocations.watch(vec![session("b")]).is_ok());
+}
+
+#[test]
+fn a_lapsed_tombstone_is_not_refused_before_it_is_pruned() {
+    // Its own clock: `NOW_SECS` belongs to the test above.
+    static PRUNE_NOW: AtomicU64 = AtomicU64::new(5_000);
+    fn now() -> SystemTime {
+        UNIX_EPOCH + Duration::from_secs(PRUNE_NOW.load(Ordering::SeqCst))
+    }
+    let revocations = StreamRevocations::default().with_clock(now);
+    revocations.revoke(session("a"), StreamEndReason::DeviceRevoked, at(5_100));
+    PRUNE_NOW.store(5_200, Ordering::SeqCst);
+    // Opening reads the clock but prunes nothing: the entry is still held.
+    assert!(revocations.watch(vec![session("a")]).is_ok());
+    assert_eq!(revocations.state.lock().unwrap().tombstones.len(), 1);
+    assert_eq!(revocations.tombstones(), 0);
+}
+
+#[test]
 fn a_poisoned_lock_is_recovered() {
     let revocations = StreamRevocations::default();
     let clone = revocations.clone();

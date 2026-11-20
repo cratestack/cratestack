@@ -73,6 +73,8 @@ sha2.workspace = true
 # not build for `wasm32-unknown-unknown`, and this crate reaches wasm.
 tokio = { version = "1", default-features = false, features = ["sync"] }
 thiserror.workspace = true
+# Warnings from the revocation follower; wasm-safe, no subscriber installed here.
+tracing.workspace = true
 url.workspace = true
 uuid.workspace = true
 rust_decimal = { workspace = true, optional = true }

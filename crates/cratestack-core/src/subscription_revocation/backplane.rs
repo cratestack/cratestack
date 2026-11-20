@@ -6,11 +6,11 @@
 //! have been lost fails closed by default ([`ResyncPolicy::EndAll`]).
 
 use std::sync::Arc;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use futures_util::StreamExt;
-use serde::{Deserialize, Serialize};
 
+use super::message::Message;
 use super::{RevocationKey, StreamRevocations};
 use crate::backplane::{BackplaneMessage, SubscriptionBackplane};
 use crate::error::{CratestackError, StreamEndReason};
@@ -34,15 +34,6 @@ pub enum ResyncPolicy {
     Ignore,
 }
 
-#[derive(Serialize, Deserialize)]
-struct Message {
-    kind: String,
-    key: String,
-    reason: StreamEndReason,
-    /// Seconds since the epoch.
-    until: Option<u64>,
-}
-
 impl StreamRevocations {
     /// Revokes `key` here and publishes the revocation to every other
     /// replica. Call it from the logout, suspend or device-revoke handler;
@@ -50,6 +41,11 @@ impl StreamRevocations {
     /// transaction that records the change, so replicas hear of it at
     /// commit. Returns how many streams this replica ended. A replica that
     /// is not [following](Self::follow) never hears of it.
+    ///
+    /// The local revoke happens first and is not undone: when the backplane
+    /// refuses the publish this returns `Err`, the streams on this replica
+    /// are already ended (and the tombstone kept), the count is lost, and
+    /// only the other replicas missed the revocation. Retry the publish.
     pub async fn publish(
         &self,
         backplane: &dyn SubscriptionBackplane,
@@ -62,13 +58,17 @@ impl StreamRevocations {
         let payload = serde_json::to_string(&Message {
             kind: kind.to_owned(),
             key: value,
-            reason,
+            reason: reason.as_str().to_owned(),
             until: until
                 .and_then(|at| at.duration_since(UNIX_EPOCH).ok())
-                .map(|elapsed| elapsed.as_secs()),
+                .map(|elapsed| elapsed.as_secs().into()),
         })
         .map_err(|error| CratestackError::Internal(error.to_string()))?;
-        backplane.publish(REVOCATION_CHANNEL, &payload).await?;
+        if let Err(error) = backplane.publish(REVOCATION_CHANNEL, &payload).await {
+            // The local revoke above stands; only other replicas missed it.
+            tracing::warn!(%error, ?reason, "revocation applied locally but not published");
+            return Err(error);
+        }
         Ok(ended)
     }
 
@@ -91,7 +91,13 @@ impl StreamRevocations {
     /// Messages published in that gap are the ones `policy` guards against.
     /// It returns only when subscribing fails, after applying `policy`: a
     /// replica that cannot hear revocations must not be trusted, so spawn it
-    /// again (with a pause) when it does. A malformed payload is skipped.
+    /// again (with a pause) when it does. However it ends (returning,
+    /// panicking, or being dropped or aborted), `policy` is applied last.
+    ///
+    /// No payload can end the follower. A malformed one is logged and
+    /// skipped; one naming a reason this version does not know still
+    /// revokes, as [`SessionEnded`](StreamEndReason::SessionEnded); an
+    /// `until` too far ahead to represent is clamped to 24 hours from now.
     pub fn follow_with(
         &self,
         backplane: Arc<dyn SubscriptionBackplane>,
@@ -99,6 +105,12 @@ impl StreamRevocations {
     ) -> impl Future<Output = Result<(), CratestackError>> + Send + 'static {
         let this = self.clone();
         async move {
+            // Fail closed however this future ends: a follower that stops
+            // hearing revocations must not leave streams trusted.
+            let _fail_closed = ResyncOnDrop {
+                registry: this.clone(),
+                policy,
+            };
             loop {
                 let mut receiver = match backplane.subscribe(REVOCATION_CHANNEL).await {
                     Ok(receiver) => receiver,
@@ -126,18 +138,16 @@ impl StreamRevocations {
             self.end_all(StreamEndReason::RevocationResync);
         }
     }
+}
 
-    fn apply(&self, payload: &str) {
-        let Ok(message) = serde_json::from_str::<Message>(payload) else {
-            return;
-        };
-        let Some(key) = RevocationKey::from_parts(&message.kind, &message.key) else {
-            return;
-        };
-        let until = message
-            .until
-            .map(|secs| UNIX_EPOCH + Duration::from_secs(secs));
-        self.revoke(key, message.reason, until);
+struct ResyncOnDrop {
+    registry: StreamRevocations,
+    policy: ResyncPolicy,
+}
+
+impl Drop for ResyncOnDrop {
+    fn drop(&mut self) {
+        self.registry.resync(self.policy);
     }
 }
 

@@ -43,11 +43,14 @@ use crate::error::{StreamEndNotice, StreamEndReason};
 
 mod backplane;
 mod keys;
+mod message;
 mod state;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]
 mod tests_backplane;
+#[cfg(test)]
+mod tests_follower;
 #[cfg(test)]
 mod tests_keys;
 mod watch;
@@ -171,7 +174,7 @@ impl StreamRevocations {
     /// How many tombstones are held (lapsed ones are pruned lazily).
     pub fn tombstones(&self) -> usize {
         let mut state = self.lock();
-        state.tombstoned(&[]);
+        state.prune();
         state.tombstones.len()
     }
 }

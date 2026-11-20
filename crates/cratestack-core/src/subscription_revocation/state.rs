@@ -1,7 +1,7 @@
 //! The registry's state, behind one mutex: every operation is a short,
 //! non-blocking map update, so it never holds the lock across an `await`.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::Arc;
 use std::time::SystemTime;
 
@@ -15,6 +15,8 @@ pub(super) type EndSender = Arc<watch::Sender<Option<StreamEndNotice>>>;
 pub(super) struct Tombstone {
     pub(super) reason: StreamEndReason,
     pub(super) until: SystemTime,
+    /// Disambiguates tombstones lapsing at the same instant in `by_until`.
+    seq: u64,
 }
 
 pub(super) struct State {
@@ -25,6 +27,9 @@ pub(super) struct State {
     pub(super) watches: HashMap<u64, (EndSender, Vec<RevocationKey>)>,
     pub(super) by_key: HashMap<RevocationKey, HashSet<u64>>,
     pub(super) tombstones: HashMap<RevocationKey, Tombstone>,
+    /// The same tombstones ordered by when they lapse, so pruning and
+    /// eviction pop the front instead of scanning the map.
+    by_until: BTreeMap<(SystemTime, u64), RevocationKey>,
 }
 
 fn end_watch(sender: &EndSender, end: &StreamEndNotice) -> bool {
@@ -48,19 +53,33 @@ impl State {
             watches: HashMap::new(),
             by_key: HashMap::new(),
             tombstones: HashMap::new(),
+            by_until: BTreeMap::new(),
         }
     }
 
-    fn prune(&mut self) {
+    /// Drops the tombstones that have lapsed. Costs O(log n) per lapsed
+    /// one; called when a tombstone is written, never on the open path.
+    pub(super) fn prune(&mut self) {
         let now = (self.now)();
-        self.tombstones.retain(|_, tombstone| tombstone.until > now);
+        while let Some(entry) = self.by_until.first_entry() {
+            if entry.key().0 > now {
+                break;
+            }
+            self.tombstones.remove(&entry.remove());
+        }
     }
 
-    /// The reason `key` is tombstoned for, if it still is.
-    pub(super) fn tombstoned(&mut self, keys: &[RevocationKey]) -> Option<StreamEndReason> {
-        self.prune();
-        keys.iter()
-            .find_map(|key| self.tombstones.get(key).map(|tombstone| tombstone.reason))
+    /// The reason a key is tombstoned for, if any still is. A lapsed
+    /// tombstone that has not been pruned yet is not one: lapse is checked
+    /// here, so opening a stream never scans or mutates the maps.
+    pub(super) fn tombstoned(&self, keys: &[RevocationKey]) -> Option<StreamEndReason> {
+        let now = (self.now)();
+        keys.iter().find_map(|key| {
+            self.tombstones
+                .get(key)
+                .filter(|tombstone| tombstone.until > now)
+                .map(|tombstone| tombstone.reason)
+        })
     }
 
     pub(super) fn register(&mut self, keys: Vec<RevocationKey>) -> (u64, EndSender) {
@@ -118,23 +137,31 @@ impl State {
         if until <= (self.now)() {
             return;
         }
-        let until = match self.tombstones.get(&key) {
-            Some(existing) => existing.until.max(until),
+        let existing = self.tombstones.remove(&key);
+        let until = match &existing {
+            Some(existing) => {
+                self.by_until.remove(&(existing.until, existing.seq));
+                existing.until.max(until)
+            }
             None => until,
         };
-        if !self.tombstones.contains_key(&key) && self.tombstones.len() >= self.max_tombstones {
-            let soonest = self
-                .tombstones
-                .iter()
-                .min_by_key(|(_, tombstone)| tombstone.until)
-                .map(|(key, _)| key.clone());
-            match soonest {
-                Some(soonest) => {
-                    self.tombstones.remove(&soonest);
+        if existing.is_none() && self.tombstones.len() >= self.max_tombstones {
+            match self.by_until.pop_first() {
+                Some((_, evicted)) => {
+                    tracing::warn!(
+                        max = self.max_tombstones,
+                        "revocation tombstone cap reached, evicting the soonest to lapse; \
+                         that principal's key is no longer refused at open"
+                    );
+                    self.tombstones.remove(&evicted);
                 }
                 None => return,
             }
         }
-        self.tombstones.insert(key, Tombstone { reason, until });
+        let seq = self.next_id;
+        self.next_id += 1;
+        self.by_until.insert((until, seq), key.clone());
+        self.tombstones
+            .insert(key, Tombstone { reason, until, seq });
     }
 }
