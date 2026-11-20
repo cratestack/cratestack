@@ -4,7 +4,7 @@
 //! `CRATESTACK_REQUIRE_REDIS` is set, which makes a skip a failure (see
 //! `redis_support`).
 //!
-//! Both tests touch server-wide state (the connection counter, and every
+//! Both tests touch server-wide state (the set of client connections, and every
 //! normal client), so they take `SERIAL` and can share one
 //! `CRATESTACK_REDIS_TEST_URL` under the default parallel runner. Failure
 //! modes (auth change, timeouts, an unreachable server) are in
@@ -15,7 +15,7 @@ mod redis_support;
 
 use cratestack_auth::{AuthError, nonce_store_from_redis_url};
 
-use redis_support::{SERIAL, claim, connections_received, run_tag};
+use redis_support::{SERIAL, claim, client_ids_last_running, run_tag};
 
 #[tokio::test]
 async fn fifty_claims_open_a_constant_number_of_connections() {
@@ -28,16 +28,26 @@ async fn fifty_claims_open_a_constant_number_of_connections() {
     let store = nonce_store_from_redis_url(Some(&redis.url)).expect("url");
     let run = run_tag();
 
-    let before = connections_received(&mut admin).await;
+    // Count the connections that ran the store's `SET`, by id, not the
+    // server-wide `total_connections_received`: that also counts every
+    // other client's connects, such as the previous test's abandoned
+    // `ConnectionManager` reconnecting in the background after it killed
+    // them all. Sampling after each claim also sees a connection that is
+    // opened per claim and dropped straight after.
+    let before = client_ids_last_running(&mut admin, "set").await;
+    let mut store_connections = std::collections::BTreeSet::new();
     for i in 0..50 {
         claim(store.as_ref(), &format!("{run}-{i}"))
             .await
             .expect("fresh nonce is accepted");
+        let now = client_ids_last_running(&mut admin, "set").await;
+        store_connections.extend(now.difference(&before).copied());
     }
-    let opened = connections_received(&mut admin).await - before;
+    let opened = store_connections.len();
     assert!(
-        opened <= 2,
-        "50 claims opened {opened} connections; expected a constant number"
+        (1..=2).contains(&opened),
+        "50 claims ran SET on {opened} connections ({store_connections:?}); \
+         expected one shared connection, or at most a constant number"
     );
 
     // Same store, same semantics: a replayed nonce is still refused.

@@ -114,13 +114,10 @@ pub async fn connections_received(conn: &mut redis::aio::MultiplexedConnection) 
         .expect("numeric connection counter")
 }
 
-/// Ids of every ordinary client connected to the server (`CLIENT LIST TYPE
-/// normal`), the admin connection included. A connection id is never
-/// reused, so diffing two snapshots tells which connections appeared or
-/// went away, unlike the global `total_connections_received` counter,
-/// which also counts the abandoned `ConnectionManager`'s own background
-/// reconnects and so varies with timing.
-pub async fn client_ids(conn: &mut redis::aio::MultiplexedConnection) -> BTreeSet<u64> {
+/// `CLIENT LIST TYPE normal` as `(id, last command)` pairs, the admin
+/// connection included. A connection id is never reused, so diffing two
+/// snapshots tells which connections appeared or went away.
+async fn client_rows(conn: &mut redis::aio::MultiplexedConnection) -> Vec<(u64, String)> {
     let list: String = redis::cmd("CLIENT")
         .arg("LIST")
         .arg("TYPE")
@@ -128,9 +125,44 @@ pub async fn client_ids(conn: &mut redis::aio::MultiplexedConnection) -> BTreeSe
         .query_async(conn)
         .await
         .expect("CLIENT LIST");
+    let field = |line: &str, key: &str| {
+        line.split_whitespace()
+            .find_map(|f| f.strip_prefix(key))
+            .map(str::to_owned)
+    };
     list.lines()
-        .filter_map(|line| line.split_whitespace().find_map(|f| f.strip_prefix("id=")))
-        .map(|id| id.parse().expect("numeric client id"))
+        .filter_map(|line| {
+            let id = field(line, "id=")?.parse().expect("numeric client id");
+            Some((id, field(line, "cmd=").unwrap_or_default()))
+        })
+        .collect()
+}
+
+/// Ids of every ordinary client connected to the server. Unlike the global
+/// `total_connections_received` counter, which also counts the abandoned
+/// `ConnectionManager`'s own background reconnects (3 seen in CI) and any
+/// other client's, this names the connections, so a test can judge only
+/// the ones it cares about.
+pub async fn client_ids(conn: &mut redis::aio::MultiplexedConnection) -> BTreeSet<u64> {
+    client_rows(conn)
+        .await
+        .into_iter()
+        .map(|(id, _)| id)
+        .collect()
+}
+
+/// Ids of the connections whose last command was `cmd` (lowercase, as
+/// `CLIENT LIST` prints it). The nonce store's connection is the one that
+/// ran `SET`; another client's reconnect that has run nothing yet is not.
+pub async fn client_ids_last_running(
+    conn: &mut redis::aio::MultiplexedConnection,
+    cmd: &str,
+) -> BTreeSet<u64> {
+    client_rows(conn)
+        .await
+        .into_iter()
+        .filter(|(_, last)| last == cmd)
+        .map(|(id, _)| id)
         .collect()
 }
 
