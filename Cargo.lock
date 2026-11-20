@@ -1896,6 +1896,7 @@ version = "0.20.4"
 dependencies = [
  "async-trait",
  "axum",
+ "cratestack-axum",
  "cratestack-codec-cbor",
  "cratestack-codec-json",
  "cratestack-core",
