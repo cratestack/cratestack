@@ -152,19 +152,23 @@ pub(super) async fn established<A: AuthProvider, D: SubscriptionDispatcher>(
                         // Re-registered under the refreshed keys; streams already
                         // open keep the context they opened with.
                         if let Some(registry) = revocations {
-                            // A revoke that landed while this refresh was
-                            // authenticating ended the current watch;
-                            // replacing it would forget that.
-                            if let Some(end) = revocation.as_ref().and_then(RevocationWatch::try_ended) {
-                                ending.end_streams(&end).await;
-                                return refuse(&mut control_send, codec, &end.clone().into_error(), end.reason.as_str()).await;
-                            }
-                            match registry.watch_context(&refreshed) {
-                                Ok(watch) => revocation = Some(watch),
+                            // Register the new watch BEFORE looking at the old
+                            // one: a revoke that lands between the two ends
+                            // both and the check sees it, where checking
+                            // first and registering after would let it end
+                            // the old watch (then dropped) and miss the new.
+                            let watch = match registry.watch_context(&refreshed) {
+                                Ok(watch) => watch,
                                 Err(end) => {
                                     return refuse(&mut control_send, codec, &end.into_error(), "principal revoked").await;
                                 }
+                            };
+                            if let Some(end) = revocation.as_ref().and_then(RevocationWatch::try_ended) {
+                                drop(watch);
+                                ending.end_streams(&end).await;
+                                return refuse(&mut control_send, codec, &end.clone().into_error(), end.reason.as_str()).await;
                             }
+                            revocation = Some(watch);
                         }
                         ctx_tx.send_replace(refreshed);
                     }

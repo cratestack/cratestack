@@ -117,20 +117,24 @@ pub(super) async fn established<A: AuthProvider, D: SubscriptionDispatcher>(
                         // was revoked meanwhile refuses the refresh. Streams
                         // already open keep the context they opened with.
                         if let Some(revocations) = revocations {
-                            // A revoke that landed while this refresh was
-                            // authenticating ended the current watch;
-                            // replacing it would forget that.
-                            if let Some(end) = revocation.as_ref().and_then(RevocationWatch::try_ended) {
-                                refuse(&mut sink, codec, &end.clone().into_error(), end.reason.as_str()).await;
-                                break;
-                            }
-                            match revocations.watch_context(&refreshed) {
-                                Ok(watch) => revocation = Some(watch),
+                            // Register the new watch BEFORE looking at the old
+                            // one: a revoke that lands between the two ends
+                            // both and the check sees it, where checking
+                            // first and registering after would let it end
+                            // the old watch (then dropped) and miss the new.
+                            let watch = match revocations.watch_context(&refreshed) {
+                                Ok(watch) => watch,
                                 Err(end) => {
                                     refuse(&mut sink, codec, &end.into_error(), "principal revoked").await;
                                     break;
                                 }
+                            };
+                            if let Some(end) = revocation.as_ref().and_then(RevocationWatch::try_ended) {
+                                drop(watch);
+                                refuse(&mut sink, codec, &end.clone().into_error(), end.reason.as_str()).await;
+                                break;
                             }
+                            revocation = Some(watch);
                         }
                         ctx = refreshed;
                     }
