@@ -89,6 +89,10 @@ const TEMPLATE_SOURCES: &[(&str, &str)] = &[
         include_str!("../../templates/riverpod/rpc_client.dart.j2"),
     ),
     (
+        "riverpod/subscription_retry.dart.j2",
+        include_str!("../../templates/riverpod/subscription_retry.dart.j2"),
+    ),
+    (
         REST_PROCEDURES,
         include_str!("../../templates/riverpod/rest_procedures.dart.j2"),
     ),

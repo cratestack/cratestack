@@ -30,49 +30,85 @@
 
 use quote::quote;
 
-pub(super) fn build_runtime_block(topics: bool) -> proc_macro2::TokenStream {
-    let (handle, builder, new_builder, build, with_backplane) = if topics {
+pub(super) fn build_runtime_block(topics: bool, streams: bool) -> proc_macro2::TokenStream {
+    // The fields a schema's `Cratestack` carries: a backplane for topics, a
+    // revocation registry for subscription procedures (cratestack#1381).
+    // None of either: the zero-field `Copy` marker, as ever.
+    let carries_state = topics || streams;
+    let mut fields = Vec::new();
+    let mut inits = Vec::new();
+    let mut methods = Vec::new();
+    if topics {
+        fields.push(quote! {
+            backplane: ::std::sync::Arc<dyn ::cratestack::SubscriptionBackplane>,
+        });
+        inits.push(quote! { backplane: SHARED.clone(), });
+        methods.push(quote! {
+            /// Replace the subscription backplane, which carries topic
+            /// messages to subscribers. The default is one
+            /// `InProcessBackplane` shared by every `build()` of this
+            /// schema in the process: it reaches this process only, so
+            /// run one replica or pass a backplane that reaches the others.
+            pub fn with_backplane(
+                mut self,
+                backplane: ::std::sync::Arc<dyn ::cratestack::SubscriptionBackplane>,
+            ) -> Self {
+                self.backplane = backplane;
+                self
+            }
+        });
+    }
+    if streams {
+        fields.push(quote! { stream_revocations: ::cratestack::StreamRevocations, });
+        inits.push(quote! { stream_revocations: Default::default(), });
+        methods.push(quote! {
+            /// Replace the registry live subscriptions are watched in, to
+            /// bound its tombstones or name the keys streams are held
+            /// under. The default never revokes anything.
+            pub fn with_stream_revocations(
+                mut self,
+                revocations: ::cratestack::StreamRevocations,
+            ) -> Self {
+                self.stream_revocations = revocations;
+                self
+            }
+        });
+    }
+    let shared = topics.then(|| {
+        quote! {
+            // One per schema and process, so a `Cratestack` built anywhere
+            // (a router, a worker) reaches the same subscribers.
+            static SHARED: ::std::sync::LazyLock<
+                ::std::sync::Arc<::cratestack::InProcessBackplane>,
+            > = ::std::sync::LazyLock::new(Default::default);
+        }
+    });
+    let (handle, builder, new_builder, build, with_backplane, accessor) = if carries_state {
+        let build_fields = builder_to_handle(topics, streams);
         (
             quote! {
                 #[derive(Clone)]
-                pub struct Cratestack {
-                    backplane: ::std::sync::Arc<dyn ::cratestack::SubscriptionBackplane>,
-                }
+                pub struct Cratestack { #(#fields)* }
             },
+            quote! { pub struct CratestackBuilder { #(#fields)* } },
             quote! {
-                pub struct CratestackBuilder {
-                    backplane: ::std::sync::Arc<dyn ::cratestack::SubscriptionBackplane>,
-                }
+                #shared
+                CratestackBuilder { #(#inits)* }
             },
-            quote! {
-                // One per schema and process, so a `Cratestack` built anywhere
-                // (a router, a worker) reaches the same subscribers.
-                static SHARED: ::std::sync::LazyLock<
-                    ::std::sync::Arc<::cratestack::InProcessBackplane>,
-                > = ::std::sync::LazyLock::new(Default::default);
-                CratestackBuilder {
-                    backplane: SHARED.clone(),
+            quote! { Cratestack { #build_fields } },
+            quote! { #(#methods)* },
+            streams.then(|| {
+                quote! {
+                    impl Cratestack {
+                        /// The registry live subscriptions are watched in:
+                        /// call `revoke` on it to end a principal's streams
+                        /// (cratestack#1381).
+                        pub fn stream_revocations(&self) -> &::cratestack::StreamRevocations {
+                            &self.stream_revocations
+                        }
+                    }
                 }
-            },
-            quote! {
-                Cratestack {
-                    backplane: self.backplane,
-                }
-            },
-            quote! {
-                /// Replace the subscription backplane, which carries topic
-                /// messages to subscribers. The default is one
-                /// `InProcessBackplane` shared by every `build()` of this
-                /// schema in the process: it reaches this process only, so
-                /// run one replica or pass a backplane that reaches the others.
-                pub fn with_backplane(
-                    mut self,
-                    backplane: ::std::sync::Arc<dyn ::cratestack::SubscriptionBackplane>,
-                ) -> Self {
-                    self.backplane = backplane;
-                    self
-                }
-            },
+            }),
         )
     } else {
         (
@@ -84,6 +120,7 @@ pub(super) fn build_runtime_block(topics: bool) -> proc_macro2::TokenStream {
             quote! { CratestackBuilder },
             quote! { Cratestack },
             proc_macro2::TokenStream::new(),
+            None,
         )
     };
     quote! {
@@ -97,6 +134,8 @@ pub(super) fn build_runtime_block(topics: bool) -> proc_macro2::TokenStream {
         }
 
         #builder
+
+        #accessor
 
         impl Cratestack {
             pub fn builder() -> CratestackBuilder {
@@ -141,4 +180,10 @@ pub(super) fn build_runtime_block(topics: bool) -> proc_macro2::TokenStream {
             }
         }
     }
+}
+
+fn builder_to_handle(topics: bool, streams: bool) -> proc_macro2::TokenStream {
+    let backplane = topics.then(|| quote! { backplane: self.backplane, });
+    let revocations = streams.then(|| quote! { stream_revocations: self.stream_revocations, });
+    quote! { #backplane #revocations }
 }

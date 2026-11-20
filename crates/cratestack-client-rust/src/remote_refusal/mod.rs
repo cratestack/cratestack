@@ -12,6 +12,7 @@ use crate::rpc::error::{RpcClientError, RpcRemoteError};
 use crate::runtime::wire::RuntimeHeader;
 
 mod challenges;
+mod stream_end;
 
 pub use challenges::Challenges;
 

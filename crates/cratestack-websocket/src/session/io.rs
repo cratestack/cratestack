@@ -47,3 +47,21 @@ pub(super) async fn sleep_until(deadline: Option<Instant>) {
         None => std::future::pending().await,
     }
 }
+
+/// How long a closed session waits for the peer's half of the close.
+const CLOSE_GRACE: std::time::Duration = std::time::Duration::from_secs(1);
+
+/// Reads the peer to its `Close` (or the end of the socket) after this side
+/// has sent its own. Dropping a socket with the peer's frames unread (a
+/// `Pong` to a ping, say) makes the kernel answer with a reset, and a reset
+/// can destroy the frames this side just sent, the typed end among them.
+pub(super) async fn drain_close(stream: &mut futures_util::stream::SplitStream<WebSocket>) {
+    let _ = tokio::time::timeout(CLOSE_GRACE, async {
+        while let Some(Ok(message)) = stream.next().await {
+            if matches!(message, Message::Close(_)) {
+                break;
+            }
+        }
+    })
+    .await;
+}

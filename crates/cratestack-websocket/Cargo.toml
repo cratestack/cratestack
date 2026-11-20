@@ -46,6 +46,7 @@ tracing.workspace = true
 
 [dev-dependencies]
 async-trait.workspace = true
+cratestack-axum.workspace = true
 axum.workspace = true
 tokio = { workspace = true, features = ["net", "time", "macros", "rt-multi-thread"] }
 tokio-tungstenite = "0.30"

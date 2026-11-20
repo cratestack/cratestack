@@ -18,7 +18,7 @@ use cratestack_client_typescript::{TypeScriptGeneratorConfig, generate_package};
 /// Keep in lockstep with `tests/js/subscriptions/subscriptions.test.ts` — a
 /// successful vitest exit alone cannot tell a genuinely green run from an
 /// accidentally-empty one (the same guard `decimal_round_trip.rs` uses).
-const EXPECTED_PASSING: &str = "23 passed";
+const EXPECTED_PASSING: &str = "35 passed";
 
 #[test]
 fn subscriptions_run_over_sse_and_a_socket() {
@@ -67,6 +67,7 @@ fn subscriptions_run_over_sse_and_a_socket() {
         "cbor-seq-support.ts",
         "cbor-seq-model-feed.hex",
         "tanstack.test.ts",
+        "end-reason.test.ts",
     ] {
         fs::copy(format!("{js_fixture_dir}/{asset}"), dir.path().join(asset))
             .unwrap_or_else(|error| panic!("copy {asset} into generated package dir: {error}"));

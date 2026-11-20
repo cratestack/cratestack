@@ -1,0 +1,44 @@
+/// Why the server ended a live subscription (cratestack#1381): the
+/// `details.reason` of its terminal `err` frame.
+enum CratestackStreamEndReason {
+  /// `unauthenticated`: refresh credentials, then resubscribe.
+  credentialExpired('credential_expired'),
+
+  /// `unavailable`: resubscribe (a fresh signed open).
+  streamLifetime('stream_lifetime'),
+
+  /// `unauthenticated`: sign in again; never auto-retried.
+  sessionEnded('session_ended'),
+
+  /// `permission_denied`: never retried.
+  principalSuspended('principal_suspended'),
+
+  /// `permission_denied`: re-enrol; never retried.
+  deviceRevoked('device_revoked'),
+
+  /// `unavailable`: resubscribe with jittered backoff.
+  revocationResync('revocation_resync'),
+
+  /// A reason a newer server sent that this client does not know.
+  unknown('unknown');
+
+  const CratestackStreamEndReason(this.wireName);
+
+  /// The snake_case name carried in `details.reason`.
+  final String wireName;
+
+  /// The reason named [name]; [unknown] for a name this client does not know.
+  static CratestackStreamEndReason parse(String name) {
+    for (final reason in values) {
+      if (reason != unknown && reason.wireName == name) return reason;
+    }
+    return unknown;
+  }
+
+  /// An end the server will not undo: do not resubscribe on your own.
+  bool get isTerminal =>
+      this == sessionEnded || this == principalSuspended || this == deviceRevoked;
+
+  /// An end a client reopens by itself, after a jittered backoff.
+  bool get resubscribes => this == streamLifetime || this == revocationResync;
+}

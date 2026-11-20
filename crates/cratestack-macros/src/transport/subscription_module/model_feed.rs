@@ -77,6 +77,9 @@ pub(super) fn generate(
             ::cratestack::SubscriptionStream<::cratestack::rpc::RpcFrameValue>,
             ::cratestack::CratestackError,
         > {
+            // A principal revoked since this context was minted is refused
+            // before anything else runs (cratestack#1381).
+            let bounds = ::cratestack::__private::StreamBounds::open(&ctx, db.stream_revocations())?;
             // The columns a policy and a filter are decided on, of one row.
             fn values_of(
                 record: &super::models::#model_ident,
@@ -117,7 +120,6 @@ pub(super) fn generate(
                 .await?;
             let stream = ::cratestack::__private::model_events::<super::models::#model_ident>(receiver);
             let pool = db.pool().clone();
-            let expires_at = ctx.expires_at();
             let FeedQuery { operations, filter, fields } = feed_query;
             let filter = ::std::sync::Arc::new(filter);
             let feed = ::cratestack::__private::model_feed(
@@ -148,8 +150,9 @@ pub(super) fn generate(
                 },
             );
             let feed = ::cratestack::__private::project_event_fields(feed, fields);
-            // It lives no longer than the credential that opened it (§6.3).
-            Ok(::cratestack::__private::until_credential_expires(feed, expires_at))
+            // It lives no longer than the credential that opened it (§6.3),
+            // and ends when its principal is revoked (cratestack#1381).
+            Ok(::cratestack::__private::until_principal_ends(feed, bounds))
         }
     };
     Ok(Some(ModelFeed {

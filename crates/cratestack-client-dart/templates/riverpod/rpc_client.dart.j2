@@ -135,24 +135,7 @@ final {{ provider_prefix }}AdapterProvider = Provider<CratestackRpcAdapter>((ref
 {% endif %}
 
 {% if has_subscriptions %}
-/// The `retry:` of every generated subscription stream provider. It defers
-/// to Riverpod's own default retry (`ProviderContainer.defaultRetry`) except
-/// for [CratestackEventTooLargeException], which is not transient:
-/// the same server would send the same oversized event again, so retrying
-/// would only reconnect and download it again, and for the signed-open
-/// refusals (`unsigned_frames_refused`, `streams_unsupported`,
-/// `unsigned_refusal`), which repeat for the same transport and schema. Those
-/// errors reach the provider's `AsyncError` at once, and `ref.invalidate`
-/// retries by hand.
-Duration? cratestackSubscriptionRetry(int retryCount, Object error) {
-  if (error is CratestackEventTooLargeException) return null;
-  if (error is CratestackSubscriptionException &&
-      const <String>{'unsigned_frames_refused', 'streams_unsupported', 'unsigned_refusal'}
-          .contains(error.code)) {
-    return null;
-  }
-  return ProviderContainer.defaultRetry(retryCount, error);
-}
+{% include "riverpod/subscription_retry.dart.j2" %}
 
 /// How the client subscribes (slice S6). Override it to set the
 /// WebTransport listener, the socket credentials or a fixed binding.

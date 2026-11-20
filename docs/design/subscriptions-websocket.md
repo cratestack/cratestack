@@ -506,6 +506,30 @@ A refused refresh is refused as above. The new context must name the same princi
 refusal (4403). If the context carries an expiry, the server closes with 4401 at that instant unless a
 refresh arrived first.
 
+**Revocation (cratestack#1381).** A credential's `exp` is not the only way a principal stops being
+allowed to listen. `StreamRevocations` (`db.stream_revocations()`, on the generated runtime of every
+schema that has a subscription) is the registry every generated open registers its stream in, under the
+keys of its context (`default_revocation_keys`: `subject()`, a string `sid` claim when present, and the
+thumbprint of the key that signed a signed open; `sid` is not a reserved claim, so an app that names its
+session id otherwise supplies `with_keys`). `revoke(key, reason, until)` ends every stream and every
+WebSocket / WebTransport session holding the key, on every binding, with a typed end: the terminal
+`err` frame carries `details: {"reason": ..}` (`credential_expired`, `stream_lifetime`, `session_ended`,
+`principal_suspended`, `device_revoked`, `revocation_resync`); a socket session is closed 4401 / 4403 /
+4500 after its own `{id: 0, err}`. Before that frame the session tells every open subscription why: a
+WebSocket session sends each its own `{id, err}` (in id order, through the one writer); a WebTransport
+session announces the end to its stream tasks, which write their `err` and FIN, and waits for them (1 s at
+most). A client reads a session's `{id: 0, err}` as the terminal error of every subscription on that socket,
+so a close alone is never read as a clean end. `until` keeps a tombstone (never for `stream_lifetime` or `revocation_resync`, which clients retry without a cap and would loop) that refuses a later *stream open* (and a
+socket `Init`) with a cached context until then; refusing a unary call stays the `AuthProvider`'s job.
+The bound is `until_principal_ends`: revocation first, then the credential clock, then the items. A
+`WebSocket` / WebTransport `Init` refresh re-registers the session but does not extend streams already
+open, and is refused when the watch it replaces has already ended. Across replicas, `publish` / `follow` carry revocations on the backplane channel
+`cratestack.revocation` (server-internal JSON, at-most-once); a `Resync` / `Lagged` ends every watched
+stream with `revocation_resync` by default (`ResyncPolicy::EndAll`, fail closed) or is ignored
+(`ResyncPolicy::Ignore`). A payload that cannot be parsed is skipped, an unknown `reason` still revokes (as
+`session_ended`), `until` is integer seconds since the epoch (a fraction or numeric string is accepted and rounded up; a negative or non-numeric one revokes with no tombstone, with a `warn!`), only an `until` no `SystemTime` can hold is clamped to 24 h, and a follower that ends fails closed. A hand-written `SubscriptionDispatcher` gets none of this unless it
+implements `revocations()` and bounds its streams itself.
+
 ### 6.4 Frames
 
 The §2.3 envelope plus two variants, `Init` and `Ready`. The envelope is discriminated by which key

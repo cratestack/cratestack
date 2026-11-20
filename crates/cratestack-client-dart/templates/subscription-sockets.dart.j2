@@ -407,6 +407,13 @@ Stream<Object?> cratestackItems({
           if (frame == null) {
             break;
           }
+          // A session's own `{id: 0, err}` (the server ending the whole socket: a
+          // revoked principal, an expired credential) is the end of every
+          // subscription on it, read before frames for other ids are skipped.
+          if (frame['id'] == 0 && frame['err'] != null) {
+            controller.addError(cratestackSubscriptionError(frame['err']));
+            break;
+          }
           if (frame['id'] != id) {
             continue;
           }

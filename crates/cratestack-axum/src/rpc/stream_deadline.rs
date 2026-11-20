@@ -9,7 +9,7 @@
 //! ([`until_credential_expires`](super::until_credential_expires)) is applied
 //! first, so whichever comes first wins.
 
-use cratestack_core::{CratestackError, SubscriptionStream};
+use cratestack_core::{CratestackError, StreamEndNotice, StreamEndReason, SubscriptionStream};
 use futures_util::future::{Either, select};
 use futures_util::stream::{self, StreamExt};
 use tokio::time::Instant;
@@ -20,7 +20,7 @@ use tokio::time::Instant;
 pub struct SignedStreamDeadline(pub Instant);
 
 fn lifetime_over() -> CratestackError {
-    CratestackError::Unavailable("stream lifetime".to_owned())
+    StreamEndNotice::new(StreamEndReason::StreamLifetime).into_error()
 }
 
 /// `items`, ended with `unavailable` at `deadline`. No deadline: `items`

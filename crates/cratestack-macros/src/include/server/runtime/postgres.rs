@@ -17,6 +17,7 @@ pub(super) fn build_runtime_block(
 ) -> proc_macro2::TokenStream {
     let views_module = sub_accessors::views_module(view_accessors);
     let queries_accessor = sub_accessors::queries_accessor(query_accessors);
+    let revocations = sub_accessors::postgres_stream_revocations();
 
     quote! {
         #[derive(Clone)]
@@ -190,6 +191,8 @@ pub(super) fn build_runtime_block(
                 views: VIEWS,
             }
         }
+
+        #revocations
 
         #views_module
     }

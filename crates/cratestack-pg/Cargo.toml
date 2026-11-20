@@ -449,6 +449,13 @@ name = "websocket_subscriptions"
 path = "tests/websocket_subscriptions.rs"
 required-features = ["websocket", "client-ws"]
 
+# A revoked principal's `@@subscribe` model feed ends with its typed reason,
+# over SSE and over the socket, through the generated Rust client (#1381).
+[[test]]
+name = "stream_revocation_model_feed"
+path = "tests/stream_revocation_model_feed.rs"
+required-features = ["websocket", "client-ws"]
+
 # Subscription items carry `Uuid` and `Bytes` in their CBOR forms over both
 # sockets (cratestack#1360). The procedure tests need no database; the model
 # feed one is Postgres-backed.

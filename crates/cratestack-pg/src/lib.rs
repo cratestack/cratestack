@@ -298,6 +298,7 @@ pub mod __private {
     /// directly. Public helpers live at `cratestack::rpc::*`.
     pub use cratestack_axum::rpc::{decode_rpc_body, encode_rpc_value, response_to_frame};
 
+    pub use cratestack_axum::rpc::StreamBounds;
     /// `@@subscribe` SSE dispatch (`GET /rpc/subscribe/{op_id}`, design
     /// doc §3.4a, cratestack#390): the bounded-channel bridge from a
     /// `CratestackEventBus` push callback to a `Stream`, and the encoder that
@@ -309,7 +310,7 @@ pub mod __private {
         encode_model_event_sse_response, encode_subscribe_error, guarded_receiver_stream,
         model_events, model_feed, negotiate_subscribe_binding, project_event_fields, route_event,
         serve_subscription, serve_subscription_with, split_subscribe_query, subscribe_input_query,
-        subscription_channel, until_credential_expires,
+        subscription_channel, until_credential_expires, until_principal_ends,
     };
     /// A `subscription procedure`'s arguments and items (slice S4).
     pub use cratestack_axum::rpc::{procedure_feed, procedure_input_query, procedure_query_args};
