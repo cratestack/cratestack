@@ -74,3 +74,31 @@ pub(super) fn queries_accessor(
         }
     }
 }
+
+/// The `db = Postgres` handle's registry of live subscriptions
+/// (cratestack#1381): the accessor and the builder's replacement.
+pub(super) fn postgres_stream_revocations() -> proc_macro2::TokenStream {
+    quote! {
+        impl Cratestack {
+            /// The registry live subscriptions are watched in: call
+            /// `revoke` on it to end a principal's streams, and
+            /// `publish` / `follow` to carry that to every replica.
+            pub fn stream_revocations(&self) -> &::cratestack::StreamRevocations {
+                self.runtime.stream_revocations()
+            }
+        }
+
+        impl CratestackBuilder {
+            /// Replace the registry live subscriptions are watched in, to
+            /// bound its tombstones or name the keys streams are held
+            /// under. The default never revokes anything.
+            pub fn with_stream_revocations(
+                mut self,
+                revocations: ::cratestack::StreamRevocations,
+            ) -> Self {
+                self.runtime = self.runtime.with_stream_revocations(revocations);
+                self
+            }
+        }
+    }
+}

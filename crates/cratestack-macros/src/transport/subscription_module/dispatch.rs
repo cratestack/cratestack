@@ -107,6 +107,10 @@ pub(super) fn tokens(
                     this.open_query(&op_id, query, ctx, codec).await
                 }
             }
+
+            fn revocations(&self) -> Option<&::cratestack::StreamRevocations> {
+                Some(self.db.stream_revocations())
+            }
         }
 
         impl #generics #ty {

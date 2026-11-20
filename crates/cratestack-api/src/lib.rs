@@ -188,6 +188,7 @@ pub mod __private {
     /// without `cratestack-sqlx`.
     pub use cratestack_axum::rpc::{decode_rpc_body, encode_rpc_value, response_to_frame};
 
+    pub use cratestack_axum::rpc::StreamBounds;
     /// The SSE subscription endpoints and dispatcher: the refusal every
     /// RPC router's `/rpc/subscribe/{op_id}` answers with, and what a
     /// `subscription procedure` is served through (slice S4), the only
@@ -196,5 +197,6 @@ pub mod __private {
         SseCodec, SubscribeBinding, decode_subscribe_open_body, encode_subscribe_error,
         negotiate_subscribe_binding, procedure_feed, procedure_input_query, procedure_query_args,
         serve_subscription_with, subscribe_input_query, until_credential_expires,
+        until_principal_ends,
     };
 }

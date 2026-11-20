@@ -11,7 +11,7 @@ use crate::sqlx;
 
 use cratestack_core::{
     AuditSink, CratestackEventBus, CratestackEventEnvelope, CratestackEventFuture, ModelEventKind,
-    NoopAuditSink, SubscriptionBackplane, SubscriptionHandle,
+    NoopAuditSink, StreamRevocations, SubscriptionBackplane, SubscriptionHandle,
 };
 
 pub use event_enqueue::enqueue_event_outbox;
@@ -53,6 +53,10 @@ pub struct SqlxRuntime {
     // default; `with_backplane` swaps it (an `InProcessBackplane` for a
     // single replica behind a pooler that drops `LISTEN`).
     backplane: Arc<dyn SubscriptionBackplane>,
+    // Where live subscriptions are watched so a revoked principal's streams
+    // end (cratestack#1381). Shared by every clone; never revokes until the
+    // app calls `revoke`.
+    stream_revocations: StreamRevocations,
 }
 
 // `dyn AuditSink` has no `Debug` bound (matching `IdempotencyStore` /
@@ -89,6 +93,7 @@ impl SqlxRuntime {
             bound: None,
             isolation_max_retries: crate::isolation::MAX_RETRIES_DEFAULT,
             backplane,
+            stream_revocations: StreamRevocations::default(),
         }
     }
 
@@ -120,6 +125,19 @@ impl SqlxRuntime {
 
     pub fn backplane(&self) -> &Arc<dyn SubscriptionBackplane> {
         &self.backplane
+    }
+
+    /// Replace the registry live subscriptions are watched in
+    /// (`StreamRevocations::with_max_tombstones`, `with_keys`).
+    pub fn with_stream_revocations(mut self, revocations: StreamRevocations) -> Self {
+        self.stream_revocations = revocations;
+        self
+    }
+
+    /// The registry live subscriptions are watched in: call `revoke` on it
+    /// to end a principal's streams (cratestack#1381).
+    pub fn stream_revocations(&self) -> &StreamRevocations {
+        &self.stream_revocations
     }
 
     pub(crate) fn audit_sink(&self) -> &Arc<dyn AuditSink> {
