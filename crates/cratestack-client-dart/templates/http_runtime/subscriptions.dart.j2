@@ -35,9 +35,23 @@ final class CratestackSubscriptionException implements Exception {
   /// The HTTP status of a refusal before the stream; `null` mid-stream.
   final int? status;
 
+  /// Why the server ended the subscription (`details.reason`,
+  /// cratestack#1381); `null` for a refusal or an end without one. A reason
+  /// this client does not know (a newer server) is
+  /// [CratestackStreamEndReason.unknown]: fall back to [code].
+  CratestackStreamEndReason? get endReason {
+    final details = this.details;
+    if (details is! Map) return null;
+    final reason = details['reason'];
+    if (reason is! String) return null;
+    return CratestackStreamEndReason.parse(reason);
+  }
+
   @override
   String toString() => 'CratestackSubscriptionException($code: $message)';
 }
+
+{% include "http_runtime/stream_end_reason.dart.j2" %}
 
 /// The default cap on one SSE event or `cborSeq` frame: 1 MiB.
 const int cratestackDefaultMaxEventBytes = 1024 * 1024;

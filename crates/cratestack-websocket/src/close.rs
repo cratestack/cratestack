@@ -48,3 +48,26 @@ pub(crate) async fn refuse(
     }
     close(sink, code, reason).await;
 }
+
+/// Ends a session that has subscriptions open: each one is told why with its
+/// own `{id, err}` frame, in id order, through the same writer as the
+/// session's `{id: 0, err}` and close. The streams' own end frames come from
+/// their tasks through a queue the close races, so a client that reads per
+/// subscription would otherwise see a bare socket close.
+pub(crate) async fn end_session(
+    sink: &mut Sink,
+    codec: WireCodec,
+    mut open: Vec<u64>,
+    error: &CratestackError,
+    reason: &'static str,
+) {
+    open.sort_unstable();
+    for id in open {
+        if let Ok(frame) = codec.encode(&ServerFrame::err(id, error))
+            && sink.send(frame).await.is_err()
+        {
+            return;
+        }
+    }
+    refuse(sink, codec, error, reason).await;
+}

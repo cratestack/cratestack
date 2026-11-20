@@ -2,32 +2,29 @@
 //! like the HTTP routes; then `Request`s open subscriptions, `Cancel` ends
 //! one, a further `Init` refreshes the credentials (same principal only),
 //! and the server pings. The socket closes with 4401 when the context's
-//! `exp` passes without a refresh.
+//! `exp` passes without a refresh, or when its principal is revoked.
 
-use std::collections::HashMap;
 use std::net::IpAddr;
 use std::sync::Arc;
 
-use axum::extract::ws::{Message, WebSocket};
+use axum::extract::ws::WebSocket;
 use cratestack_core::subscription_wire::{
-    ClientMessage, Handshake, ServerFrame, SessionCharger, authenticate_session, close_code,
-    init_headers, session_key,
+    Handshake, ServerFrame, SessionCharger, authenticate_session, close_code, init_headers,
+    session_key,
 };
-use cratestack_core::{AuthProvider, CratestackContext, CratestackError, SubscriptionDispatcher};
-use cratestack_core::{SubscriptionOpen, subscription_wire::ClientFrame};
-use futures_util::{SinkExt, StreamExt};
-use tokio::sync::{Notify, mpsc};
-use tokio::time::Instant;
+use cratestack_core::{AuthProvider, SubscriptionDispatcher};
+use futures_util::StreamExt;
 use tracing::Instrument;
 
-use crate::close::{Sink, close, refuse, ws_close};
+use crate::close::{close, refuse};
 use crate::codec::WireCodec;
 use crate::server::Shared;
-use crate::subscription::{self, Outbound};
 
+mod established;
 mod io;
 
-use io::{expiry_of, next_frame, send, sleep_until};
+use established::established;
+use io::{next_frame, send};
 
 pub(crate) async fn run<A: AuthProvider, D: SubscriptionDispatcher>(
     shared: Arc<Shared<A, D>>,
@@ -60,6 +57,16 @@ pub(crate) async fn run<A: AuthProvider, D: SubscriptionDispatcher>(
             Ok(ctx) => ctx,
             Err(error) => return refuse(&mut sink, codec, &error, "authentication failed").await,
         };
+        // A principal revoked before this socket connected is refused now.
+        let revocation = match shared.dispatcher.revocations() {
+            Some(revocations) => match revocations.watch_context(&ctx) {
+                Ok(watch) => Some(watch),
+                Err(end) => {
+                    return refuse(&mut sink, codec, &end.into_error(), "principal revoked").await;
+                }
+            },
+            None => None,
+        };
         let principal = (shared.config.principal_key)(&ctx);
         let key = session_key(principal.as_deref(), remote);
         let Some(_slot) = shared.registry.admit(key, limits.sockets_per_principal) else {
@@ -77,102 +84,11 @@ pub(crate) async fn run<A: AuthProvider, D: SubscriptionDispatcher>(
             return;
         }
         let charger = SessionCharger::new(shared.config.rate_limit.clone(), principal, peer);
-        established(&shared, sink, stream, codec, &handshake, ctx, charger).await;
+        established(
+            &shared, sink, stream, codec, &handshake, ctx, revocation, charger,
+        )
+        .await;
     }
     .instrument(span)
     .await
-}
-
-async fn established<A: AuthProvider, D: SubscriptionDispatcher>(
-    shared: &Shared<A, D>,
-    mut sink: Sink,
-    mut stream: futures_util::stream::SplitStream<WebSocket>,
-    codec: WireCodec,
-    handshake: &Handshake,
-    mut ctx: CratestackContext,
-    charger: SessionCharger,
-) {
-    let limits = &shared.config.limits;
-    let (out, mut outbound) = mpsc::channel(limits.outbound_queue);
-    let overflow = Arc::new(Notify::new());
-    let mut open: HashMap<u64, tokio::task::AbortHandle> = HashMap::new();
-    let mut ping = tokio::time::interval(limits.ping_interval);
-    let mut last_pong = Instant::now();
-    loop {
-        let expiry = expiry_of(&ctx);
-        tokio::select! {
-            message = stream.next() => {
-                let message = match message {
-                    Some(Ok(Message::Pong(_))) => { last_pong = Instant::now(); continue; }
-                    Some(Ok(Message::Ping(_))) => continue,
-                    Some(Ok(Message::Close(_))) | None | Some(Err(_)) => break,
-                    Some(Ok(message)) => message,
-                };
-                match codec.decode(&message).and_then(ClientFrame::classify) {
-                    Ok(ClientMessage::Request { id, op, input }) => {
-                        let refusal = if id == 0 || open.contains_key(&id) {
-                            Some(CratestackError::BadRequest(format!("subscription id {id} is in use")))
-                        } else if open.len() >= limits.subscriptions_per_socket {
-                            Some(CratestackError::TooManyRequests("too many subscriptions on this socket".to_owned()))
-                        } else { None };
-                        if let Some(error) = refusal {
-                            if send(&mut sink, codec, &ServerFrame::err(id, &error)).await.is_err() { break; }
-                            continue;
-                        }
-                        let request = SubscriptionOpen { op_id: op, input: input.into(), ctx: ctx.clone() };
-                        let task = subscription::run(shared.dispatcher.clone(), request, id, out.clone(), overflow.clone(), charger.clone(), codec);
-                        open.insert(id, tokio::spawn(task.in_current_span()).abort_handle());
-                    }
-                    Ok(ClientMessage::Cancel { id }) => {
-                        if let Some(task) = open.remove(&id) {
-                            task.abort();
-                            if send(&mut sink, codec, &ServerFrame::end(id)).await.is_err() { break; }
-                        }
-                    }
-                    Ok(ClientMessage::Init(init)) => {
-                        // Re-authentication: must name the same principal (§6.3).
-                        let refreshed = match authenticate_session(&shared.auth, handshake, &init.headers).await {
-                            Ok(refreshed) => refreshed,
-                            Err(error) => { refuse(&mut sink, codec, &error, "re-authentication failed").await; break; }
-                        };
-                        if (shared.config.principal_key)(&refreshed).as_deref() != charger.principal() {
-                            let error = CratestackError::Forbidden("re-authentication named another principal".to_owned());
-                            refuse(&mut sink, codec, &error, "principal changed").await;
-                            break;
-                        }
-                        ctx = refreshed;
-                    }
-                    Err(error) => {
-                        tracing::info!(target: "cratestack", %error, "WebSocket protocol error");
-                        close(&mut sink, close_code::PROTOCOL as u16, "bad frame").await;
-                        break;
-                    }
-                }
-            }
-            outbound = outbound.recv() => match outbound {
-                Some(Outbound::Frame(frame)) => if send(&mut sink, codec, &frame).await.is_err() { break },
-                Some(Outbound::Done(id)) => { open.remove(&id); }
-                None => break,
-            },
-            () = overflow.notified() => {
-                close(&mut sink, ws_close::TRY_AGAIN_LATER, "client too slow").await;
-                break;
-            }
-            _ = ping.tick() => {
-                if last_pong.elapsed() > limits.pong_timeout {
-                    close(&mut sink, ws_close::GOING_AWAY, "no pong").await;
-                    break;
-                }
-                if sink.send(Message::Ping(Default::default())).await.is_err() { break; }
-            }
-            () = sleep_until(expiry) => {
-                let error = CratestackError::Unauthorized("credential expired".to_owned());
-                refuse(&mut sink, codec, &error, "credential expired").await;
-                break;
-            }
-        }
-    }
-    for task in open.into_values() {
-        task.abort();
-    }
 }

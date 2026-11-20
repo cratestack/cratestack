@@ -39,17 +39,19 @@ pub(super) fn generate(procedure: &Procedure) -> ProcedureFeed {
             ::cratestack::SubscriptionStream<::cratestack::rpc::RpcFrameValue>,
             ::cratestack::CratestackError,
         > {
+            // A principal revoked since this context was minted is refused
+            // before anything else runs (cratestack#1381).
+            let bounds = ::cratestack::__private::StreamBounds::open(&ctx, db.stream_revocations())?;
             let args: super::procedures::#module::Args =
                 ::cratestack::__private::procedure_query_args(query.as_deref())?;
             let authorized = super::procedures::#module::authorize_with_db(db, &args, &ctx).await?;
-            let expires_at = ctx.expires_at();
             let items = super::procedures::ProcedureRegistry::#method(
                 registry, db, &ctx, args, authorized,
             )
             .await?;
-            Ok(::cratestack::__private::until_credential_expires(
+            Ok(::cratestack::__private::until_principal_ends(
                 ::cratestack::__private::procedure_feed(items, codec),
-                expires_at,
+                bounds,
             ))
         }
     };

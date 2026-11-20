@@ -3,12 +3,16 @@
 // `swr/subscription`. `data` is the latest item; `error` the terminal
 // error or the refusal. Unmounting (or a new key) cancels the
 // subscription. Kept out of `./index` like every other hook here, so the
-// package root stays importable without `swr`/`react`.
+// package root stays importable without `swr`/`react`. A stream the server ended with
+// `stream_lifetime` or `revocation_resync` (cratestack#1381) is reopened after a jittered
+// backoff; a suspended principal, a revoked device and an ended session surface as `error`
+// and are never retried (`shouldResubscribe`).
 //
 //   const { data } = useSubscription(["notes", ownerId], (signal) =>
 //     client.notes.subscribe({ filters: [{ key: "ownerId", value: String(ownerId) }] }, { signal }));
 
 import useSWRSubscription, { type SWRSubscriptionOptions } from "swr/subscription";
+import { resubscribeDelayMs, shouldResubscribe } from "../subscription-end.js";
 
 export function useSubscription<T>(
   key: string | readonly unknown[] | null,
@@ -17,10 +21,22 @@ export function useSubscription<T>(
   return useSWRSubscription<T, Error>(key, (_key: unknown, { next }: SWRSubscriptionOptions<T, Error>) => {
     const controller = new AbortController();
     void (async () => {
-      try {
-        for await (const item of open(controller.signal)) next(null, item);
-      } catch (error) {
-        if (!controller.signal.aborted) next(error instanceof Error ? error : new Error(String(error)));
+      for (let attempt = 0; ; attempt++) {
+        try {
+          for await (const item of open(controller.signal)) {
+            attempt = 0;
+            next(null, item);
+          }
+          return;
+        } catch (error) {
+          if (controller.signal.aborted) return;
+          if (!shouldResubscribe(error)) {
+            next(error instanceof Error ? error : new Error(String(error)));
+            return;
+          }
+          await new Promise((resolve) => setTimeout(resolve, resubscribeDelayMs(attempt)));
+          if (controller.signal.aborted) return;
+        }
       }
     })();
     return () => controller.abort();

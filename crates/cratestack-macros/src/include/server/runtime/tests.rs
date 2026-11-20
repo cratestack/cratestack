@@ -14,7 +14,8 @@ use super::build_runtime_block;
 
 #[test]
 fn postgres_runtime_block_still_takes_a_pgpool_builder() {
-    let generated = build_runtime_block(ServerDb::Postgres, &[], &[], &[], &[], false).to_string();
+    let generated =
+        build_runtime_block(ServerDb::Postgres, &[], &[], &[], &[], false, false).to_string();
 
     assert!(
         generated.contains("fn builder (pool : :: cratestack :: sqlx :: PgPool)"),
@@ -27,7 +28,8 @@ fn postgres_runtime_block_still_takes_a_pgpool_builder() {
 
 #[test]
 fn none_runtime_block_builder_takes_no_pool_parameter() {
-    let generated = build_runtime_block(ServerDb::None, &[], &[], &[], &[], false).to_string();
+    let generated =
+        build_runtime_block(ServerDb::None, &[], &[], &[], &[], false, false).to_string();
 
     assert!(
         generated.contains("fn builder () -> CratestackBuilder"),
@@ -38,7 +40,8 @@ fn none_runtime_block_builder_takes_no_pool_parameter() {
 
 #[test]
 fn none_runtime_block_never_mentions_pgpool_or_sqlx() {
-    let generated = build_runtime_block(ServerDb::None, &[], &[], &[], &[], false).to_string();
+    let generated =
+        build_runtime_block(ServerDb::None, &[], &[], &[], &[], false, false).to_string();
 
     assert!(
         !generated.contains("PgPool"),
@@ -57,7 +60,8 @@ fn none_runtime_block_never_mentions_pgpool_or_sqlx() {
 
 #[test]
 fn none_runtime_block_cratestack_type_is_a_zero_field_marker() {
-    let generated = build_runtime_block(ServerDb::None, &[], &[], &[], &[], false).to_string();
+    let generated =
+        build_runtime_block(ServerDb::None, &[], &[], &[], &[], false, false).to_string();
 
     // Not `struct Cratestack { runtime: ... }`, not `struct Cratestack {
     // pool: Option<PgPool> }` — a bare marker with no fields at all, so
@@ -69,9 +73,28 @@ fn none_runtime_block_cratestack_type_is_a_zero_field_marker() {
 
 #[test]
 fn none_runtime_block_carries_a_backplane_only_for_topics() {
-    let generated = build_runtime_block(ServerDb::None, &[], &[], &[], &[], true).to_string();
+    let generated =
+        build_runtime_block(ServerDb::None, &[], &[], &[], &[], true, false).to_string();
 
     assert!(generated.contains("pub struct Cratestack { backplane :"));
     assert!(generated.contains("fn with_backplane"));
     assert!(!generated.contains("sqlx"), "{generated}");
+}
+
+#[test]
+fn none_runtime_block_carries_a_revocation_registry_only_for_subscription_procedures() {
+    let with = build_runtime_block(ServerDb::None, &[], &[], &[], &[], false, true).to_string();
+    assert!(with.contains("stream_revocations : :: cratestack :: StreamRevocations"));
+    assert!(with.contains("fn with_stream_revocations"));
+    assert!(with.contains("fn stream_revocations"));
+    assert!(!with.contains("backplane"), "{with}");
+    assert!(!with.contains("derive (Clone , Copy)"), "{with}");
+
+    let without = build_runtime_block(ServerDb::None, &[], &[], &[], &[], false, false).to_string();
+    assert!(!without.contains("StreamRevocations"), "{without}");
+    assert!(without.contains("pub struct Cratestack ;"));
+
+    let both = build_runtime_block(ServerDb::None, &[], &[], &[], &[], true, true).to_string();
+    assert!(both.contains("backplane : self . backplane"));
+    assert!(both.contains("stream_revocations : self . stream_revocations"));
 }

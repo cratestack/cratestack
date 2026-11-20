@@ -494,6 +494,7 @@ dependencies = [
  "sqlx-postgres",
  "thiserror",
  "tokio",
+ "tracing",
  "url",
  "uuid",
 ]

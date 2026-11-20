@@ -15,6 +15,7 @@ mod auth_refusal;
 mod auth_refusal_claim;
 mod cuid_check;
 mod response;
+mod stream_end;
 // Doctest-only: `AbortOwnership::Claimed` cannot be forged from outside.
 #[cfg(doctest)]
 mod aborted_doctests;
@@ -32,6 +33,7 @@ pub use auth_refusal::{AuthRefusal, AuthRefusalKind, RESERVED_ENVELOPE_MEMBERS};
 pub use cuid_check::parse_cuid;
 pub use response::CratestackErrorResponse;
 pub(crate) use response::visible_extra_members;
+pub use stream_end::{StreamEndNotice, StreamEndReason};
 
 /// Structured information extracted from a driver-level database error.
 ///
@@ -146,6 +148,20 @@ pub enum CratestackError {
     /// [`AuthRefusal::into_error`].
     #[error("auth refused: {}", .0.message())]
     AuthRefused(AuthRefusal),
+    /// 401, 403 or 503, by [`StreamEndNotice::reason`]: the server ended a live
+    /// subscription (cratestack#1381) because its credential expired, its
+    /// signed open reached its lifetime, or its principal was revoked,
+    /// suspended or signed out. Only ever the terminal frame of a stream,
+    /// never the answer to a request. The wire `details` is
+    /// `{"reason": ..}`.
+    #[error("stream ended: {}", .0.message)]
+    StreamEnded(StreamEndNotice),
+}
+
+impl From<StreamEndNotice> for CratestackError {
+    fn from(end: StreamEndNotice) -> Self {
+        Self::StreamEnded(end)
+    }
 }
 
 impl CratestackError {
@@ -170,6 +186,9 @@ impl CratestackError {
                 AuthRefusalKind::Unauthenticated => "UNAUTHORIZED",
                 AuthRefusalKind::Forbidden => "FORBIDDEN",
             },
+            Self::StreamEnded(end) if end.reason.is_forbidden() => "FORBIDDEN",
+            Self::StreamEnded(end) if end.reason.is_unavailable() => "UNAVAILABLE",
+            Self::StreamEnded(_) => "UNAUTHORIZED",
         }
     }
 
@@ -195,6 +214,11 @@ impl CratestackError {
                 AuthRefusalKind::Unauthenticated => StatusCode::UNAUTHORIZED,
                 AuthRefusalKind::Forbidden => StatusCode::FORBIDDEN,
             },
+            Self::StreamEnded(end) if end.reason.is_forbidden() => StatusCode::FORBIDDEN,
+            Self::StreamEnded(end) if end.reason.is_unavailable() => {
+                StatusCode::SERVICE_UNAVAILABLE
+            }
+            Self::StreamEnded(_) => StatusCode::UNAUTHORIZED,
         }
     }
 
@@ -226,6 +250,7 @@ impl CratestackError {
             Self::ConflictTyped(info) => Cow::Borrowed(info.detail.as_str()),
             Self::TransactionAborted(abort) => Cow::Borrowed(abort.info.detail.as_str()),
             Self::AuthRefused(refusal) => Cow::Borrowed(refusal.message()),
+            Self::StreamEnded(end) => Cow::Borrowed(end.message.as_str()),
         }
     }
 
@@ -265,6 +290,7 @@ impl CratestackError {
                 }
             }
             Self::AuthRefused(refusal) => Some(refusal.message()).filter(|m| !m.is_empty()),
+            Self::StreamEnded(end) => Some(end.message.as_str()).filter(|m| !m.is_empty()),
         }
     }
 

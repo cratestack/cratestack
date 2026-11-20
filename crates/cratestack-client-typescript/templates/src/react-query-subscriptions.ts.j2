@@ -18,6 +18,7 @@ import {
   type QueryKey,
   type UseQueryOptions,
 } from "@tanstack/react-query";
+import { resubscribeDelayMs, shouldResubscribe } from "./subscription-end.js";
 
 export interface SubscriptionQueryOptions<T> {
   /** Called with every item, after it is written to the cache. */
@@ -38,10 +39,16 @@ export function subscriptionQueryOptions<T>(
   options: SubscriptionQueryOptions<T> = {},
 ): UseQueryOptions<T, Error, T, QueryKey> {
   return {
-    // A live query has no staleness and nothing to retry or refetch: a
-    // failure is a refusal or the end of the subscription.
+    // A live query has no staleness to refetch: a failure is a refusal or the
+    // end of the subscription. Only an end that needs nothing from the caller
+    // (`stream_lifetime`, `revocation_resync`, cratestack#1381) is reopened,
+    // after a jittered backoff, with no cap on how often: a stream that ends
+    // `stream_lifetime` every hour is retried every hour for as long as it is
+    // observed. A suspended principal, a revoked device and an ended session
+    // are never retried.
     staleTime: Infinity,
-    retry: false,
+    retry: (_failureCount: number, error: Error) => shouldResubscribe(error),
+    retryDelay: (failureCount: number) => resubscribeDelayMs(failureCount),
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
     ...options.queryOptions,

@@ -117,6 +117,7 @@ pub(super) fn compose_server_schema(
             &collected.view_accessors,
             &collected.query_accessors,
             !schema.topics.is_empty(),
+            !schema.subscription_procedures.is_empty(),
         );
 
         // Destructure here for `quote!` interpolation — quoting through the

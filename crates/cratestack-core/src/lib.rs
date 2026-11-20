@@ -48,6 +48,7 @@ pub mod schema;
 pub mod schema_identity;
 pub mod store;
 pub mod subscription;
+pub mod subscription_revocation;
 pub mod subscription_wire;
 pub mod transport;
 pub mod validators;
@@ -119,7 +120,8 @@ pub use decimal::RustDecimal;
 pub use envelope::{InMemoryNonceStore, KeyProvider, NonceStore, StaticKeyProvider};
 pub use error::{
     AbortOwnership, AuthRefusal, AuthRefusalKind, CratestackError, CratestackErrorResponse,
-    DbErrorInfo, RESERVED_ENVELOPE_MEMBERS, TransactionAbort, parse_cuid,
+    DbErrorInfo, RESERVED_ENVELOPE_MEMBERS, StreamEndNotice, StreamEndReason, TransactionAbort,
+    parse_cuid,
 };
 pub use events::{
     CratestackEventBus, CratestackEventEnvelope, CratestackEventFuture, ModelEvent, ModelEventKind,
@@ -167,6 +169,10 @@ pub use store::{
     RateLimitDecision, RateLimitStore, RequestJournalEntry, bucket_ttl_secs, scope_ttl_secs,
 };
 pub use subscription::{SubscriptionDispatcher, SubscriptionOpen, SubscriptionStream};
+pub use subscription_revocation::{
+    DEFAULT_MAX_TOMBSTONES, REVOCATION_CHANNEL, ResyncPolicy, RevocationKey, RevocationKeysFn,
+    RevocationWatch, StreamRevocations, default_revocation_keys,
+};
 pub use transport::{
     OpDescriptor, OpKind, RouteTransportCapabilities, RouteTransportDescriptor, canonical_query,
     canonical_request_string,

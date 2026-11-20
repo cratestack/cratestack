@@ -25,7 +25,16 @@ import { openCborSeq } from "./subscription-cbor-seq.js";
 import { openSse } from "./subscription-sse.js";
 import { openSealed, type OpenVia, type SubscriptionSeal } from "./subscription-sealed.js";
 
+import { parseStreamEndReason, type StreamEndReason } from "./subscription-end.js";
+
 export type { OpenVia, SubscriptionSeal };
+export {
+  isTerminalEndReason,
+  parseStreamEndReason,
+  resubscribeDelayMs,
+  shouldResubscribe,
+  type StreamEndReason,
+} from "./subscription-end.js";
 
 export type SubscriptionTransport = "auto" | "webtransport" | "websocket" | "sse" | "cbor-seq";
 
@@ -95,6 +104,14 @@ export class CratestackSubscriptionError extends Error {
   ) {
     super(message);
     this.name = "CratestackSubscriptionError";
+  }
+
+  /**
+   * Why the server ended the subscription (`details.reason`, cratestack#1381); `undefined` for a
+   * refusal, a reason this package does not know, or an end without one: use `code` then.
+   */
+  get endReason(): StreamEndReason | undefined {
+    return parseStreamEndReason(this.details);
   }
 }
 

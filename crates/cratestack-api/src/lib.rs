@@ -177,6 +177,16 @@ pub mod __private {
     #[cfg(feature = "envelope")]
     pub use cratestack_axum::__envelope_layer_fn_body as envelope_layer_fn_body;
 
+    /// The SSE subscription endpoints and dispatcher: the refusal every
+    /// RPC router's `/rpc/subscribe/{op_id}` answers with, and what a
+    /// `subscription procedure` is served through (slice S4), the only
+    /// subscriptions a `db = None` schema has.
+    pub use cratestack_axum::rpc::{
+        SseCodec, StreamBounds, SubscribeBinding, decode_subscribe_open_body,
+        encode_subscribe_error, negotiate_subscribe_binding, procedure_feed, procedure_input_query,
+        procedure_query_args, serve_subscription_with, subscribe_input_query,
+        until_credential_expires, until_principal_ends,
+    };
     /// Re-exports for the macro-emitted RPC batch dispatcher
     /// (`crates/cratestack-macros/src/include/server/rpc_module/batch.rs`).
     /// Not part of the public API surface — schema authors should never
@@ -187,14 +197,4 @@ pub mod __private {
     /// `db = Postgres` runtime handle, which this crate cannot offer
     /// without `cratestack-sqlx`.
     pub use cratestack_axum::rpc::{decode_rpc_body, encode_rpc_value, response_to_frame};
-
-    /// The SSE subscription endpoints and dispatcher: the refusal every
-    /// RPC router's `/rpc/subscribe/{op_id}` answers with, and what a
-    /// `subscription procedure` is served through (slice S4), the only
-    /// subscriptions a `db = None` schema has.
-    pub use cratestack_axum::rpc::{
-        SseCodec, SubscribeBinding, decode_subscribe_open_body, encode_subscribe_error,
-        negotiate_subscribe_binding, procedure_feed, procedure_input_query, procedure_query_args,
-        serve_subscription_with, subscribe_input_query, until_credential_expires,
-    };
 }
