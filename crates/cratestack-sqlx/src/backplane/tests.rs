@@ -37,7 +37,6 @@ fn the_cbor_envelope_is_marked_and_the_json_one_is_not() {
         let read = decode(raw).unwrap();
         assert_eq!(read.channel, "ch");
         assert_eq!(read.body, Body::Text("hi".into()));
-        assert!(read.nonce.is_some());
     }
 }
 

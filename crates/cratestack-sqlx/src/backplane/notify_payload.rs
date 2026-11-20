@@ -137,6 +137,8 @@ pub(crate) fn encode_bytes(
 
 /// Reads a notification in either envelope. `Err` says why it is unreadable.
 pub(crate) fn decode(raw: &str) -> Result<Notification<'_>, String> {
+    // 0.20.5 parsed JSON that began with whitespace: so does this.
+    let raw = raw.trim_start();
     match raw.strip_prefix(CBOR_PREFIX) {
         Some(encoded) => cbor::read(encoded),
         None if raw.starts_with('{') => json::read(raw),

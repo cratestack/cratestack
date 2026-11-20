@@ -14,3 +14,5 @@ pub use pg_notify::PgNotifyBackplane;
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tests_strict;

@@ -21,7 +21,13 @@ struct Wire<'a> {
     /// field (and so the message, which carries nothing it knows).
     #[serde(rename = "b", default, skip_serializing_if = "Option::is_none", borrow)]
     bytes: Option<std::borrow::Cow<'a, str>>,
-    #[serde(rename = "n", default, skip_serializing_if = "Option::is_none")]
+    /// Written, never read: whatever it holds, a reader ignores it.
+    #[serde(
+        rename = "n",
+        default,
+        skip_deserializing,
+        skip_serializing_if = "Option::is_none"
+    )]
     nonce: Option<u64>,
 }
 
@@ -43,10 +49,11 @@ pub(super) fn write(notification: &Notification<'_>) -> String {
 
 pub(super) fn read(raw: &str) -> Result<Notification<'_>, String> {
     let wire: Wire<'_> = serde_json::from_str(raw).map_err(|error| error.to_string())?;
-    // `p` before `r`, as 0.20.5 read it; `b` is the new field.
+    // A 0.20.5 writer sends `p` or `r`, never both and never `b`; so more
+    // than one is not from any writer, and is refused, not tie-broken.
     let body = match (wire.payload, wire.event_id, wire.bytes) {
-        (Some(text), _, _) => Body::Text(text),
-        (None, Some(id), _) => Body::Outbox(id),
+        (Some(text), None, None) => Body::Text(text),
+        (None, Some(id), None) => Body::Outbox(id),
         (None, None, Some(bytes)) => Body::Bytes(
             STANDARD
                 .decode(bytes.as_bytes())
@@ -54,10 +61,11 @@ pub(super) fn read(raw: &str) -> Result<Notification<'_>, String> {
                 .into(),
         ),
         (None, None, None) => return Err("carries no payload".to_owned()),
+        _ => return Err("more than one of `p`, `r` and `b`".to_owned()),
     };
     Ok(Notification {
         channel: wire.channel,
         body,
-        nonce: wire.nonce,
+        nonce: None,
     })
 }

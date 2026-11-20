@@ -196,3 +196,39 @@ async fn a_malformed_notification_is_skipped_and_the_listener_keeps_running() {
         BackplaneMessage::Bytes(Arc::from(&b"after"[..]))
     );
 }
+
+#[tokio::test]
+async fn a_model_event_whose_notification_cannot_fit_fails_the_write() {
+    let Some(test_pg) = pg::connect_or_skip().await else {
+        return;
+    };
+    let _guard = pg::serial_guard().await;
+    cratestack_sqlx::ensure_event_outbox_table(&test_pg.pool)
+        .await
+        .unwrap();
+    // The channel alone (`cratestack.model.<model>`) is over the limit, so
+    // not even the by-reference notification fits. 0.20.5 failed the
+    // statement here; it must not commit an event nobody is told of.
+    let model = "M".repeat(8000);
+    cratestack::sqlx::query("DELETE FROM cratestack_event_outbox WHERE model = $1")
+        .bind(&model)
+        .execute(&test_pg.pool)
+        .await
+        .unwrap();
+    let error = cratestack_sqlx::enqueue_event_outbox(
+        &test_pg.pool,
+        &model,
+        cratestack::ModelEventKind::Created,
+        &serde_json::json!({"id": 1}),
+    )
+    .await
+    .unwrap_err();
+    assert!(matches!(error, CratestackError::BadRequest(_)), "{error:?}");
+    let rows: (i64,) =
+        cratestack::sqlx::query_as("SELECT count(*) FROM cratestack_event_outbox WHERE model = $1")
+            .bind(&model)
+            .fetch_one(&test_pg.pool)
+            .await
+            .unwrap();
+    assert_eq!(rows.0, 0, "no outbox row for the refused event");
+}

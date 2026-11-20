@@ -34,8 +34,6 @@ pub struct PgNotifyBackplane {
     /// Dropped with the backplane, which ends the listener task: `try_recv`
     /// on an idle connection would otherwise wait forever.
     alive: watch::Sender<()>,
-    /// What `publish` and `publish_bytes` write.
-    envelope: Envelope,
 }
 
 impl PgNotifyBackplane {
@@ -48,31 +46,36 @@ impl PgNotifyBackplane {
             hub: Arc::default(),
             listening: OnceCell::new(),
             alive: watch::channel(()).0,
-            envelope: Envelope::Cbor,
         }
     }
 
-    /// Writes the legacy JSON envelope (0.20.5 and earlier) instead of the
-    /// CBOR one, for a rolling deploy from those versions. A 0.20.5 replica
-    /// cannot read the CBOR envelope: it skips the notification as
-    /// unreadable. Every 0.20.6 replica reads both.
+    /// Makes every notification this **process** writes use the legacy JSON
+    /// envelope (0.20.5 and earlier) instead of the CBOR one, for a rolling
+    /// deploy from those versions. A 0.20.5 replica cannot read CBOR: it
+    /// skips the notification as unreadable. Every 0.20.6 replica reads both.
     ///
-    /// **Rollout.** Step 1: deploy 0.20.6 with this option on every
-    /// replica; they write what the old replicas read, and read both. Step
-    /// 2, once no 0.20.5 replica is left: remove the option and redeploy;
-    /// they write CBOR. Skipping step 1 costs the notifications a 0.20.5
-    /// replica cannot read, until it is upgraded.
+    /// Call it once at startup, before the first write. **It is a process
+    /// switch, not a property of one backplane:** it covers every
+    /// `PgNotifyBackplane` in the process, built before or after the call
+    /// (another schema's default runtime included), and the writers that
+    /// hold no backplane (a model event's write path, a topic's
+    /// `publish_in_tx`). Writes made *before* the call went out as CBOR, and
+    /// it cannot be undone in-process: to go back, redeploy without it.
     ///
-    /// What it covers: this backplane's `publish`, and, because the writers
-    /// that hold no backplane (a model event's write path, a topic's
-    /// `publish_in_tx`) share the setting, every notification this *process*
-    /// writes from the moment this is called. A byte payload goes as base64
-    /// in a field (`b`) that 0.20.5 readers ignore, so it reaches only
-    /// 0.20.6 replicas, and its size limit is the base64 text's.
-    #[must_use]
-    pub fn with_json_envelope(mut self) -> Self {
-        self.envelope = Envelope::Json;
+    /// **Rollout.** Step 1: deploy 0.20.6 with this on every replica; they
+    /// write what the old replicas read, and read both. Step 2, once no
+    /// 0.20.5 replica is left: remove it and redeploy; they write CBOR.
+    /// A byte payload goes as base64 in a field (`b`)
+    /// that 0.20.5 readers ignore, so it reaches 0.20.6 replicas only, and
+    /// its size limit is the base64 text's.
+    pub fn use_json_envelope() {
         Envelope::make_default_json();
+    }
+
+    /// [`Self::use_json_envelope`] in a builder chain: process-wide, not `self`'s.
+    #[must_use]
+    pub fn with_json_envelope(self) -> Self {
+        Self::use_json_envelope();
         self
     }
 
@@ -116,7 +119,8 @@ impl SubscriptionBackplane for PgNotifyBackplane {
         payload: &'a str,
     ) -> BackplaneFuture<'a, Result<(), CratestackError>> {
         Box::pin(async move {
-            let Some(notification) = encode_text(self.envelope, channel, payload, None) else {
+            let Some(notification) = encode_text(Envelope::current(), channel, payload, None)
+            else {
                 return Err(CratestackError::BadRequest(
                     "a backplane payload must stay under Postgres' 8000-byte NOTIFY limit"
                         .to_owned(),
@@ -134,13 +138,14 @@ impl SubscriptionBackplane for PgNotifyBackplane {
         Box::pin(async move {
             // No outbox row exists for a byte payload to refer to, so it
             // is refused whole, never truncated.
-            let notification = encode_bytes(self.envelope, channel, payload).map_err(|size| {
-                CratestackError::BadRequest(format!(
-                    "a backplane byte payload of {} bytes encodes to a {size}-byte NOTIFY, \
+            let notification =
+                encode_bytes(Envelope::current(), channel, payload).map_err(|size| {
+                    CratestackError::BadRequest(format!(
+                        "a backplane byte payload of {} bytes encodes to a {size}-byte NOTIFY, \
                      over Postgres' limit of {NOTIFY_LIMIT} bytes",
-                    payload.len()
-                ))
-            })?;
+                        payload.len()
+                    ))
+                })?;
             self.notify(notification).await
         })
     }

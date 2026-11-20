@@ -50,9 +50,17 @@ pub(super) fn read(encoded: &str) -> Result<Notification<'static>, String> {
         .map()
         .map_err(bad)?
         .ok_or("an indefinite-length map")?;
-    let (mut version, mut channel, mut body, mut nonce) = (None, None, None, None);
+    let (mut version, mut channel, mut body) = (None, None, None);
     for _ in 0..entries {
-        match decoder.str().map_err(bad)? {
+        // One meaning per key, so which of two is meant is never guessed.
+        let key = decoder.str().map_err(bad)?;
+        let duplicate = || format!("duplicate key `{key}`");
+        match key {
+            "v" if version.is_some() => return Err(duplicate()),
+            "c" if channel.is_some() => return Err(duplicate()),
+            "t" | "b" | "r" if body.is_some() => {
+                return Err(format!("more than one payload key (`{key}`)"));
+            }
             "v" => version = Some(decoder.u64().map_err(bad)?),
             "c" => channel = Some(decoder.str().map_err(bad)?.to_owned()),
             "t" => body = Some(Body::Text(decoder.str().map_err(bad)?.to_owned().into())),
@@ -62,9 +70,13 @@ pub(super) fn read(encoded: &str) -> Result<Notification<'static>, String> {
                     .map_err(|error| format!("bad event id in `r`: {error}"))?;
                 body = Some(Body::Outbox(id));
             }
-            "n" => nonce = Some(decoder.u64().map_err(bad)?),
+            // The nonce only tells notifications apart on the way in:
+            // whatever it holds, a reader has no use for it.
             _ => decoder.skip().map_err(bad)?,
         }
+    }
+    if decoder.position() != bytes.len() {
+        return Err("trailing bytes after the envelope map".to_owned());
     }
     match version {
         Some(VERSION) => {}
@@ -74,6 +86,6 @@ pub(super) fn read(encoded: &str) -> Result<Notification<'static>, String> {
     Ok(Notification {
         channel: channel.ok_or("no channel")?.into(),
         body: body.ok_or("carries no payload")?,
-        nonce,
+        nonce: None,
     })
 }
