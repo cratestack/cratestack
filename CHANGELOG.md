@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.20.6 (2026-11-20)
+
 ### A byte-payload subscription backplane, and a CBOR `NOTIFY` envelope (A24 decision 366 O2)
 
 Needed by A24, which fans CBOR-encoded rows out across replicas over Postgres `NOTIFY`: the backplane carried text only. **Breaking edges:** under the CBOR envelope a plain-text `publish` or topic message must fit in about **5,900 bytes** (a one-character channel; less the channel's length: 5,866 for a 35-character topic channel), against about 7,870 (7,840) under JSON, because the 7900-byte `NOTIFY` limit now applies to base64 text. A text payload between those sizes used to be sent and now errors (`BadRequest`) unless `use_json_envelope()` is on, which keeps the JSON figure; a model event over the limit still falls back to its outbox row. **Source-breaking edges:** `BackplaneMessage` gains `Bytes` and is now `#[non_exhaustive]` (a `match` on it outside `cratestack-core` needs a wildcard arm, this release and every later one that adds a variant), and `SubscriptionBackplane` gains `publish_bytes`, which is defaulted, so a hand-written backplane still compiles but **refuses bytes** with an `Internal` error ("this backplane does not carry byte payloads") until it overrides it. `LocalHub::deliver` (`#[doc(hidden)]`) now takes a `BackplaneMessage`, not an `Arc<str>`. A **rolling deploy from 0.20.5 needs the option below.**
