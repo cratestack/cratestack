@@ -63,10 +63,10 @@ pub(crate) async fn end_session(
 ) {
     open.sort_unstable();
     for id in open {
-        if let Ok(frame) = codec.encode(&ServerFrame::err(id, error)) {
-            if sink.send(frame).await.is_err() {
-                return;
-            }
+        if let Ok(frame) = codec.encode(&ServerFrame::err(id, error))
+            && sink.send(frame).await.is_err()
+        {
+            return;
         }
     }
     refuse(sink, codec, error, reason).await;

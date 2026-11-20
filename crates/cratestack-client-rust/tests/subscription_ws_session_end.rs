@@ -4,6 +4,8 @@
 //! session frame as the only word a client gets: reading past it, then
 //! ending cleanly, would hand a revoked stream's consumer a quiet end.
 #![cfg(feature = "ws")]
+// The handshake callback's `Err` type is tungstenite's, not ours to shrink.
+#![allow(clippy::result_large_err)]
 
 use cratestack_client_rust::SubscriptionTransport;
 use cratestack_client_rust::{ClientConfig, CratestackClient, SubscriptionTarget};
