@@ -112,6 +112,17 @@ ignore = [
     # `--target all` prints nothing). Revisit when loom drops pin-utils.
     { id = "RUSTSEC-2026-0441", reason = "pin-utils, unmaintained upstream (no safe upgrade); only via kio's cfg(loom) target dependency on loom, never compiled in a normal build; revisit when loom drops it" },
 
+    # --- Unmaintained: chrono ---
+    # Declared unmaintained upstream; "no safe upgrade is available". `chrono`
+    # is a direct dependency of `cratestack-core` and most framework crates
+    # (timestamps in the model, wire and codec surface), and its types are
+    # part of the public API generated code references, so there is no
+    # drop-in replacement to swap in today. Moving to a maintained time crate
+    # is a breaking, workspace-wide migration, tracked separately from this
+    # advisory. Revisit when that migration lands (or chrono is maintained
+    # again).
+    { id = "RUSTSEC-2026-0543", reason = "chrono, unmaintained upstream (no safe upgrade); a direct dependency of cratestack-core and most framework crates with no drop-in replacement; migration to a maintained time crate is tracked separately; revisit then" },
+
     # --- Vulnerabilities: quick-xml (via plist, via tauri) — RESOLVED ---
     # RUSTSEC-2026-0194 and RUSTSEC-2026-0195 used to be ignored here. Their
     # own recorded revisit condition was "when tauri ships a plist >=1.10 or
