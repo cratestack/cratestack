@@ -21,7 +21,8 @@ pub(super) struct Message {
     pub(super) key: String,
     /// The snake_case name of a [`StreamEndReason`].
     pub(super) reason: String,
-    /// Seconds since the epoch.
+    /// Integer seconds since the epoch (a number or numeric string; a
+    /// fraction is rounded up).
     pub(super) until: Option<serde_json::Value>,
 }
 
@@ -42,20 +43,46 @@ impl StreamRevocations {
             tracing::warn!(reason = %message.reason, "unknown revocation reason, revoking as session_ended");
             StreamEndReason::SessionEnded
         });
-        let until = message.until.as_ref().map(|until| self.until_of(until));
+        let until = message
+            .until
+            .as_ref()
+            .and_then(|until| self.until_of(until));
         self.revoke(key, reason, until);
     }
 
-    /// The instant a received `until` names. Anything that is not a count of
-    /// seconds the clock can hold is clamped, never dropped.
-    fn until_of(&self, until: &serde_json::Value) -> SystemTime {
-        let now = (self.lock().now)();
-        until
-            .as_u64()
-            .and_then(|secs| UNIX_EPOCH.checked_add(Duration::from_secs(secs)))
-            .unwrap_or_else(|| {
-                tracing::warn!(%until, "revocation `until` out of range, clamping to 24 hours");
-                now.checked_add(OVERFLOW_UNTIL).unwrap_or(now)
-            })
+    /// The instant a received `until` names, or `None` when it is malformed
+    /// (the revoke then applies with no tombstone). Seconds since the epoch,
+    /// as a number or numeric string; a fraction is rounded up, so a
+    /// tombstone never lapses early. Only a value no `SystemTime` can hold is
+    /// clamped, never dropped.
+    fn until_of(&self, until: &serde_json::Value) -> Option<SystemTime> {
+        let Some(secs) = seconds_of(until) else {
+            tracing::warn!(%until, "malformed revocation `until`, revoking without a tombstone");
+            return None;
+        };
+        Some(
+            UNIX_EPOCH
+                .checked_add(Duration::from_secs(secs))
+                .unwrap_or_else(|| {
+                    tracing::warn!(%until, "revocation `until` out of range, clamping to 24 hours");
+                    let now = (self.lock().now)();
+                    now.checked_add(OVERFLOW_UNTIL).unwrap_or(now)
+                }),
+        )
     }
+}
+
+/// Whole seconds (rounded up) of a non-negative finite number or numeric
+/// string; `u64::MAX` for one too large to count.
+fn seconds_of(value: &serde_json::Value) -> Option<u64> {
+    if let Some(secs) = value.as_u64() {
+        return Some(secs);
+    }
+    let float = match value {
+        serde_json::Value::Number(number) => number.as_f64()?,
+        serde_json::Value::String(text) => text.trim().parse::<f64>().ok()?,
+        _ => return None,
+    };
+    // `-0.0` is a zero, not a negative; `as` saturates what is too large.
+    (float.is_finite() && float >= 0.0).then(|| float.ceil() as u64)
 }

@@ -39,7 +39,10 @@ impl StreamRevocations {
     /// replica. Call it from the logout, suspend or device-revoke handler;
     /// with `PgNotifyBackplane` the same `NOTIFY` can be issued in the
     /// transaction that records the change, so replicas hear of it at
-    /// commit. Returns how many streams this replica ended. A replica that
+    /// commit. The payload is JSON `{"kind", "key", "reason", "until"}`;
+    /// `until` is integer seconds since the epoch (a fraction, as from
+    /// `extract(epoch from ...)`, or a numeric string, is accepted and
+    /// rounded up; a negative or non-numeric one revokes with no tombstone). Returns how many streams this replica ended. A replica that
     /// is not [following](Self::follow) never hears of it.
     ///
     /// The local revoke happens first and is not undone: when the backplane

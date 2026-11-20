@@ -169,3 +169,24 @@ fn a_poisoned_lock_is_recovered() {
     );
     assert!(watch.try_ended().is_some());
 }
+
+#[test]
+fn a_resubscribe_reason_keeps_no_tombstone() {
+    let revocations = StreamRevocations::default();
+    let watch = revocations.watch(vec![session("a")]).unwrap();
+    let until = Some(SystemTime::now() + Duration::from_secs(3600));
+    assert_eq!(
+        revocations.revoke(session("a"), StreamEndReason::StreamLifetime, until),
+        1
+    );
+    assert_eq!(
+        watch.try_ended().unwrap().reason,
+        StreamEndReason::StreamLifetime
+    );
+    // A tombstone would refuse every retry with the reason that tells the
+    // client to retry: an endless reconnect loop.
+    assert!(revocations.watch(vec![session("a")]).is_ok());
+    revocations.revoke(session("b"), StreamEndReason::RevocationResync, until);
+    assert!(revocations.watch(vec![session("b")]).is_ok());
+    assert_eq!(revocations.tombstones(), 0);
+}

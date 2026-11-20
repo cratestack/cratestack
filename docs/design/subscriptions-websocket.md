@@ -519,7 +519,7 @@ WebSocket / WebTransport session holding the key, on every binding, with a typed
 WebSocket session sends each its own `{id, err}` (in id order, through the one writer); a WebTransport
 session announces the end to its stream tasks, which write their `err` and FIN, and waits for them (1 s at
 most). A client reads a session's `{id: 0, err}` as the terminal error of every subscription on that socket,
-so a close alone is never read as a clean end. `until` keeps a tombstone that refuses a later *stream open* (and a
+so a close alone is never read as a clean end. `until` keeps a tombstone (never for `stream_lifetime` or `revocation_resync`, which clients retry without a cap and would loop) that refuses a later *stream open* (and a
 socket `Init`) with a cached context until then; refusing a unary call stays the `AuthProvider`'s job.
 The bound is `until_principal_ends`: revocation first, then the credential clock, then the items. A
 `WebSocket` / WebTransport `Init` refresh re-registers the session but does not extend streams already
@@ -527,7 +527,7 @@ open, and is refused when the watch it replaces has already ended. Across replic
 `cratestack.revocation` (server-internal JSON, at-most-once); a `Resync` / `Lagged` ends every watched
 stream with `revocation_resync` by default (`ResyncPolicy::EndAll`, fail closed) or is ignored
 (`ResyncPolicy::Ignore`). A payload that cannot be parsed is skipped, an unknown `reason` still revokes (as
-`session_ended`), an `until` out of range is clamped to 24 h, and a follower that ends fails closed. A hand-written `SubscriptionDispatcher` gets none of this unless it
+`session_ended`), `until` is integer seconds since the epoch (a fraction or numeric string is accepted and rounded up; a negative or non-numeric one revokes with no tombstone, with a `warn!`), only an `until` no `SystemTime` can hold is clamped to 24 h, and a follower that ends fails closed. A hand-written `SubscriptionDispatcher` gets none of this unless it
 implements `revocations()` and bounds its streams itself.
 
 ### 6.4 Frames

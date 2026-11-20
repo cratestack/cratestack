@@ -53,6 +53,8 @@ mod tests_backplane;
 mod tests_follower;
 #[cfg(test)]
 mod tests_keys;
+#[cfg(test)]
+mod tests_until;
 mod watch;
 
 pub use backplane::{REVOCATION_CHANNEL, ResyncPolicy};
@@ -134,7 +136,11 @@ impl StreamRevocations {
     /// With `until`, also keeps a tombstone so a later
     /// [`watch`](Self::watch) of `key` is refused until then: set it to the
     /// longest `exp` a context that is still cached could carry. `None`
-    /// ends live streams only and keeps no tombstone.
+    /// ends live streams only and keeps no tombstone. Neither does a
+    /// `reason` that [`is_unavailable`](StreamEndReason::is_unavailable)
+    /// (`stream_lifetime`, `revocation_resync`): clients retry those
+    /// without a cap, so a tombstone would loop every client of the key
+    /// until it lapsed. Those end live streams only, with a `warn!`.
     pub fn revoke(
         &self,
         key: RevocationKey,

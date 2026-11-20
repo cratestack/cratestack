@@ -133,6 +133,16 @@ impl State {
         reason: StreamEndReason,
         until: SystemTime,
     ) {
+        if reason.is_unavailable() {
+            // Refusing an open with a reason the client retries without a
+            // cap would reconnect every client of the principal until
+            // `until`: end the live streams only.
+            tracing::warn!(
+                ?reason,
+                "not keeping a tombstone for a resubscribe reason: it would loop reconnects"
+            );
+            return;
+        }
         self.prune();
         if until <= (self.now)() {
             return;
