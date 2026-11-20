@@ -69,23 +69,37 @@ where
     /// (`"subscription interrupted"`): resubscribe and refetch.
     pub async fn subscribe(&self) -> Result<SubscriptionStream<T>, CratestackError> {
         let receiver = self.backplane.subscribe(&self.channel).await?;
-        Ok(Box::pin(stream::unfold(
-            Some(receiver),
-            |receiver| async move {
+        let channel: Arc<str> = Arc::from(self.channel.as_str());
+        Ok(Box::pin(stream::unfold(Some(receiver), move |receiver| {
+            let channel = channel.clone();
+            async move {
                 let mut receiver = receiver?;
-                let item = match receiver.next().await? {
-                    BackplaneMessage::Payload(json) => {
-                        serde_json::from_str(&json).map_err(|error| {
-                            CratestackError::Codec(format!("unreadable topic message: {error}"))
-                        })
+                let item = loop {
+                    match receiver.next().await? {
+                        BackplaneMessage::Payload(json) => {
+                            break serde_json::from_str(&json).map_err(|error| {
+                                CratestackError::Codec(format!("unreadable topic message: {error}"))
+                            });
+                        }
+                        BackplaneMessage::Lagged => break Err(unavailable("subscription lagged")),
+                        BackplaneMessage::Resync => {
+                            break Err(unavailable("subscription interrupted"));
+                        }
+                        // A topic carries JSON text; a byte payload on its
+                        // channel is malformed. Skip it, keep the stream.
+                        other => {
+                            tracing::warn!(
+                                target: "cratestack",
+                                channel = %channel,
+                                "non-text backplane message on a topic channel skipped: {other:?}"
+                            );
+                        }
                     }
-                    BackplaneMessage::Lagged => Err(unavailable("subscription lagged")),
-                    BackplaneMessage::Resync => Err(unavailable("subscription interrupted")),
                 };
                 let rest = item.is_ok().then_some(receiver);
                 Some((item, rest))
-            },
-        )))
+            }
+        })))
     }
 }
 

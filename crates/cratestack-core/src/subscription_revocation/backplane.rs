@@ -126,6 +126,12 @@ impl StreamRevocations {
                     match message {
                         BackplaneMessage::Payload(payload) => this.apply(&payload),
                         BackplaneMessage::Resync | BackplaneMessage::Lagged => this.resync(policy),
+                        // Revocations are JSON text: anything else is
+                        // malformed, and no payload can end the follower.
+                        other => tracing::warn!(
+                            target: "cratestack",
+                            "non-text message on the revocation channel skipped: {other:?}"
+                        ),
                     }
                 }
                 // The receiver ended: whatever was published before the next

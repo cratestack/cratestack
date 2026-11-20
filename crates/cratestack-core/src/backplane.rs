@@ -30,10 +30,18 @@ pub use local_hub::{LocalHub, SUBSCRIPTION_BUFFER_CAPACITY};
 pub use topic::TopicHandle;
 
 /// One delivery on a backplane channel.
+///
+/// `#[non_exhaustive]`: a match outside this crate needs a wildcard arm, so a
+/// later variant is not another source break.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum BackplaneMessage {
-    /// A published payload (JSON text, as published).
+    /// A published text payload (JSON text, as published).
     Payload(Arc<str>),
+    /// A published byte payload (for instance CBOR), exactly as published by
+    /// [`SubscriptionBackplane::publish_bytes`]. A channel that carries text
+    /// (model events, topics, revocations) treats one as malformed.
+    Bytes(Arc<[u8]>),
     /// Messages may have been lost: the backplane's listener reconnected. The
     /// subscription must end so its client resubscribes.
     Resync,
@@ -69,6 +77,24 @@ pub trait SubscriptionBackplane: Send + Sync + 'static {
         channel: &'a str,
         payload: &'a str,
     ) -> BackplaneFuture<'a, Result<(), CratestackError>>;
+
+    /// Publishes the byte payload `payload` on `channel`, fire and forget:
+    /// subscribers receive it as [`BackplaneMessage::Bytes`], in order with
+    /// text published on the same channel.
+    ///
+    /// The default refuses, so a backplane written before byte payloads
+    /// existed keeps compiling and says so rather than dropping the message.
+    /// [`InProcessBackplane`] and `PgNotifyBackplane` carry bytes.
+    fn publish_bytes<'a>(
+        &'a self,
+        channel: &'a str,
+        payload: &'a [u8],
+    ) -> BackplaneFuture<'a, Result<(), CratestackError>> {
+        let _ = (channel, payload);
+        Box::pin(std::future::ready(Err(CratestackError::Internal(
+            "this backplane does not carry byte payloads".to_owned(),
+        ))))
+    }
 
     /// Receives everything published on `channel` from now on. The future
     /// resolves only once the subscription is live, so a caller that then

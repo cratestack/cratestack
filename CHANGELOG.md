@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+### A byte-payload subscription backplane, and a CBOR `NOTIFY` envelope (A24 decision 366 O2)
+
+Needed by A24, which fans CBOR-encoded rows out across replicas over Postgres `NOTIFY`: the backplane carried text only. **Source-breaking edges:** `BackplaneMessage` gains `Bytes` and is now `#[non_exhaustive]` (a `match` on it outside `cratestack-core` needs a wildcard arm, this release and every later one that adds a variant), and `SubscriptionBackplane` gains `publish_bytes`, which is defaulted, so a hand-written backplane still compiles but **refuses bytes** with an `Internal` error ("this backplane does not carry byte payloads") until it overrides it. `LocalHub::deliver` (`#[doc(hidden)]`) now takes a `BackplaneMessage`, not an `Arc<str>`. A **rolling deploy from 0.20.5 needs the option below.**
+
+- **API (`cratestack-core`, re-exported by the facades).** `BackplaneMessage::Bytes(Arc<[u8]>)`; `SubscriptionBackplane::publish_bytes(&self, channel, payload: &[u8]) -> BackplaneFuture<Result<(), CratestackError>>`. `InProcessBackplane` and `PgNotifyBackplane` implement it. A subscriber receives exactly what was published, in order: `Payload` for text and `Bytes` for bytes, mixed on one channel.
+- **Text-only consumers skip a stray `Bytes`.** The model feed (`model_events`), a topic's `subscribe` and the revocation follower treat a byte message on their channel as malformed: a `warn!`, the message skipped, the stream or follower keeps running (a revocation follower's "no payload can end it" property is unchanged).
+- **The `PgNotifyBackplane` envelope is CBOR.** A `NOTIFY` on `cratestack_events` is now `cbor:` followed by the base64 (standard, padded) of a CBOR map `{"v": 1, "c": channel, "t": text | "b": bytes | "r": outbox event_id (16 bytes), "n": nonce}`; the `cbor:` marker cannot be confused with the legacy JSON, which starts with `{`. Unknown keys are skipped; an unknown `v` is refused. The 7900-byte limit now applies to that final text (so a byte payload fits up to about 5.8 KB). A text model event over it still goes as a reference to its outbox row; `publish_bytes` over it has no row to refer to and returns `BadRequest` naming the payload size, the encoded size and the limit, never truncating.
+- **The reader accepts both envelopes**, so a 0.20.6 replica reads a 0.20.5 replica's notifications. A notification that is neither (bad base64, bad CBOR, an unknown version, no payload) is logged (`warn!`) and skipped; the listener keeps running.
+- **Rolling deploy from 0.20.5.** A 0.20.5 reader cannot read the CBOR envelope: its JSON parse fails and it skips the notification, so model events and topic messages written by a 0.20.6 replica would not reach it. `PgNotifyBackplane::new(pool).with_json_envelope()` makes a 0.20.6 replica write the legacy JSON envelope (a byte payload goes as base64 in a new field, `b`, which 0.20.5 readers ignore, so bytes reach 0.20.6 replicas only). Step 1: deploy 0.20.6 with the option on every replica. Step 2, once no 0.20.5 replica is left: remove it and redeploy. The option is process-wide: the writers that hold no backplane (a model event's write path, a topic's `publish_in_tx`) share it.
+
+**Transport parity.** Server-internal; no request or response surface changes (REST, RPC and the generated clients are untouched, and MCP is exempt).
+
 ## 0.20.5 (2026-11-20)
 
 ### Ending a live subscription when its principal is revoked, suspended or signed out (cratestack#1381)

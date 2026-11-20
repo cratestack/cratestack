@@ -5,7 +5,7 @@
 //! bounded-buffer rule the SSE binding has always had (64 items).
 
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::sync::{Mutex, MutexGuard, PoisonError};
 
 use tokio::sync::broadcast;
 
@@ -39,11 +39,13 @@ impl LocalHub {
         receiver_stream(receiver)
     }
 
-    /// Delivers to `channel`'s subscribers; forgets the channel once it has none.
-    pub fn deliver(&self, channel: &str, payload: Arc<str>) {
+    /// Delivers `message` (a [`BackplaneMessage::Payload`] or
+    /// [`BackplaneMessage::Bytes`]) to `channel`'s subscribers; forgets the
+    /// channel once it has none.
+    pub fn deliver(&self, channel: &str, message: BackplaneMessage) {
         let mut channels = self.lock();
         if let Some(sender) = channels.get(channel)
-            && sender.send(BackplaneMessage::Payload(payload)).is_err()
+            && sender.send(message).is_err()
         {
             channels.remove(channel);
         }

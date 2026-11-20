@@ -1812,11 +1812,13 @@ name = "cratestack-sqlx"
 version = "0.20.5"
 dependencies = [
  "async-trait",
+ "base64 0.23.1",
  "bigdecimal",
  "chrono",
  "cratestack-core",
  "cratestack-policy",
  "cratestack-sql",
+ "minicbor",
  "pgvector",
  "rust_decimal",
  "serde",
