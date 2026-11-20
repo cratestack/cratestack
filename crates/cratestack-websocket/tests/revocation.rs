@@ -11,7 +11,8 @@ use cratestack_core::{RevocationKey, StreamEndReason, StreamRevocations};
 use cratestack_websocket::{ClientFrame, close_code};
 use futures_util::SinkExt;
 use revocation_support::{
-    Next, connect, credentials, encode, frame, next, reason, serve, session, until_closed,
+    ENTERED, GATE, Next, connect, credentials, encode, frame, next, reason, serve, session,
+    until_closed,
 };
 
 #[tokio::test]
@@ -30,12 +31,73 @@ async fn a_session_end_closes_the_socket_4401_and_every_open_subscription() {
     let (code, session_reason, stream_reasons) = until_closed(&mut socket).await;
     assert_eq!(code, close_code::UNAUTHENTICATED as u16);
     assert_eq!(session_reason, "session_ended");
+    // Every open stream is told why, in order, before the session frame.
+    let expected = [
+        (1, "session_ended".to_owned()),
+        (2, "session_ended".to_owned()),
+    ];
+    assert_eq!(stream_reasons, expected);
+}
+
+#[tokio::test]
+async fn a_credential_expiry_tells_every_open_stream_before_closing() {
+    let revocations = StreamRevocations::default();
+    let url = serve(&revocations).await;
+    let mut socket = session(&url, "short", 2).await;
+    let (code, session_reason, stream_reasons) = until_closed(&mut socket).await;
+    assert_eq!(code, close_code::UNAUTHENTICATED as u16);
+    assert_eq!(session_reason, "credential_expired");
+    let ids: Vec<u64> = stream_reasons.iter().map(|(id, _)| *id).collect();
+    assert_eq!(ids, [1, 2]);
     assert!(
         stream_reasons
             .iter()
-            .all(|reason| reason == "session_ended"),
-        "{stream_reasons:?}"
+            .all(|(_, reason)| reason == "credential_expired")
     );
+}
+
+/// A refresh onto a tombstoned key is refused (a key revoked meanwhile).
+#[tokio::test]
+async fn an_init_refresh_onto_a_tombstoned_key_is_refused() {
+    let revocations = StreamRevocations::default();
+    let url = serve(&revocations).await;
+    let mut socket = session(&url, "long", 1).await;
+    // `rotated` is the same user on session `s2`, which was revoked.
+    revocations.revoke(
+        RevocationKey::Session("s2".into()),
+        StreamEndReason::DeviceRevoked,
+        Some(SystemTime::now() + Duration::from_secs(60)),
+    );
+    socket
+        .send(encode(&ClientFrame::init(credentials("rotated"))))
+        .await
+        .unwrap();
+    let (code, session_reason, _) = until_closed(&mut socket).await;
+    assert_eq!(code, close_code::FORBIDDEN as u16);
+    assert_eq!(session_reason, "device_revoked");
+}
+
+/// A revoke that lands while a refresh is being authenticated: the refresh
+/// must not replace a watch that already ended, or the socket outlives it.
+#[tokio::test]
+async fn a_revoke_during_a_refresh_still_ends_the_session() {
+    let revocations = StreamRevocations::default();
+    let url = serve(&revocations).await;
+    let mut socket = session(&url, "long", 1).await;
+    socket
+        .send(encode(&ClientFrame::init(credentials("gated"))))
+        .await
+        .unwrap();
+    ENTERED.notified().await;
+    revocations.revoke(
+        RevocationKey::Session("s1".into()),
+        StreamEndReason::SessionEnded,
+        None,
+    );
+    GATE.notify_one();
+    let (code, session_reason, _) = until_closed(&mut socket).await;
+    assert_eq!(code, close_code::UNAUTHENTICATED as u16);
+    assert_eq!(session_reason, "session_ended");
 }
 
 #[tokio::test]

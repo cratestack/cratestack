@@ -24,8 +24,15 @@ fn now() -> i64 {
         .as_secs() as i64
 }
 
+/// `gated` is the `long` credential, but its authentication parks until
+/// [`GATE`] is opened, after announcing itself on [`ENTERED`]: a refresh the
+/// test can hold mid-flight while it revokes.
+pub static ENTERED: tokio::sync::Notify = tokio::sync::Notify::const_new();
+pub static GATE: tokio::sync::Notify = tokio::sync::Notify::const_new();
+
 /// `authorization: short` is user `u1`, session `s1`, valid for one second;
-/// `long` is the same session for an hour; anything else is refused.
+/// `long` is the same session for an hour; `rotated` is the same user on
+/// session `s2` for an hour; anything else is refused.
 #[derive(Clone)]
 pub struct Auth;
 
@@ -36,23 +43,31 @@ impl AuthProvider for Auth {
         &self,
         request: &RequestContext<'_>,
     ) -> impl core::future::Future<Output = Result<CratestackContext, Self::Error>> + Send {
-        let exp = match request
+        let token = request
             .headers
             .get("authorization")
-            .and_then(|v| v.to_str().ok())
-        {
-            Some("short") => Some(now() + 1),
-            Some("long") => Some(now() + 3600),
-            _ => None,
+            .and_then(|v| v.to_str().ok());
+        let (sid, exp) = match token {
+            Some("short") => ("s1", Some(now() + 1)),
+            Some("long" | "gated") => ("s1", Some(now() + 3600)),
+            Some("rotated") => ("s2", Some(now() + 3600)),
+            _ => ("", None),
         };
-        core::future::ready(match exp {
-            Some(exp) => Ok(CratestackContext::authenticated([
-                ("sub".to_owned(), Value::String("u1".to_owned())),
-                ("sid".to_owned(), Value::String("s1".to_owned())),
-                ("exp".to_owned(), Value::Int(exp)),
-            ])),
-            None => Err(CratestackError::Unauthorized("bad credentials".to_owned())),
-        })
+        let gated = token == Some("gated");
+        async move {
+            if gated {
+                ENTERED.notify_one();
+                GATE.notified().await;
+            }
+            match exp {
+                Some(exp) => Ok(CratestackContext::authenticated([
+                    ("sub".to_owned(), Value::String("u1".to_owned())),
+                    ("sid".to_owned(), Value::String(sid.to_owned())),
+                    ("exp".to_owned(), Value::Int(exp)),
+                ])),
+                None => Err(CratestackError::Unauthorized("bad credentials".to_owned())),
+            }
+        }
     }
 }
 
@@ -177,13 +192,22 @@ pub async fn session(url: &str, token: &str, streams: u64) -> Socket {
 }
 
 /// Reads to the close. Returns the close code, the reason of the session's
-/// `{id: 0, err}` frame, and every per-stream err frame's reason.
-pub async fn until_closed(socket: &mut Socket) -> (u16, String, Vec<String>) {
+/// `{id: 0, err}` frame, and every per-stream err frame as `(id, reason)`,
+/// in the order they arrived. A stream's err frame arriving after the
+/// session's is a failure: a client stops reading at `{id: 0, err}`.
+pub async fn until_closed(socket: &mut Socket) -> (u16, String, Vec<(u64, String)>) {
     let (mut session_reason, mut stream_reasons) = (None, Vec::new());
     loop {
         match next(socket).await {
             Next::Frame(frame) if frame.id == 0 => session_reason = Some(reason(&frame)),
-            Next::Frame(frame) => stream_reasons.push(reason(&frame)),
+            Next::Frame(frame) => {
+                assert!(
+                    session_reason.is_none(),
+                    "stream {} ended after the session frame",
+                    frame.id
+                );
+                stream_reasons.push((frame.id, reason(&frame)));
+            }
             Next::Closed(code) => {
                 return (
                     code,

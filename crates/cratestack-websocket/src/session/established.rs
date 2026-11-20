@@ -21,7 +21,7 @@ use tokio::time::Instant;
 use tracing::Instrument;
 
 use super::io::{expiry_of, send, sleep_until};
-use crate::close::{Sink, close, refuse, ws_close};
+use crate::close::{Sink, close, end_session, refuse, ws_close};
 use crate::codec::WireCodec;
 use crate::server::Shared;
 use crate::subscription::{self, Outbound};
@@ -46,7 +46,34 @@ pub(super) async fn established<A: AuthProvider, D: SubscriptionDispatcher>(
     let mut last_pong = Instant::now();
     loop {
         let expiry = expiry_of(&ctx);
+        // Biased, revocation first: a revoke and another event ready in the
+        // same poll must not let the other win and outlive it. Rare events
+        // (expiry, overflow, ping) precede the frame arms; a client flooding
+        // `Request`s is bounded by the per-socket limit and the rate limiter.
         tokio::select! {
+            biased;
+            end = RevocationWatch::ended_or_pending(&mut revocation) => {
+                let (open, error) = (open.keys().copied().collect(), end.clone().into_error());
+                end_session(&mut sink, codec, open, &error, end.reason.as_str()).await;
+                break;
+            }
+            () = sleep_until(expiry) => {
+                let error = StreamEndNotice::new(StreamEndReason::CredentialExpired).into_error();
+                let open = open.keys().copied().collect();
+                end_session(&mut sink, codec, open, &error, "credential expired").await;
+                break;
+            }
+            () = overflow.notified() => {
+                close(&mut sink, ws_close::TRY_AGAIN_LATER, "client too slow").await;
+                break;
+            }
+            _ = ping.tick() => {
+                if last_pong.elapsed() > limits.pong_timeout {
+                    close(&mut sink, ws_close::GOING_AWAY, "no pong").await;
+                    break;
+                }
+                if sink.send(Message::Ping(Default::default())).await.is_err() { break; }
+            }
             message = stream.next() => {
                 let message = match message {
                     Some(Ok(Message::Pong(_))) => { last_pong = Instant::now(); continue; }
@@ -90,6 +117,13 @@ pub(super) async fn established<A: AuthProvider, D: SubscriptionDispatcher>(
                         // was revoked meanwhile refuses the refresh. Streams
                         // already open keep the context they opened with.
                         if let Some(revocations) = revocations {
+                            // A revoke that landed while this refresh was
+                            // authenticating ended the current watch;
+                            // replacing it would forget that.
+                            if let Some(end) = revocation.as_ref().and_then(RevocationWatch::try_ended) {
+                                refuse(&mut sink, codec, &end.clone().into_error(), end.reason.as_str()).await;
+                                break;
+                            }
                             match revocations.watch_context(&refreshed) {
                                 Ok(watch) => revocation = Some(watch),
                                 Err(end) => {
@@ -112,26 +146,6 @@ pub(super) async fn established<A: AuthProvider, D: SubscriptionDispatcher>(
                 Some(Outbound::Done(id)) => { open.remove(&id); }
                 None => break,
             },
-            () = overflow.notified() => {
-                close(&mut sink, ws_close::TRY_AGAIN_LATER, "client too slow").await;
-                break;
-            }
-            _ = ping.tick() => {
-                if last_pong.elapsed() > limits.pong_timeout {
-                    close(&mut sink, ws_close::GOING_AWAY, "no pong").await;
-                    break;
-                }
-                if sink.send(Message::Ping(Default::default())).await.is_err() { break; }
-            }
-            () = sleep_until(expiry) => {
-                let error = StreamEndNotice::new(StreamEndReason::CredentialExpired).into_error();
-                refuse(&mut sink, codec, &error, "credential expired").await;
-                break;
-            }
-            end = RevocationWatch::ended_or_pending(&mut revocation) => {
-                refuse(&mut sink, codec, &end.clone().into_error(), end.reason.as_str()).await;
-                break;
-            }
         }
     }
     for task in open.into_values() {
