@@ -21,7 +21,7 @@ fn in_secs(seconds: u64) -> Option<SignedStreamDeadline> {
 async fn a_live_stream_ends_unavailable_at_the_deadline() {
     let mut items = until_stream_deadline(forever(), in_secs(30));
     match items.next().await {
-        Some(Err(CratestackError::Unavailable(message))) => assert_eq!(message, "stream lifetime"),
+        Some(Err(CratestackError::StreamEnded(end))) => assert_eq!(end.message, "stream lifetime"),
         other => panic!("expected the lifetime error, got {other:?}"),
     }
     assert!(items.next().await.is_none(), "nothing after the end");
@@ -53,7 +53,7 @@ async fn a_busy_source_cannot_starve_the_deadline() {
     let passed = Some(SignedStreamDeadline(Instant::now()));
     let mut items = until_stream_deadline(busy, passed);
     match items.next().await {
-        Some(Err(CratestackError::Unavailable(message))) => assert_eq!(message, "stream lifetime"),
+        Some(Err(CratestackError::StreamEnded(end))) => assert_eq!(end.message, "stream lifetime"),
         other => panic!("expected the lifetime error first, got {other:?}"),
     }
     assert!(items.next().await.is_none(), "nothing after the end");
@@ -86,7 +86,7 @@ async fn a_busy_source_is_cut_when_the_deadline_passes_mid_stream() {
     .await
     .expect("the deadline ended a busy stream");
     match ended {
-        Some(Err(CratestackError::Unavailable(message))) => assert_eq!(message, "stream lifetime"),
+        Some(Err(CratestackError::StreamEnded(end))) => assert_eq!(end.message, "stream lifetime"),
         other => panic!("expected the lifetime error, got {other:?}"),
     }
     assert!(passed > 0, "items flowed before the deadline");

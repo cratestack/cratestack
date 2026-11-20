@@ -31,6 +31,7 @@ mod codec_helpers;
 mod credential_expiry;
 mod error_encode;
 mod model_feed;
+mod principal_bound;
 mod procedure_subscription;
 mod sse;
 mod sse_subscription;
@@ -46,6 +47,8 @@ pub(crate) mod util;
 
 #[cfg(test)]
 mod tests_error;
+#[cfg(test)]
+mod tests_error_stream_end;
 #[cfg(test)]
 mod tests_frame;
 #[cfg(test)]
@@ -77,6 +80,7 @@ pub use codec_helpers::{decode_rpc_body, encode_rpc_value};
 pub use credential_expiry::until_credential_expires;
 pub use error_encode::{convert_handler_error_response, encode_rpc_error};
 pub use model_feed::{FeedEvent, model_events, model_feed, route_event};
+pub use principal_bound::{StreamBounds, until_principal_ends};
 pub use procedure_subscription::{procedure_feed, procedure_input_query, procedure_query_args};
 pub use sse::encode_model_event_sse_response;
 pub use sse_subscription::{SseCodec, encode_subscription_sse_response};

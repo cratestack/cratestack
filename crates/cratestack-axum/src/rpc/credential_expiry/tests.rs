@@ -21,8 +21,8 @@ fn forever() -> SubscriptionStream<serde_json::Value> {
 async fn a_live_stream_ends_when_the_credential_expires() {
     let mut items = until_credential_expires(forever(), Some(now() + 30));
     match items.next().await {
-        Some(Err(CratestackError::Unauthorized(message))) => {
-            assert_eq!(message, "credential expired")
+        Some(Err(CratestackError::StreamEnded(end))) => {
+            assert_eq!(end.message, "credential expired")
         }
         other => panic!("expected the expiry error, got {other:?}"),
     }
@@ -34,7 +34,7 @@ async fn an_already_expired_credential_ends_at_once() {
     let mut items = until_credential_expires(forever(), Some(now() - 1));
     assert!(matches!(
         items.next().await,
-        Some(Err(CratestackError::Unauthorized(_)))
+        Some(Err(CratestackError::StreamEnded(_)))
     ));
 }
 
@@ -60,8 +60,8 @@ async fn a_busy_source_cannot_starve_the_expiry() {
         Box::pin(stream::repeat_with(|| Ok(serde_json::json!(1))));
     let mut items = until_credential_expires(busy, Some(now() - 1));
     match items.next().await {
-        Some(Err(CratestackError::Unauthorized(message))) => {
-            assert_eq!(message, "credential expired")
+        Some(Err(CratestackError::StreamEnded(end))) => {
+            assert_eq!(end.message, "credential expired")
         }
         other => panic!("expected the expiry error first, got {other:?}"),
     }
@@ -92,8 +92,8 @@ async fn a_busy_source_is_cut_when_the_credential_expires_mid_stream() {
     .await
     .expect("the expiry ended a busy stream");
     match ended {
-        Some(Err(CratestackError::Unauthorized(message))) => {
-            assert_eq!(message, "credential expired")
+        Some(Err(CratestackError::StreamEnded(end))) => {
+            assert_eq!(end.message, "credential expired")
         }
         other => panic!("expected the expiry error, got {other:?}"),
     }
