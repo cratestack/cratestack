@@ -154,36 +154,7 @@ final {{ provider_prefix }}AdapterProvider = Provider<CratestackClientAdapter>((
 final {{ provider_prefix }}BasePathProvider = Provider<String>((ref) => '{{ base_path_literal }}');
 
 {% if has_subscriptions %}
-/// The `retry:` of every generated subscription stream provider. It defers
-/// to Riverpod's own default retry (`ProviderContainer.defaultRetry`) except
-/// for [CratestackEventTooLargeException], which is not transient:
-/// the same server would send the same oversized event again, so retrying
-/// would only reconnect and download it again, and for the signed-open
-/// refusals (`unsigned_frames_refused`, `streams_unsupported`,
-/// `unsigned_refusal`), which repeat for the same transport and schema. Those
-/// errors reach the provider's `AsyncError` at once, and `ref.invalidate`
-/// retries by hand.
-///
-/// A stream the server ended (cratestack#1381) is retried only when a retry
-/// can help: a suspended principal (`principal_suspended`), a revoked device
-/// (`device_revoked`) and an ended session (`session_ended`) are never
-/// retried, and `stream_lifetime` and `revocation_resync` are retried with
-/// the default backoff, jittered.
-Duration? cratestackSubscriptionRetry(int retryCount, Object error) {
-  if (error is CratestackEventTooLargeException) return null;
-  if (error is CratestackSubscriptionException &&
-      const <String>{'unsigned_frames_refused', 'streams_unsupported', 'unsigned_refusal'}
-          .contains(error.code)) {
-    return null;
-  }
-  final reason = error is CratestackSubscriptionException ? error.endReason : null;
-  if (reason != null && reason.isTerminal) return null;
-  final delay = ProviderContainer.defaultRetry(retryCount, error);
-  if (delay == null || reason == null || !reason.resubscribes) return delay;
-  return Duration(
-    milliseconds: DateTime.now().microsecondsSinceEpoch % (delay.inMilliseconds + 1),
-  );
-}
+{% include "riverpod/subscription_retry.dart.j2" %}
 
 /// How the client subscribes (slice S6). Override it to set the
 /// WebTransport listener, the socket credentials or a fixed binding.

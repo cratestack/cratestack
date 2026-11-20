@@ -76,6 +76,10 @@ pub(super) const FRAGMENT_TEMPLATES: &[(&str, &str)] = &[
         include_str!("../templates/http_runtime/subscriptions.dart.j2"),
     ),
     (
+        "http_runtime/stream_end_reason.dart.j2",
+        include_str!("../templates/http_runtime/stream_end_reason.dart.j2"),
+    ),
+    (
         "http_runtime/abortable.dart.j2",
         include_str!("../templates/http_runtime/abortable.dart.j2"),
     ),

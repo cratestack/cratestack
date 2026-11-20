@@ -118,6 +118,42 @@ fn the_socket_modules_come_only_with_subscriptions() {
     assert!(!without["pubspec.yaml"].contains("web_socket_channel"));
 }
 
+/// cratestack#1381: a session's `{id: 0, err}` (the server ending the whole
+/// socket) is the terminal error of the subscription riding it, read before
+/// frames for other ids are skipped. Otherwise a revoked stream's Riverpod
+/// provider completes quietly with stale data. The behaviour runs under
+/// `just verify-dart` only; this pins the order the reader checks in.
+#[test]
+fn the_socket_reader_treats_a_session_frame_as_the_streams_end() {
+    let schema = cratestack_parser::parse_schema_file("tests/fixtures/subscriptions_rpc.cstack")
+        .expect("parses");
+    let package = generate_package(
+        &schema,
+        &DartGeneratorConfig {
+            library_name: "subscriptions_client".to_owned(),
+            ..DartGeneratorConfig::default()
+        },
+    )
+    .expect("renders");
+    let sockets = package
+        .files
+        .iter()
+        .find(|file| file.file_name == "lib/src/subscription_sockets.dart")
+        .expect("sockets generated")
+        .contents
+        .clone();
+    let session_end = sockets
+        .find("if (frame['id'] == 0 && frame['err'] != null) {")
+        .expect("a session-level err ends the stream");
+    let skip_others = sockets
+        .find("if (frame['id'] != id) {")
+        .expect("frames for other ids are skipped");
+    assert!(session_end < skip_others, "the session frame is read first");
+    let window = &sockets[session_end..skip_others];
+    assert!(window.contains("controller.addError(cratestackSubscriptionError(frame['err']))"));
+    assert!(window.contains("break;"));
+}
+
 /// cratestack#1001: `application/cbor-seq` is a pinned binding on every
 /// schema with a subscription, REST and RPC alike; the behaviour is proven by
 /// `fixtures/subscriptions_rpc_cbor_seq*_test.dart` under `just verify-dart`; the
