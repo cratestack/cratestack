@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.20.5 (2026-11-20)
+
 ### Ending a live subscription when its principal is revoked, suspended or signed out (cratestack#1381)
 
 Additive on the wire; **one source-breaking edge**: `CratestackError` (already `#[non_exhaustive]`) gains the variant `StreamEnded(StreamEndNotice)`, so an exhaustive-looking `match` with a wildcard is unaffected but a hand-written mapping of every variant needs an arm. A stream authenticated once, at open, and only its credential's `exp` ended it; a device revoked a minute later kept receiving events. Now the app calls `revoke` and every stream and socket session of that principal ends, on every binding (SSE, cbor-seq, WebSocket, WebTransport), REST and RPC alike.
