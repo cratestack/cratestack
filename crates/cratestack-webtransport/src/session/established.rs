@@ -20,6 +20,7 @@ use crate::frame::{ClientFrame, ClientMessage, ServerFrame, close_code};
 use crate::principal::session_key;
 use crate::reader::{FrameReader, ReadFailure};
 use crate::server::Shared;
+use crate::session::ending::Ending;
 use crate::subscription::{self, StreamCtx};
 use crate::transport::Session;
 
@@ -98,6 +99,7 @@ pub(super) async fn established<A: AuthProvider, D: SubscriptionDispatcher>(
 
     let (ctx_tx, ctx_rx) = tokio::sync::watch::channel(ctx);
     let subscriptions = Arc::new(Semaphore::new(limits.subscriptions_per_session));
+    let ending = Ending::new();
     loop {
         // `control.next()` is dropped whenever a new stream wins the race.
         // That is safe only because its one await point, quinn's
@@ -105,13 +107,18 @@ pub(super) async fn established<A: AuthProvider, D: SubscriptionDispatcher>(
         // queued before anything else awaits (`FrameReader::next`). Keep it
         // that way, or a control frame can be lost.
         let expiry = expiry_of(&ctx_rx.borrow());
+        // Biased, revocation first: a revoke and another event ready in the
+        // same poll must not let the other win and outlive it.
         tokio::select! {
-            () = sleep_until(expiry) => {
-                let error = StreamEndNotice::new(StreamEndReason::CredentialExpired).into_error();
-                return refuse(&mut control_send, codec, &error, "credential expired").await;
-            }
+            biased;
             end = RevocationWatch::ended_or_pending(&mut revocation) => {
+                ending.end_streams(&end).await;
                 return refuse(&mut control_send, codec, &end.clone().into_error(), end.reason.as_str()).await;
+            }
+            () = sleep_until(expiry) => {
+                let end = StreamEndNotice::new(StreamEndReason::CredentialExpired);
+                ending.end_streams(&end).await;
+                return refuse(&mut control_send, codec, &end.into_error(), "credential expired").await;
             }
             stream = session.accept_bi() => {
                 let Some((send, recv)) = stream else { return (0, "session ended") };
@@ -122,6 +129,7 @@ pub(super) async fn established<A: AuthProvider, D: SubscriptionDispatcher>(
                     ctx: ctx_rx.borrow().clone(),
                     permit: Arc::clone(&subscriptions).try_acquire_owned().ok(),
                     charger: charger.clone(),
+                    ending: ending.handle(),
                 };
                 tokio::spawn(subscription::run(stream, send, recv).in_current_span());
             }
@@ -144,6 +152,13 @@ pub(super) async fn established<A: AuthProvider, D: SubscriptionDispatcher>(
                         // Re-registered under the refreshed keys; streams already
                         // open keep the context they opened with.
                         if let Some(registry) = revocations {
+                            // A revoke that landed while this refresh was
+                            // authenticating ended the current watch;
+                            // replacing it would forget that.
+                            if let Some(end) = revocation.as_ref().and_then(RevocationWatch::try_ended) {
+                                ending.end_streams(&end).await;
+                                return refuse(&mut control_send, codec, &end.clone().into_error(), end.reason.as_str()).await;
+                            }
                             match registry.watch_context(&refreshed) {
                                 Ok(watch) => revocation = Some(watch),
                                 Err(end) => {

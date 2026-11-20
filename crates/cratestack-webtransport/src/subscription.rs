@@ -15,6 +15,7 @@ use tracing::Instrument;
 use crate::codec::WireCodec;
 use crate::frame::{ClientFrame, ClientMessage, ServerFrame, reset_code};
 use crate::reader::FrameReader;
+use crate::session::StreamEnding;
 use crate::transport::{RecvHalf, SendHalf};
 
 /// How long a finished subscription waits for the client's FIN.
@@ -29,6 +30,8 @@ pub(crate) struct StreamCtx<D> {
     pub(crate) permit: Option<OwnedSemaphorePermit>,
     /// Who pays for this stream's open (design §6.7).
     pub(crate) charger: SessionCharger,
+    /// Tells this stream why its session ended, and that it has finished.
+    pub(crate) ending: StreamEnding,
 }
 
 pub(crate) async fn run<D: SubscriptionDispatcher>(
@@ -63,16 +66,19 @@ pub(crate) async fn run<D: SubscriptionDispatcher>(
         input: input.into(),
         ctx: stream.ctx,
     };
+    let ending = stream.ending;
     drive(
         stream.dispatcher,
         open,
         id,
         codec,
         (permit, stream.charger),
-        send,
+        (send, ending.clone()),
     )
     .instrument(span)
     .await;
+    // Finished: the session may now close (`session::ending`).
+    drop(ending);
     // Read the client's half to its FIN before letting go. Dropping it
     // earlier sends STOP_SENDING, and a browser whose FIN for the `Request`
     // has not landed yet surfaces that as a rejected `writer.close()` on a
@@ -86,7 +92,7 @@ async fn drive<D: SubscriptionDispatcher>(
     id: u64,
     codec: WireCodec,
     (permit, charger): (Option<OwnedSemaphorePermit>, SessionCharger),
-    mut send: SendHalf,
+    (mut send, mut ending): (SendHalf, StreamEnding),
 ) {
     let span = tracing::Span::current();
 
@@ -142,6 +148,11 @@ async fn drive<D: SubscriptionDispatcher>(
         let item = tokio::select! {
             item = items.next() => item,
             () = send.stopped() => return span_end(&span, "cancel", delivered),
+            // The session is ending: say why on this stream, then finish.
+            end = ending.session_ended() => {
+                span.record("delivered", delivered);
+                return finish_with(&span, &mut send, codec, ServerFrame::err(id, &end.into_error()), "session_ended").await;
+            }
         };
         let frame = match item {
             Some(Ok(value)) => ServerFrame::next(id, value),

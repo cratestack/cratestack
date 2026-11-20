@@ -15,8 +15,10 @@ use crate::codec::WireCodec;
 use crate::server::Shared;
 use crate::transport::Incoming;
 
+mod ending;
 mod established;
 
+pub(crate) use ending::Handle as StreamEnding;
 use established::established;
 
 pub(crate) async fn run<A: AuthProvider, D: SubscriptionDispatcher>(
