@@ -1,0 +1,21 @@
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+auth Operator {
+  id Int
+}
+
+model Parcel {
+  id Int @id
+  name String
+  code String @unique
+  qty Int
+  note String?
+  parent_id Int?
+
+  @@allow("read", auth() != null)
+  @@allow("create", auth() != null)
+  @@allow("update", auth() != null)
+}

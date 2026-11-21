@@ -11,8 +11,9 @@
 //! whether the violation was classified as a conflict or fell through to
 //! [`cratestack_error_from_sqlx`]'s `DatabaseTyped`.
 
-use cratestack_core::{CratestackError, DbErrorInfo};
+use cratestack_core::CratestackError;
 
+use crate::error::db_error_info;
 use crate::{cratestack_error_from_sqlx, sqlx};
 
 pub(crate) fn classify_unique_violation(error: sqlx::Error) -> CratestackError {
@@ -20,11 +21,7 @@ pub(crate) fn classify_unique_violation(error: sqlx::Error) -> CratestackError {
         && let Some(code) = db_err.code()
         && code == "23505"
     {
-        return CratestackError::ConflictTyped(DbErrorInfo {
-            detail: db_err.message().to_owned(),
-            sqlstate: Some(code.into_owned()),
-            constraint: db_err.constraint().map(ToOwned::to_owned),
-        });
+        return CratestackError::ConflictTyped(db_error_info(&**db_err));
     }
     cratestack_error_from_sqlx(error)
 }

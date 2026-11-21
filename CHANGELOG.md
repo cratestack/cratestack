@@ -16,6 +16,17 @@
 
 **Transport parity.** REST and RPC share the projection and struct emitters; covered by `bytes_end_to_end.rs`, `bytes_end_to_end_rpc.rs` (including `/rpc/batch`), and the batch and cbor-seq socket tests. Both TypeScript layouts and both Dart presets are covered by the regenerated snapshots. MCP is JSON and exempt (ADR 0002 D5).
 
+### Database errors keep table, column and schema; log-safe accessors (a24-context#745)
+
+A database error now says which table, column and schema it came from, so a caller can tell a CHECK or a partition miss (`23514` with a table and no constraint) from another without matching the message text. `Display` is **unchanged**: it still prints the server message, which can quote row values. The accessors are the stable, log-safe path; log them, not `Display`.
+
+- **New accessors (`cratestack-core`, re-exported by the facades).** `CratestackError::db_table()`, `db_column()`, `db_schema()` and `db_message()` next to `db_sqlstate()` and `db_constraint()`. They read `DatabaseTyped` and `ConflictTyped`; `db_message()` is the server's own text, for the caller that wants it on purpose.
+- **Source-breaking edge.** `DbErrorInfo` gains table, column and schema and is now `#[non_exhaustive]`: a struct literal outside `cratestack-core` no longer compiles. Build one with `DbErrorInfo::new(detail)` and the `with_sqlstate`, `with_constraint`, `with_table`, `with_column` and `with_schema` setters; read the three new values with `table()`, `column()` and `schema()` (they are private fields behind one box, so `CratestackError` stays under clippy's `result_large_err` threshold). Serialized values without the new fields still deserialize.
+- **One source for the detail.** `cratestack_error_from_sqlx` and the unique-violation classifier now build the info from the same function, filling table, column and schema from Postgres. Both use the server's message text; the generic path no longer appends the driver's ` at line N` suffix to `detail`.
+- **No URL or password from a connection error.** sqlx `Configuration` and `Tls` errors map to a fixed message (`database connection configuration error`, `database TLS error`), the cause goes to tracing only, and neither `Display` nor `Debug` of the result carries it. Both stay `Database`, so a TLS or configuration fault is still not retryable.
+- **Previously untyped errors now carry their SQLSTATE.** The migration runner (`apply_pending`, the migrations table DDL and `cratestack-service`'s `run_migrations` connect), the idempotency store, the audit-table bootstrap and the materialized-view refresh used `Database(error.to_string())`. They now go through `cratestack_error_from_sqlx`, so SQLSTATE, constraint and table survive, a lost connection is `Unavailable` (503) instead of a 500, and a missing row is `NotFound`.
+- **Not changed.** The embedded (rusqlite) mapping, the wire shape and the public message of every 5xx (still "internal error"). Nothing reaches `cratestack-client`.
+
 ## 0.20.6 (2026-11-20)
 
 ### A byte-payload subscription backplane, and a CBOR `NOTIFY` envelope (A24 decision 366 O2)

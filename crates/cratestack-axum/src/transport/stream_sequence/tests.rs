@@ -117,11 +117,8 @@ fn error_sentinel_tag_header_matches_rfc_8949_two_byte_form() {
 #[test]
 fn an_abort_in_a_stream_is_sent_as_internal() {
     let abort = CratestackError::TransactionAborted(cratestack_core::TransactionAbort::propagated(
-        cratestack_core::DbErrorInfo {
-            detail: "retry the request".to_owned(),
-            sqlstate: Some("40001".to_owned()),
-            constraint: None,
-        },
+        cratestack_core::DbErrorInfo::new("retry the request".to_owned())
+            .with_sqlstate("40001".to_owned()),
     ));
     let sentinel = encode_error_sentinel(&CborCodec, &abort);
     let body: cratestack_core::rpc::RpcErrorBody =

@@ -2,7 +2,7 @@
 //! Banks write migrations by hand (the contract under regulation is "the
 //! change is reviewable as a SQL diff").
 
-use crate::sqlx;
+use crate::{cratestack_error_from_sqlx, sqlx};
 use cratestack_core::CratestackError;
 use sha2::{Digest, Sha256};
 
@@ -79,7 +79,7 @@ pub async fn ensure_migrations_table(pool: &sqlx::PgPool) -> Result<(), Cratesta
     sqlx::raw_sql(MIGRATIONS_TABLE_DDL)
         .execute(pool)
         .await
-        .map_err(|error| CratestackError::Database(error.to_string()))?;
+        .map_err(cratestack_error_from_sqlx)?;
     Ok(())
 }
 
@@ -96,7 +96,7 @@ pub async fn status(
     )
     .fetch_all(pool)
     .await
-    .map_err(|error| CratestackError::Database(error.to_string()))?;
+    .map_err(cratestack_error_from_sqlx)?;
 
     let mut applied: std::collections::HashMap<String, Vec<u8>> = std::collections::HashMap::new();
     for (id, checksum) in rows {
@@ -150,10 +150,7 @@ pub async fn apply_pending(
         if state.status != MigrationStatus::Pending {
             continue;
         }
-        let mut tx = pool
-            .begin()
-            .await
-            .map_err(|error| CratestackError::Database(error.to_string()))?;
+        let mut tx = pool.begin().await.map_err(cratestack_error_from_sqlx)?;
         // `up.pre.sql` first, in this same transaction. Its purpose is to
         // make `up`'s blocking statement succeed, so a commit boundary
         // between them would defeat it: that window is exactly when a
@@ -163,7 +160,7 @@ pub async fn apply_pending(
             sqlx::raw_sql(sqlx::AssertSqlSafe(up_pre.clone()))
                 .execute(&mut *tx)
                 .await
-                .map_err(|error| CratestackError::Database(error.to_string()))?;
+                .map_err(cratestack_error_from_sqlx)?;
         }
         // `raw_sql` sends the whole `up` script as one batch over PG's
         // simple-query protocol inside this transaction, so a mid-script
@@ -176,7 +173,7 @@ pub async fn apply_pending(
         sqlx::raw_sql(sqlx::AssertSqlSafe(migration.up.clone()))
             .execute(&mut *tx)
             .await
-            .map_err(|error| CratestackError::Database(error.to_string()))?;
+            .map_err(cratestack_error_from_sqlx)?;
         sqlx::query(
             "INSERT INTO cratestack_migrations (id, description, checksum) VALUES ($1, $2, $3)",
         )
@@ -185,10 +182,8 @@ pub async fn apply_pending(
         .bind(migration.checksum().as_slice())
         .execute(&mut *tx)
         .await
-        .map_err(|error| CratestackError::Database(error.to_string()))?;
-        tx.commit()
-            .await
-            .map_err(|error| CratestackError::Database(error.to_string()))?;
+        .map_err(cratestack_error_from_sqlx)?;
+        tx.commit().await.map_err(cratestack_error_from_sqlx)?;
         applied.push(migration.id.clone());
     }
 

@@ -10,7 +10,7 @@
 
 use cratestack_core::CratestackError;
 use cratestack_sqlx::sqlx::postgres::PgPoolOptions;
-use cratestack_sqlx::{Migration, apply_pending};
+use cratestack_sqlx::{Migration, apply_pending, cratestack_error_from_sqlx};
 use include_dir::Dir;
 
 /// Load every `cratestack migrate diff`-generated migration out of an
@@ -108,7 +108,7 @@ pub async fn run_migrations(
         .max_connections(1)
         .connect(database_url)
         .await
-        .map_err(|error| CratestackError::Database(error.to_string()))?;
+        .map_err(cratestack_error_from_sqlx)?;
     apply_pending(&pool, migrations).await
 }
 

@@ -4,11 +4,8 @@
 use super::*;
 
 fn info() -> DbErrorInfo {
-    DbErrorInfo {
-        detail: "transaction could not be completed; retry the request".to_owned(),
-        sqlstate: Some("40001".to_owned()),
-        constraint: None,
-    }
+    DbErrorInfo::new("transaction could not be completed; retry the request".to_owned())
+        .with_sqlstate("40001".to_owned())
 }
 
 /// Every state is reached the only way code outside this crate can reach

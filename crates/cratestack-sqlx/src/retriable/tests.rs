@@ -3,11 +3,11 @@ use cratestack_core::{DbErrorInfo, TransactionAbort};
 use super::*;
 
 fn typed(sqlstate: Option<&str>, detail: &str) -> CratestackError {
-    CratestackError::DatabaseTyped(DbErrorInfo {
-        detail: detail.to_owned(),
-        sqlstate: sqlstate.map(ToOwned::to_owned),
-        constraint: None,
-    })
+    let mut info = DbErrorInfo::new(detail);
+    if let Some(sqlstate) = sqlstate {
+        info = info.with_sqlstate(sqlstate);
+    }
+    CratestackError::DatabaseTyped(info)
 }
 
 /// Only database errors are classified by their text. The application's
@@ -69,10 +69,9 @@ fn a_typed_sqlstate_is_authoritative_over_the_text() {
 /// whoever owns it.
 #[test]
 fn transaction_aborted_is_never_retriable() {
-    let info = || DbErrorInfo {
-        detail: "could not serialize access; retry the request".to_owned(),
-        sqlstate: Some("40001".to_owned()),
-        constraint: None,
+    let info = || {
+        DbErrorInfo::new("could not serialize access; retry the request".to_owned())
+            .with_sqlstate("40001".to_owned())
     };
     for error in [
         CratestackError::TransactionAborted(TransactionAbort::exhausted(info())),

@@ -7,7 +7,7 @@ use std::time::SystemTime;
 
 use cratestack_core::{CratestackError, IdempotencyRecord, ReservationOutcome};
 
-use crate::sqlx;
+use crate::{cratestack_error_from_sqlx, sqlx};
 
 /// Row shape of the `RETURNING` clause on the reserve-or-reclaim upsert:
 /// `(request_hash, reservation_id, response_status, response_headers,
@@ -76,7 +76,7 @@ pub(super) async fn reserve_or_fetch(
     .bind(expires_at)
     .fetch_optional(pool)
     .await
-    .map_err(|error| CratestackError::Database(error.to_string()))?;
+    .map_err(cratestack_error_from_sqlx)?;
 
     if let Some((_, token, _, _, _, _, _, _)) = row {
         // Fresh insert OR expired row we just reclaimed; either way
@@ -96,7 +96,7 @@ pub(super) async fn reserve_or_fetch(
     .bind(key)
     .fetch_optional(pool)
     .await
-    .map_err(|error| CratestackError::Database(error.to_string()))?;
+    .map_err(cratestack_error_from_sqlx)?;
 
     let Some((stored_hash, status, headers, body, created_at, existing_expires_at)) = existing
     else {
@@ -164,7 +164,7 @@ pub(super) async fn complete(
     .execute(pool)
     .await
     .map(|_| ())
-    .map_err(|error| CratestackError::Database(error.to_string()))
+    .map_err(cratestack_error_from_sqlx)
 }
 
 pub(super) async fn release(
@@ -188,5 +188,5 @@ pub(super) async fn release(
     .execute(pool)
     .await
     .map(|_| ())
-    .map_err(|error| CratestackError::Database(error.to_string()))
+    .map_err(cratestack_error_from_sqlx)
 }

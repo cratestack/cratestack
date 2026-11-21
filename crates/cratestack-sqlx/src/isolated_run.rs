@@ -121,11 +121,10 @@ impl SqlxRuntime {
                 }
                 Attempt::Retry(sqlstate) => {
                     return Err(CratestackError::TransactionAborted(
-                        TransactionAbort::exhausted(DbErrorInfo {
-                            detail: ISOLATION_CONFLICT_DETAIL.to_owned(),
-                            sqlstate: Some(sqlstate.to_owned()),
-                            constraint: None,
-                        }),
+                        TransactionAbort::exhausted(
+                            DbErrorInfo::new(ISOLATION_CONFLICT_DETAIL.to_owned())
+                                .with_sqlstate(sqlstate.to_owned()),
+                        ),
                     ));
                 }
                 Attempt::Failed(error) => return Err(error),

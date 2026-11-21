@@ -112,11 +112,8 @@ impl McpTools for FakeTools {
             // retries ran out (claimed); 408: another procedure's abort that
             // a tool body propagated (recorded).
             Call::Transfer(args) if args.amount == 409 || args.amount == 408 => {
-                let info = cratestack_core::DbErrorInfo {
-                    detail: "retry the request".to_owned(),
-                    sqlstate: Some("40001".to_owned()),
-                    constraint: None,
-                };
+                let info = cratestack_core::DbErrorInfo::new("retry the request".to_owned())
+                    .with_sqlstate("40001".to_owned());
                 Err(if args.amount == 409 {
                     CratestackError::TransactionAborted(
                         cratestack_core::TransactionAbort::exhausted(info),

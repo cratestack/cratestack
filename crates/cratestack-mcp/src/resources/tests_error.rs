@@ -44,10 +44,9 @@ fn an_internal_failure_carries_only_the_public_envelope() {
 /// `TRANSACTION_ABORTED`'s "nothing was written, send it again".
 #[test]
 fn an_abort_reaching_a_resource_read_is_an_internal_error() {
-    let info = || cratestack_core::DbErrorInfo {
-        detail: "retry the request".to_owned(),
-        sqlstate: Some("40001".to_owned()),
-        constraint: None,
+    let info = || {
+        cratestack_core::DbErrorInfo::new("retry the request".to_owned())
+            .with_sqlstate("40001".to_owned())
     };
     for abort in [
         cratestack_core::TransactionAbort::exhausted(info()),
