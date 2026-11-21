@@ -1,5 +1,21 @@
 ## Unreleased
 
+## 0.21.0 (2026-11-21)
+
+<!-- TODO: edit this section from the seed below -->
+<!-- seeded from v0.20.6..HEAD at bccf7a23b090748a5ec0ab487374a1896b0e6f97 -->
+
+This is an auto-generated seed. Please rewrite into narrative prose describing
+the changes in this release, grouped by concern. Refer to existing entries in
+this file for the house prose style. Do not commit with this placeholder text.
+
+### Changes
+
+#### Features
+
+- write Bytes, Geography and Geometry as CBOR byte strings (#1426)
+- database errors keep table, column and schema; log-safe accessors (#1429)
+
 ## 0.20.6 (2026-11-20)
 
 - No functional changes. Version kept in lockstep with the CrateStack
