@@ -1,0 +1,16 @@
+// cratestack#1425: a procedure output composed through
+// `computed::compose` carries `Bytes` fields as CBOR byte strings, both a
+// stored one and a `@computed` one, and the same schema as JSON arrays.
+
+datasource db {
+  provider = "none"
+}
+
+type Blob {
+  label String
+  data Bytes
+  digest Bytes @computed
+}
+
+procedure getBlob(label: String): Blob
+  @allow(auth() != null)
