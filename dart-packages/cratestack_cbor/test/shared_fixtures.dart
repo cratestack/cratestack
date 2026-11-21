@@ -73,6 +73,17 @@ const uuidNestedByteStringHex = 'a16369647382500123456789abcdef0123456789abcdeff
 const uuidNestedByteStringJson =
     '{"ids":[[1,35,69,103,137,171,205,239,1,35,69,103,137,171,205,239],null]}';
 
+/// cratestack#1425: a schema `Bytes` field (and `Geography`/`Geometry`) is now
+/// written by the server as a CBOR byte string, `{"data": h'0102ff'}`; every
+/// earlier server wrote the integer array `{"data": [1, 2, 255]}`. Both must
+/// reach the generated `fromWire` decoders as the same JSON text, on BOTH
+/// backends: `bytesJson`. (`cratestack_cbor` 0.19.6 is the first release that
+/// does this; the Dart client's own writer still sends the array form, because
+/// `encodeJson` takes JSON text, which has no byte-string primitive.)
+const bytesByteStringHex = 'a16464617461430102ff';
+const bytesArrayHex = 'a1646461746183010218ff';
+const bytesJson = '{"data":[1,2,255]}';
+
 /// `hex` as bytes, for the decode direction.
 List<int> unhex(String hex) => [
   for (var i = 0; i < hex.length; i += 2)

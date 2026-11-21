@@ -29,7 +29,7 @@ dependencies:
   # still rewrites dart-packages/*/pubspec.yaml itself) — the value is
   # crates/cratestack-client-dart/src/package_floors.rs's
   # `CRATESTACK_CBOR_FLOOR`.
-  cratestack_cbor: '>=0.9.3 <0.21.0'
+  cratestack_cbor: '>=0.19.6 <0.21.0'
   dio: ^5.8.0+1
   # cratestack#498: backs every `Decimal`-typed field with a real
   # arbitrary-precision value (`models.dart.j2`'s `DecimalFilter`/

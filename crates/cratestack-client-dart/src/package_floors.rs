@@ -146,11 +146,19 @@ pub(crate) const CRATESTACK_BUILDER_FLOOR: &str = "0.9.3";
 /// runs `pub get`, which is how a generated client picks up #794's
 /// idempotent `createCborCodec()` without this constant moving.
 ///
+/// `0.19.6` since cratestack#1425, no longer bounded by existence alone:
+/// the server now writes `Bytes`/`Geography`/`Geometry` fields as CBOR byte
+/// strings, and `0.19.6` is the first `cratestack_cbor` whose `decodeJson`
+/// hands a byte string over as an integer list (the form the generated
+/// `fromWire` decoders read). Older releases fail on one at the bridge, so a
+/// lock file below this cannot read a response that carries a byte field.
+/// (The same release is what already made a `Uuid` response readable.)
+///
 /// **Not** the fix for #798's retry behaviour: that lives in the
 /// generated runtime itself (`rest-runtime.dart.j2` /
 /// `rpc_runtime/types.dart.j2`), which clears its own cache on failure
 /// and therefore needs nothing from this package's version.
-pub(crate) const CRATESTACK_CBOR_FLOOR: &str = "0.9.3";
+pub(crate) const CRATESTACK_CBOR_FLOOR: &str = "0.19.6";
 
 /// Pairs a floor above with the ceiling derived from **this crate's own
 /// version**, which is the workspace version under lockstep publishing.

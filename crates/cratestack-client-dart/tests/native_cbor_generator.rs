@@ -55,7 +55,7 @@ const RPC_FIXTURE: &str = "tiny_rpc";
 /// actually serves. The matching TypeScript literal
 /// (`cratestack-client-typescript/tests/native_cbor_generator.rs`) carries
 /// the same instruction and the same guard.
-const CRATESTACK_CBOR_FLOOR: &str = "0.9.3";
+const CRATESTACK_CBOR_FLOOR: &str = "0.19.6";
 
 /// Reads `CRATESTACK_CBOR_FLOOR` out of `src/package_floors.rs`.
 ///
