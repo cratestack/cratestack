@@ -296,7 +296,9 @@ Future<Object?> _decodeCbor(Uint8List bytes) async {
   // `toWire()`/`fromWire` already produces/expects JSON-plain values
   // (ISO-8601 strings for `DateTime`, `List<int>` for `Bytes`, decimal and
   // `BigInt` text), so `jsonDecode` alone gives the `Map<String, Object?>`
-  // shape the decoders expect.
+  // shape the decoders expect. A CBOR byte string (what the server writes
+  // for `Bytes`, `Geography` and `Geometry`) comes back from `decodeJson`
+  // as that same list of integers (`cratestack_cbor` >= 0.19.6).
   final codec = await _cratestackCborCodec();
   return jsonDecode(codec.decodeJson(bytes));
 }
