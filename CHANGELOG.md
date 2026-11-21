@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.21.0 (2026-11-21)
+
 ### Wire change: `Bytes`, `Geography` and `Geometry` travel as CBOR byte strings (cratestack#1425)
 
 **Breaking on the wire, CBOR only; upgrade readers first.** Under CBOR, generated types now write a schema `Bytes` field, and `Geography`/`Geometry` (EWKB), as a byte string (RFC 8949 major type 2: `{"data": h'0102ff'}` is `a1 64 64617461 43 0102ff`) instead of an array of integers (`… 83 01 02 18 ff`). A field takes about half the bytes it did (each byte from 24 up took two), and a generic decoder holds one value per field instead of one per byte; a 4 MiB value is 4,194,309 bytes on the wire. This applies to model responses (REST and RPC `get`/`list`, `Page`/`CursorPage` items, included relations, `@computed` values, write responses), `type` blocks, procedure `Args` and CRUD inputs (including patch shapes) sent by the Rust client, `/rpc/batch` frames and CBOR WebSocket/WebTransport/cbor-seq items. **JSON is byte-identical**: the helpers write the old form whenever the serializer is human-readable, so JSON bodies, SSE, audit snapshots, outbox/event payloads, keyset cursors, MCP, WireMock stubs and JSON Schema do not move. A patch's `Some(None)` is still `null`, an untouched patch field is still absent, `@server_only` still wins, and `Uuid` is untouched.
