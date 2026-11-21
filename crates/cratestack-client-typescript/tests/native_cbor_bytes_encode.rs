@@ -86,6 +86,7 @@ fn a_bytes_field_reaches_the_wire_as_a_cbor_byte_string_under_the_floor_codec() 
         r#"
 import {{ CratestackRpcRuntime }} from "./src/runtime.js";
 import {{ AttachmentApi }} from "./src/client.js";
+import {{ reviveWireFields }} from "./src/models.js";
 import {{ createCborCodec }} from "@cratestack/cbor";
 
 let capturedBody: Uint8Array | undefined;
@@ -137,6 +138,15 @@ if (!hex.includes("43010203")) {{
   );
 }}
 
+// cratestack#1425: the WHOLE body, not just a substring. Pins the full
+// request as `{{checksums: [1, 2, 3], label, payload: h'010203'}}` (the
+// codec writes keys sorted), so a
+// codec that wrote `payload` as `83 010203` (the array form) or reordered
+// anything is caught here too.
+if (hex !== "a369636865636b73756d7383010203656c6162656c6772656365697074677061796c6f616443010203") {{
+  throw new Error(`unexpected request body hex: ${{hex}}`);
+}}
+
 // The negative half, and the reason the fixture carries an Int[] too:
 // prove the codec is DISCRIMINATING rather than coincidentally right. An
 // `Int[]` must stay an array (major type 4, `83 010203`) — if both fields
@@ -157,6 +167,25 @@ if (!(created.payload instanceof Uint8Array)) {{
     `expected the create() response payload to decode into a Uint8Array, got ` +
     `${{Object.prototype.toString.call(created.payload)}}`,
   );
+}}
+
+// cratestack#1425, the read side: the server now writes a `Bytes` field as
+// a CBOR byte string, an older one as an integer array. The real
+// `@cratestack/cbor` decode of EACH form, then revival, must give the same
+// `Uint8Array [1, 2, 255]`.
+{{
+  const codec = await createCborCodec();
+  const forms = {{
+    byteString: "a1677061796c6f6164430102ff",
+    integerArray: "a1677061796c6f616483010218ff",
+  }};
+  for (const [name, form] of Object.entries(forms)) {{
+    const decoded = codec.decode(new Uint8Array(Buffer.from(form, "hex")));
+    const revived = reviveWireFields(decoded, "Attachment") as {{ payload: unknown }};
+    if (!(revived.payload instanceof Uint8Array) || revived.payload.join() !== "1,2,255") {{
+      throw new Error(`the ${{name}} form did not revive to Uint8Array [1,2,255]: ${{String(revived.payload)}}`);
+    }}
+  }}
 }}
 
 console.log("NATIVE_CBOR_BYTES_ENCODE_OK");

@@ -51,11 +51,12 @@
 //! ## Why this carries `Bytes` too, and why it *has* to
 //!
 //! A schema `Bytes` field is a `Uint8Array` on both sides of a generated
-//! TypeScript client, but it travels as an array of integers on the wire
-//! (the server's outbound shape, deliberately unchanged by cratestack#783).
-//! Reviving it therefore needs exactly the same machinery `Decimal` needs,
-//! and for exactly the same reason: **the wire form is not
-//! self-identifying**. A decoded `[1, 2, 3]` is indistinguishable from an
+//! TypeScript client, but it travels as a CBOR byte string (since
+//! cratestack#1425; an integer array from an older server, and always under
+//! JSON). Under JSON, and from an older server, reviving it needs exactly the
+//! same machinery `Decimal` needs, and for exactly the same reason: **the
+//! wire form is not self-identifying**. A decoded `[1, 2, 3]` is
+//! indistinguishable from an
 //! `Int[]` field's value, just as a decoded `"1.5"` is indistinguishable
 //! from a `String` field's — so "is this field `Bytes` here" can only be
 //! answered per-type, from the schema, which is what this registry is.

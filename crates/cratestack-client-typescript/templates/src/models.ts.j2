@@ -324,6 +324,9 @@ function toUuid(value: unknown, where: string): unknown {
  *  bodies, a schema/deployment skew) is better surfaced to the caller as
  *  the value it actually was than silently turned into empty bytes. */
 function toBytes(value: unknown): unknown {
+  // A decoded CBOR byte string is already a `Uint8Array` (the server writes a
+  // `Bytes` field as one, cratestack#1425) and passes through unchanged; the
+  // integer array an older server or a JSON body carries is converted.
   return Array.isArray(value) ? Uint8Array.from(value as number[]) : value;
 }
 
@@ -349,6 +352,8 @@ function toBytes(value: unknown): unknown {
 export function reviveWireScalar(value: unknown, kind: string): unknown {
   if (kind === "bytes") {
     // A bare `Bytes`/`Bytes?` return: one wire integer array (or `null`).
+    // (A bare return still goes out as an integer array; cratestack#1425
+    // moved generated types and models to byte strings, not these.)
     return toBytes(value);
   }
   if (kind === "bytesList") {
@@ -433,7 +438,7 @@ export function reviveWireScalar(value: unknown, kind: string): unknown {
  *  unconditionally is a true no-op for a caller who passes
  *  `codec: jsonRpcCodec`. */
 /** Rewrites every `Uint8Array` in `value` into the plain integer array a
- *  `Bytes` field travels as on the wire, every `bigint` into its canonical
+ *  `Bytes` field travels as under JSON, every `bigint` into its canonical
  *  decimal string, and every {@link Decimal} into its string, leaving
  *  everything else alone.
  *

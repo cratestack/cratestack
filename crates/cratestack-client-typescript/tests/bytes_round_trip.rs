@@ -29,7 +29,7 @@ use cratestack_client_typescript::{TypeScriptGeneratorConfig, generate_package};
 /// Keep in lockstep with `tests/js/bytes_round_trip/bytes.test.ts` — a
 /// successful vitest exit alone cannot tell a genuinely green run from an
 /// accidentally-empty one (the same guard `decimal_round_trip.rs` uses).
-const EXPECTED_PASSING: &str = "16 passed";
+const EXPECTED_PASSING: &str = "19 passed";
 
 #[test]
 fn bytes_round_trip_through_the_generated_rest_client() {
