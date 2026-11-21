@@ -165,28 +165,3 @@ fn patch_wrapped_update_input_keeps_its_three_way_distinction() {
     assert_eq!(untouched.digest, None);
     assert_eq!(untouched.signature, None);
 }
-
-#[test]
-fn the_outbound_shape_is_unchanged() {
-    // The fix is inbound-only, on purpose: flipping what `Serialize`
-    // emits would break every existing decoder (the Dart client's
-    // `cratestackAsValueList`, the TypeScript client's `number[]`). A
-    // `Bytes` field must still go out as an integer array, never as a
-    // byte string — see `cratestack_core::lenient_bytes`'s module doc.
-    let input = cratestack_schema::CreateBlobInput {
-        id: 1,
-        digest: EXPECTED.to_vec(),
-        signature: None,
-    };
-    let encoded = CborCodec.encode(&input).expect("encode should succeed");
-    let hex: String = encoded.iter().map(|byte| format!("{byte:02x}")).collect();
-
-    assert!(
-        hex.contains("8401020304"),
-        "digest must serialize as the 4-element array 0x84 01 02 03 04, got {hex}"
-    );
-    assert!(
-        !hex.contains("4401020304"),
-        "digest must NOT serialize as the byte string 0x44 01020304, got {hex}"
-    );
-}

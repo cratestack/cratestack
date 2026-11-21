@@ -67,12 +67,14 @@ pub(crate) fn ts_type(type_ref: &TypeRef, enum_names: &BTreeSet<&str>) -> String
         // (`cratestack-client-dart`'s `dart_types.rs` maps `Bytes` to
         // `Uint8List` and converts at the wire boundary in
         // `wire_encode.rs`/`wire_decode.rs`). A `Bytes` field still
-        // *travels* as an array of integers — the server's outbound shape
-        // is unchanged — so the conversion happens in the generated
-        // runtime: `encodeBinaryAsJson` on the way out (JSON transports
-        // only; the native CBOR codec takes the `Uint8Array` directly and
-        // emits a byte string), and the `bytesKeys`/`bytesListKeys` arms
-        // of `models.ts.j2`'s shape walk on the way back.
+        // *travels* as a CBOR byte string (cratestack#1425; an integer array
+        // from an older server, and under JSON), so the conversion happens in
+        // the generated runtime: `encodeBinaryAsJson` on the way out (JSON
+        // transports only; the native CBOR codec takes the `Uint8Array`
+        // directly and emits a byte string), and the
+        // `bytesKeys`/`bytesListKeys` arms of `models.ts.j2`'s shape walk on
+        // the way back, which keep a decoded `Uint8Array` and convert an
+        // integer array.
         //
         // Deliberately not `Uint8Array | number[]`: a union would have to
         // be narrowed by every *reader*, and it cannot be applied

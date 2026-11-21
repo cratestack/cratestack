@@ -61,11 +61,15 @@ fn only_bytes_fields_opt_in() {
 fn unwrapped_shapes_pick_the_matching_helper() {
     assert_eq!(
         rendered("Bytes", TypeArity::Required, false).as_deref(),
-        Some(r#"#[serde(deserialize_with = "::cratestack::deserialize_bytes")]"#)
+        Some(
+            r#"#[serde(serialize_with = "::cratestack::serialize_bytes_shape", deserialize_with = "::cratestack::deserialize_bytes")]"#
+        )
     );
     assert_eq!(
         rendered("Bytes", TypeArity::List, false).as_deref(),
-        Some(r#"#[serde(deserialize_with = "::cratestack::deserialize_bytes_list")]"#)
+        Some(
+            r#"#[serde(serialize_with = "::cratestack::serialize_bytes_shape", deserialize_with = "::cratestack::deserialize_bytes_list")]"#
+        )
     );
 }
 
@@ -79,7 +83,9 @@ fn patch_wrapped_required_and_unwrapped_optional_share_a_helper() {
     assert_eq!(unwrapped_optional, patched_required);
     assert_eq!(
         unwrapped_optional.as_deref(),
-        Some(r#"#[serde(default, deserialize_with = "::cratestack::deserialize_optional_bytes")]"#)
+        Some(
+            r#"#[serde(default, serialize_with = "::cratestack::serialize_bytes_shape", deserialize_with = "::cratestack::deserialize_optional_bytes")]"#
+        )
     );
 }
 
@@ -92,7 +98,7 @@ fn patch_wrapped_nullable_uses_the_double_option_variant() {
     assert_eq!(
         rendered("Bytes", TypeArity::Optional, true).as_deref(),
         Some(
-            r#"#[serde(default, deserialize_with = "::cratestack::deserialize_double_option_bytes")]"#
+            r#"#[serde(default, serialize_with = "::cratestack::serialize_bytes_shape", deserialize_with = "::cratestack::deserialize_double_option_bytes")]"#
         )
     );
 }
@@ -102,7 +108,7 @@ fn patch_wrapped_list_uses_the_optional_list_helper() {
     assert_eq!(
         rendered("Bytes", TypeArity::List, true).as_deref(),
         Some(
-            r#"#[serde(default, deserialize_with = "::cratestack::deserialize_optional_bytes_list")]"#
+            r#"#[serde(default, serialize_with = "::cratestack::serialize_bytes_shape", deserialize_with = "::cratestack::deserialize_optional_bytes_list")]"#
         )
     );
 }
@@ -138,7 +144,7 @@ fn default_rides_along_exactly_when_the_field_type_is_an_option() {
 fn emitted_helper_return_types_match_the_field_types() {
     // The cross-check the module doc's table describes: for every shape,
     // the type `field_type` puts on the field and the type the chosen
-    // helper returns must be spelled identically. `bytes_deserialize_with`
+    // helper returns must be spelled identically. `bytes_serde_args`
     // is what the model/CRUD emitter splices, so it's exercised here too.
     let expectations = [
         (
@@ -189,7 +195,7 @@ fn emitted_helper_return_types_match_the_field_types() {
             expected_type,
             "field type for {arity:?} (patch={wrap_for_patch})"
         );
-        let argument = bytes_deserialize_with(&field.ty, wrap_for_patch)
+        let argument = bytes_serde_args(&field.ty, wrap_for_patch)
             .expect("Bytes always opts in")
             .to_string();
         assert!(

@@ -102,6 +102,47 @@ describe("decode: the wire integer array becomes a Uint8Array", () => {
   });
 });
 
+describe("decode: a CBOR byte string arrives as a Uint8Array and is kept (cratestack#1425)", () => {
+  // The server writes a `Bytes` field as a CBOR byte string; `@cratestack/cbor`
+  // decodes that to a `Uint8Array`. Revival must keep it as is, in every
+  // arity, exactly as it converts the integer array an older server sends.
+  it("keeps a decoded Uint8Array for a required Bytes field, same as the array form", () => {
+    const fromByteString = reviveWireFields(
+      { payload: new Uint8Array([1, 2, 255]) },
+      "Sample",
+    ) as { payload: Uint8Array };
+    const fromArray = reviveWireFields({ payload: [1, 2, 255] }, "Sample") as {
+      payload: Uint8Array;
+    };
+
+    expect(fromByteString.payload).toBeInstanceOf(Uint8Array);
+    expect(Array.from(fromByteString.payload)).toEqual([1, 2, 255]);
+    expect(Array.from(fromByteString.payload)).toEqual(Array.from(fromArray.payload));
+  });
+
+  it("keeps a decoded Uint8Array for a nullable Bytes field and still leaves null null", () => {
+    const some = reviveWireFields({ signature: new Uint8Array([9]) }, "Sample") as {
+      signature: Uint8Array;
+    };
+    const none = reviveWireFields({ signature: null }, "Sample") as { signature: unknown };
+
+    expect(Array.from(some.signature)).toEqual([9]);
+    expect(none.signature).toBeNull();
+  });
+
+  it("keeps decoded Uint8Arrays element-wise for a Bytes[] field, empty element included", () => {
+    const revived = reviveWireFields(
+      { chunks: [new Uint8Array([1]), new Uint8Array([])] },
+      "Sample",
+    ) as { chunks: Uint8Array[] };
+
+    expect(revived.chunks).toHaveLength(2);
+    expect(Array.from(revived.chunks[0])).toEqual([1]);
+    expect(revived.chunks[1]).toBeInstanceOf(Uint8Array);
+    expect(revived.chunks[1].length).toBe(0);
+  });
+});
+
 describe("decode: bare scalar returns (reviveWireScalar)", () => {
   it("revives a bare Bytes return", () => {
     const revived = reviveWireScalar([1, 2, 3], "bytes");

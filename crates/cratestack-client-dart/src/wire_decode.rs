@@ -138,6 +138,12 @@ fn decode_required_scalar(
         "Boolean" => format!("{expr} as bool"),
         "DateTime" => format!("DateTime.parse({expr} as String)"),
         "Json" => expr.to_owned(),
+        // The server writes these as a CBOR byte string (cratestack#1425);
+        // `cratestack_cbor` >= 0.19.6's `decodeJson` hands that over as a
+        // list of integers, and an older server's integer array arrives as
+        // the same list, so one decoder reads both. The generated *writer*
+        // still sends an integer array (its bridge takes JSON text, which
+        // has no byte type); the server accepts it.
         "Bytes" | "Geography" | "Geometry" => {
             format!("Uint8List.fromList(List<int>.from(cratestackAsValueList({expr})))")
         }

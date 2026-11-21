@@ -5,21 +5,28 @@
 // `cratestack-macros`), so we deliberately do **not** hardcode a
 // JSON content type — the request goes out with the client's
 // configured Accept (`self.codec.accept_header_value()`) and the
-// response is decoded through the same codec into
-// `serde_json::Value`, which `CborCodec` and `JsonCodec` both
-// support. That keeps the projection-view client surface available
+// response is decoded through the same codec into an `RpcFrameValue`
+// and then `serde_json::Value`. `RpcFrameValue`, not `serde_json::Value`
+// directly, because the server writes `Bytes`/`Geography`/`Geometry`
+// fields as CBOR byte strings (cratestack#1425) and `serde_json::Value`
+// has no byte-string case; `RpcFrameValue` reads one and hands it on as the
+// integer array a JSON body would carry. Under JSON the two decodes are
+// identical. That keeps the projection-view client surface available
 // under either codec configuration; only the `JsonCodec` wrapper
 // type itself is gated on `codec-json`.
 
+use cratestack_core::rpc::RpcFrameValue;
 use cratestack_core::{Page, ProjectionDecoder};
 use reqwest::Method;
 use serde_json::Value as JsonValue;
 
 use crate::client::core::CratestackClient;
 use crate::client::decode::decode_typed_response;
+
 use crate::client::helpers::canonical_query_from_selection;
 use crate::codec::HttpClientCodec;
 use crate::error::{ClientError, HeaderPair, QueryPair};
+use crate::runtime::wire::RuntimeResponseWire;
 
 impl<C> CratestackClient<C>
 where
@@ -39,7 +46,7 @@ where
         let response = self
             .request_raw_with_query(Method::GET, path, None, canonical_query.as_deref(), headers)
             .await?;
-        let value: JsonValue = decode_typed_response(&self.codec, &response)?;
+        let value = decode_view_value(&self.codec, &response)?;
         projection.decode_one(value).map_err(ClientError::from)
     }
 
@@ -58,7 +65,7 @@ where
         let response = self
             .request_raw_with_query(Method::GET, path, None, canonical_query.as_deref(), headers)
             .await?;
-        let value: JsonValue = decode_typed_response(&self.codec, &response)?;
+        let value = decode_view_value(&self.codec, &response)?;
         projection.decode_many(value).map_err(ClientError::from)
     }
 
@@ -77,7 +84,17 @@ where
         let response = self
             .request_raw_with_query(Method::GET, path, None, canonical_query.as_deref(), headers)
             .await?;
-        let value: JsonValue = decode_typed_response(&self.codec, &response)?;
+        let value = decode_view_value(&self.codec, &response)?;
         projection.decode_page(value).map_err(ClientError::from)
     }
+}
+
+/// Decodes a projection response body through [`RpcFrameValue`] so a CBOR
+/// byte string survives (see the module note), then into the JSON value a
+/// [`ProjectionDecoder`] consumes.
+pub(crate) fn decode_view_value<C: HttpClientCodec>(
+    codec: &C,
+    response: &RuntimeResponseWire,
+) -> Result<JsonValue, ClientError> {
+    decode_typed_response::<_, RpcFrameValue>(codec, response).map(JsonValue::from)
 }

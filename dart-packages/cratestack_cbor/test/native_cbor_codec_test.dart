@@ -48,6 +48,29 @@ void main() {
     );
   });
 
+  test('decodeJson reads a Bytes field in either wire form as the same '
+      'integer list (cratestack#1425: byte string, and the legacy array)', () {
+    expect(
+      jsonDecode(codec.decodeJson(unhex(bytesByteStringHex))),
+      jsonDecode(bytesJson),
+    );
+    expect(
+      jsonDecode(codec.decodeJson(unhex(bytesArrayHex))),
+      jsonDecode(bytesJson),
+    );
+  });
+
+  test('encodeJson still writes an integer array for a Bytes field '
+      '(KNOWN GAP, cratestack#1425 follow-up: JSON text has no byte type, so '
+      'the Dart writer cannot produce a byte string yet; servers accept both)',
+      () {
+    final written = codec
+        .encodeJson(bytesJson)
+        .map((byte) => byte.toRadixString(16).padLeft(2, '0'))
+        .join();
+    expect(written, bytesArrayHex);
+  });
+
   test('encodeJson -> decodeJson round-trips a JSON value', () {
     const input = '{"cratestack":["cool","stack"],"n":42}';
     final bytes = codec.encodeJson(input);

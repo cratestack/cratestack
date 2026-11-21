@@ -118,6 +118,9 @@ struct Frame<'a> {
 #[derive(Deserialize)]
 struct Blob {
     id: uuid::Uuid,
+    // The server now writes a byte string (cratestack#1425); a hand-written
+    // decoder needs the lenient helper the generated types use.
+    #[serde(deserialize_with = "cratestack::deserialize_bytes")]
     data: Vec<u8>,
 }
 
@@ -174,6 +177,45 @@ async fn ts_shaped_native_cbor_frame_round_trips() {
     let out = frames[0].output.as_ref().expect("an output");
     assert_eq!(out.id, uuid::Uuid::from_u128(UUID));
     assert_eq!(out.data, vec![0, 1, 2, 255]);
+}
+
+/// cratestack#1425: a batched procedure's `Bytes` output is a CBOR byte
+/// string on the wire (the frame's `output` is the typed `Blob`'s own
+/// `Serialize`), not the integer array older servers wrote.
+#[tokio::test]
+async fn batch_output_bytes_are_a_byte_string_on_the_wire() {
+    use cratestack::rpc::RpcFrameValue;
+    let (_client, addr, server) = spawn(CborCodec).await;
+    // `data` sent as the legacy integer array: still accepted.
+    let body = CborCodec
+        .encode(&serde_json::json!([{
+            "id": 0,
+            "op": "procedure.echo",
+            "input": {"input": {"id": "01234567-89ab-cdef-0123-456789abcdef", "data": [0, 1, 2, 255]}},
+        }]))
+        .unwrap();
+    let response = reqwest::Client::new()
+        .post(format!("http://{addr}/rpc/batch"))
+        .header("content-type", "application/cbor")
+        .header("accept", "application/cbor")
+        .body(body)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 200);
+    let bytes = response.bytes().await.unwrap();
+    server.abort();
+    let hex: String = bytes.iter().map(|byte| format!("{byte:02x}")).collect();
+    // key "data" then the byte string h'000102ff'.
+    assert!(hex.contains("646461746144000102ff"), "{hex}");
+    let frames: Vec<RpcFrameValue> = CborCodec.decode(&bytes).unwrap();
+    let RpcFrameValue::Object(frame) = &frames[0] else {
+        panic!("a frame")
+    };
+    let RpcFrameValue::Object(output) = &frame["output"] else {
+        panic!("an output")
+    };
+    assert!(matches!(&output["data"], RpcFrameValue::Bytes(b) if b == &[0, 1, 2, 255]));
 }
 
 /// Regression guard: the JSON batch wire is unchanged byte for byte.

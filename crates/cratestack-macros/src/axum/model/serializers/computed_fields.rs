@@ -9,6 +9,8 @@
 
 use quote::quote;
 
+use crate::shared::projected_leaf_tokens;
+
 use super::super::computed::ModelComputedField;
 
 /// One `if` block per computed field: skip resolution entirely when
@@ -42,6 +44,7 @@ pub(in super::super) fn build_computed_resolve_arms(
                     resolvers.#resolver_method_ident(db, record, ctx).await?
                 },
             };
+            let leaf = projected_leaf_tokens(&field.ty, quote! { value });
             quote! {
                 let should_resolve = match &selection.fields {
                     Some(fields) => fields.iter().any(|selected| selected == #name),
@@ -49,7 +52,7 @@ pub(in super::super) fn build_computed_resolve_arms(
                 };
                 if should_resolve {
                     let value = { #resolve_call };
-                    object.insert(#name.to_owned(), ::cratestack::ProjectedValue::leaf(value));
+                    object.insert(#name.to_owned(), #leaf);
                 }
             }
         })

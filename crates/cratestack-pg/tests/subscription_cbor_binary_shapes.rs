@@ -98,10 +98,13 @@ fn lazy_db() -> cratestack_schema::Cratestack {
 }
 
 /// The fixed item, as a test-local type that decodes with the CBOR codec's
-/// own (non-human-readable) `Uuid` and byte rules.
+/// own (non-human-readable) `Uuid` rule. `data` is a byte string on the wire
+/// (cratestack#1425), which a plain `Vec<u8>` refuses, so it names the same
+/// lenient helper the generated types use.
 #[derive(Debug, PartialEq, Deserialize)]
 struct Blob {
     id: uuid::Uuid,
+    #[serde(deserialize_with = "cratestack::deserialize_bytes")]
     data: Vec<u8>,
     extra: Value,
 }
@@ -125,7 +128,8 @@ fn args() -> serde_json::Value {
 }
 
 /// Asserts `item` (the raw `next` of a frame, as `Value`) holds the
-/// `Uuid` as 16 bytes and the `Json` field's bytes as a byte string.
+/// `Uuid` as 16 bytes, the `Bytes` field and the `Json` field's bytes as
+/// byte strings.
 fn assert_binary_forms(item: &Value) {
     let Value::Map(map) = item else {
         panic!("expected a map, got {item:?}");
@@ -139,6 +143,13 @@ fn assert_binary_forms(item: &Value) {
         map["extra"],
         Value::Bytes(EXTRA.to_vec()),
         "bytes in a Json field stay a byte string: {item:?}"
+    );
+    // cratestack#1425: a schema `Bytes` field is a byte string on a CBOR
+    // socket item too, not an integer array.
+    assert_eq!(
+        map["data"],
+        Value::Bytes(DATA.to_vec()),
+        "a Bytes field is a byte string on CBOR: {item:?}"
     );
 }
 
@@ -429,6 +440,7 @@ async fn a_model_event_is_binary_on_the_cbor_wire() {
     #[derive(Debug, Deserialize)]
     struct Record {
         id: uuid::Uuid,
+        #[serde(deserialize_with = "cratestack::deserialize_bytes")]
         data: Vec<u8>,
     }
     #[derive(Debug, Deserialize)]

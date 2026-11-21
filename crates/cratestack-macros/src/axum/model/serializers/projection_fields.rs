@@ -17,7 +17,7 @@ use std::collections::BTreeSet;
 use cratestack_core::{Field, Model};
 use quote::quote;
 
-use crate::shared::{ident, is_server_only_field, scalar_model_fields};
+use crate::shared::{ident, is_server_only_field, projected_leaf_tokens, scalar_model_fields};
 
 use super::super::prep::ModelHandlerPrep;
 
@@ -42,11 +42,9 @@ fn field_insert_tokens(
         .map(|field: &Field| {
             let field_ident = ident(&field.name);
             let field_name = &field.name;
+            let leaf = projected_leaf_tokens(&field.ty, quote! { record.#field_ident.clone() });
             quote! {
-                object.insert(
-                    #field_name.to_owned(),
-                    ::cratestack::ProjectedValue::leaf(record.#field_ident.clone()),
-                );
+                object.insert(#field_name.to_owned(), #leaf);
             }
         })
         .collect()

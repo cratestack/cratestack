@@ -113,3 +113,29 @@ fn the_pinned_dart_byte_string_fixtures_decode_as_the_dart_tests_expect() {
         r#"{"ids":[[1,35,69,103,137,171,205,239,1,35,69,103,137,171,205,239],null]}"#
     );
 }
+
+#[test]
+fn a_bytes_field_decodes_the_same_from_a_byte_string_and_from_the_legacy_array() {
+    // cratestack#1425. The same hex and JSON as `bytesByteStringHex` /
+    // `bytesArrayHex` / `bytesJson` in `shared_fixtures.dart`: the server now
+    // writes a `Bytes` field as a byte string, older ones as an array, and
+    // the generated `fromWire` sees one integer list either way.
+    let expected = r#"{"data":[1,2,255]}"#;
+    assert_eq!(
+        decode_json(unhex_str("a16464617461430102ff")).unwrap(),
+        expected
+    );
+    assert_eq!(
+        decode_json(unhex_str("a1646461746183010218ff")).unwrap(),
+        expected
+    );
+}
+
+#[test]
+fn the_writer_still_sends_an_integer_array_for_bytes() {
+    // The known gap, pinned so the follow-up that teaches the bridge to emit
+    // byte strings flips this deliberately: JSON text has no byte type.
+    let encoded = encode_json(r#"{"data":[1,2,255]}"#.to_owned()).unwrap();
+    let hex: String = encoded.iter().map(|b| format!("{b:02x}")).collect();
+    assert_eq!(hex, "a1646461746183010218ff");
+}

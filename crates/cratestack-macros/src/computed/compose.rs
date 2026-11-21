@@ -50,7 +50,7 @@ use std::collections::BTreeSet;
 use cratestack_core::{Field, Schema, TypeArity, computed_params_type_name};
 use quote::quote;
 
-use crate::shared::{ident, is_computed_field, response_model_fields};
+use crate::shared::{ident, is_computed_field, projected_leaf_tokens, response_model_fields};
 
 use super::bearing::compose_fn_ident;
 use super::resolver_method_name;
@@ -75,11 +75,9 @@ fn field_compose_tokens(
         } else {
             quote! { resolvers.#method_ident(db, value, ctx).await? }
         };
+        let leaf = projected_leaf_tokens(&field.ty, resolve_call);
         return quote! {
-            object.insert(
-                #field_name.to_owned(),
-                ::cratestack::ProjectedValue::leaf(#resolve_call),
-            );
+            object.insert(#field_name.to_owned(), #leaf);
         };
     }
 
@@ -112,11 +110,9 @@ fn field_compose_tokens(
         };
     }
 
+    let leaf = projected_leaf_tokens(&field.ty, quote! { value.#field_ident.clone() });
     quote! {
-        object.insert(
-            #field_name.to_owned(),
-            ::cratestack::ProjectedValue::leaf(value.#field_ident.clone()),
-        );
+        object.insert(#field_name.to_owned(), #leaf);
     }
 }
 

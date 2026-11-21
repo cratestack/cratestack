@@ -1,0 +1,35 @@
+// cratestack#1425: a model with `Bytes` columns (required and nullable), a
+// `Bytes` `@computed` value and a to-many relation whose rows carry `Bytes`,
+// served over Rpc. Responses must carry every one of them as a CBOR byte
+// string and stay an integer array under JSON. Dedicated to
+// `tests/bytes_end_to_end_rpc.rs`. (`Geography`/`Geometry` need PostGIS and
+// are covered by the macro and core unit tests.)
+transport rpc
+
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+auth Operator {
+  id Int
+}
+
+model BytesRpcDoc {
+  id Int @id
+  digest Bytes
+  signature Bytes?
+  fingerprint Bytes @computed
+  parts BytesRpcPart[] @relation(fields:[id],references:[docId])
+
+  @@allow("all", auth() != null)
+}
+
+model BytesRpcPart {
+  id Int @id
+  docId Int
+  payload Bytes
+  doc BytesRpcDoc @relation(fields:[docId],references:[id])
+
+  @@allow("all", auth() != null)
+}

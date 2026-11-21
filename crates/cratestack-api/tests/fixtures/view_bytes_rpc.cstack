@@ -1,0 +1,21 @@
+// cratestack#1425 client-only fixture: a model with a `Bytes` column, read
+// through the generated RPC client's `get_view`. Dedicated to
+// `tests/rpc_view_bytes.rs`.
+
+transport rpc
+
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+auth Operator {
+  id Int
+}
+
+model Doc {
+  id Int @id
+  data Bytes
+
+  @@allow("all", auth() != null)
+}

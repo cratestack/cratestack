@@ -26,9 +26,13 @@
 //! | `true`           | `Optional` | `Option<Option<Vec<u8>>>` |
 //! | `true`           | `List`     | `Option<Vec<Vec<u8>>>`    |
 //!
-//! Inbound only — nothing here changes what a generated `Serialize`
-//! emits. See `cratestack_core::lenient_bytes`'s module doc for why the
-//! outbound shape is deliberately left alone.
+//! The byte-valued family (`Bytes`, `Geography`, `Geometry`) also gets
+//! `serialize_with = "::cratestack::serialize_bytes_shape"`, so the
+//! generated `Serialize` writes a CBOR byte string and leaves JSON untouched
+//! (cratestack#1425, `cratestack_core::wire_bytes`). `Uuid` has its own
+//! `Serialize` that already writes 16 bytes under CBOR, so it gets none.
+//! A single generic function covers every row of the table, because serde
+//! passes `serialize_with` a `&FieldType`.
 
 use cratestack_core::{TypeArity, TypeRef};
 use quote::quote;
@@ -41,6 +45,8 @@ use quote::quote;
 pub(crate) struct BytesSerde {
     /// The `deserialize_with = "…"` argument itself.
     pub(crate) deserialize_with: proc_macro2::TokenStream,
+    /// The `serialize_with = "…"` argument; `None` for `Uuid`.
+    pub(crate) serialize_with: Option<proc_macro2::TokenStream>,
     /// Whether `default` must accompany it. True exactly when the field
     /// type is an `Option<_>`: a custom `deserialize_with` opts a field
     /// out of serde-derive's implicit "missing `Option<T>` field defaults
@@ -54,12 +60,21 @@ impl BytesSerde {
     /// The full argument list, `default` first, for emitters starting from
     /// an empty `#[serde(...)]`.
     pub(crate) fn args(&self) -> Vec<proc_macro2::TokenStream> {
-        let deserialize_with = &self.deserialize_with;
+        let mut args = Vec::new();
         if self.needs_default {
-            vec![quote! { default }, quote! { #deserialize_with }]
-        } else {
-            vec![quote! { #deserialize_with }]
+            args.push(quote! { default });
         }
+        args.extend(self.serialize_with.clone());
+        args.push(self.deserialize_with.clone());
+        args
+    }
+
+    /// The `serialize_with` / `deserialize_with` arguments without
+    /// `default`, comma-joined — for emitters that carry their own.
+    fn serde_args(&self) -> proc_macro2::TokenStream {
+        let serialize_with = self.serialize_with.iter();
+        let deserialize_with = &self.deserialize_with;
+        quote! { #(#serialize_with,)* #deserialize_with }
     }
 }
 
@@ -71,9 +86,8 @@ impl BytesSerde {
 /// their Rust type is `Vec<u8>` holding EWKB, so they need exactly the
 /// same lenient *inbound* decoding. Leaving them out would make a CBOR
 /// byte-string geometry a decode error while a `Bytes` field accepts it.
-/// Outbound is untouched, as for `Bytes` (see the module doc): nothing
-/// here emits a `serialize_with`, so a geometry goes out as an array of
-/// integers, in JSON and CBOR alike, never as base64.
+/// Outbound follows `Bytes` too (cratestack#1425): a byte string under
+/// CBOR, an array of integers under JSON, never base64.
 pub(crate) fn bytes_serde(ty: &TypeRef, wrap_for_patch: bool) -> Option<BytesSerde> {
     // `(bytes | uuid)` helper family; the arity table is the same.
     let family = match ty.name.as_str() {
@@ -81,6 +95,10 @@ pub(crate) fn bytes_serde(ty: &TypeRef, wrap_for_patch: bool) -> Option<BytesSer
         "Uuid" => "uuid",
         _ => return None,
     };
+    let serialize_with = (family == "bytes").then(|| {
+        let path = "::cratestack::serialize_bytes_shape";
+        quote! { serialize_with = #path }
+    });
 
     let (helper, needs_default) = match (wrap_for_patch, ty.arity) {
         (false, TypeArity::Required) => (format!("deserialize_{family}"), false),
@@ -94,6 +112,7 @@ pub(crate) fn bytes_serde(ty: &TypeRef, wrap_for_patch: bool) -> Option<BytesSer
     let path = format!("::cratestack::{helper}");
     Some(BytesSerde {
         deserialize_with: quote! { deserialize_with = #path },
+        serialize_with,
         needs_default,
     })
 }
@@ -112,19 +131,25 @@ pub(crate) fn bytes_serde_attr(ty: &TypeRef, wrap_for_patch: bool) -> proc_macro
     }
 }
 
-/// The `deserialize_with` argument alone, for a field whose emitter
-/// already contributes its own `default` — the model/CRUD-input path.
-/// The caller keeps its existing `default`; adding a second one would be
-/// a duplicate-attribute compile error, which is why this exists
+/// The `serialize_with` / `deserialize_with` arguments alone, for a field
+/// whose emitter already contributes its own `default` — the model/CRUD-input
+/// path. The caller keeps its existing `default`; adding a second one would
+/// be a duplicate-attribute compile error, which is why this exists
 /// alongside [`bytes_serde_attr`] rather than being folded into it.
-pub(crate) fn bytes_deserialize_with(
+pub(crate) fn bytes_serde_args(
     ty: &TypeRef,
     wrap_for_patch: bool,
 ) -> Option<proc_macro2::TokenStream> {
-    bytes_serde(ty, wrap_for_patch).map(|bytes| bytes.deserialize_with)
+    bytes_serde(ty, wrap_for_patch).map(|bytes| bytes.serde_args())
 }
+
+mod leaf;
+
+pub(crate) use leaf::projected_leaf_tokens;
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tests_serialize;
 #[cfg(test)]
 mod uuid_tests;
