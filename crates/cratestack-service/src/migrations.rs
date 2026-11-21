@@ -9,8 +9,7 @@
 //! `apply_pending`.
 
 use cratestack_core::CratestackError;
-use cratestack_sqlx::sqlx::postgres::PgPoolOptions;
-use cratestack_sqlx::{Migration, apply_pending, cratestack_error_from_sqlx};
+use cratestack_sqlx::{Migration, PgPoolConfig, apply_pending};
 use include_dir::Dir;
 
 /// Load every `cratestack migrate diff`-generated migration out of an
@@ -104,11 +103,19 @@ pub async fn run_migrations(
     database_url: &str,
     migrations: &[Migration],
 ) -> Result<Vec<String>, CratestackError> {
-    let pool = PgPoolOptions::new()
-        .max_connections(1)
-        .connect(database_url)
-        .await
-        .map_err(cratestack_error_from_sqlx)?;
+    run_migrations_with(PgPoolConfig::from_url(database_url)?, migrations).await
+}
+
+/// [`run_migrations`] over an already-built config. The connect goes through
+/// `PgPoolConfig::connect`, so its failures are classified exactly like the
+/// service's own pool: a refused or unreachable server is `Unavailable`, a
+/// rejected role or database or a bad URL or TLS setup is `BadRequest`, and
+/// no message echoes the URL.
+async fn run_migrations_with(
+    config: PgPoolConfig,
+    migrations: &[Migration],
+) -> Result<Vec<String>, CratestackError> {
+    let pool = config.max_connections(1).connect().await?;
     apply_pending(&pool, migrations).await
 }
 

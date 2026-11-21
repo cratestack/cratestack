@@ -15,7 +15,7 @@
 //! caller can tell "could not reach the database" from a protocol or decode
 //! failure, which stays `Database`. `Configuration` and `Tls` errors stay
 //! `Database` too but with a fixed message: sqlx's text for them can carry
-//! the connection URL and password, so the cause goes to tracing only.
+//! the connection URL and password, so the cause is dropped.
 //!
 //! `sqlx::Error::RowNotFound` is mapped to `CratestackError::NotFound` so a missing
 //! row surfaces as a 404 rather than a 500. Callers that want a custom
@@ -75,13 +75,17 @@ pub fn cratestack_error_from_sqlx(error: sqlx::Error) -> CratestackError {
         // setup that failed: both are permanent faults (not retryable), and
         // sqlx's text for them can carry the connection URL, password
         // included, or the host. The result carries a fixed message only;
-        // the cause goes to tracing.
-        error @ sqlx::Error::Configuration(_) => {
-            tracing::error!(%error, "database connection configuration error");
+        // the cause is dropped; only the kind is logged.
+        sqlx::Error::Configuration(_) => {
+            // The cause is dropped, not logged: only the kind is.
+            tracing::error!(
+                kind = "configuration",
+                "database connection configuration error"
+            );
             CratestackError::Database("database connection configuration error".to_owned())
         }
-        error @ sqlx::Error::Tls(_) => {
-            tracing::error!(%error, "database TLS error");
+        sqlx::Error::Tls(_) => {
+            tracing::error!(kind = "tls", "database TLS error");
             CratestackError::Database("database TLS error".to_owned())
         }
         other => CratestackError::Database(other.to_string()),

@@ -1,7 +1,8 @@
 //! cratestack#745 (a24-context#745): a database error read back through the
-//! typed accessors keeps its SQLSTATE, constraint, table and column, whatever
-//! raised it: a CHECK, NOT NULL, FK or named UNIQUE constraint, or a trigger
-//! raising a custom or `restrict_violation` code. The generated model's
+//! typed accessors keeps its SQLSTATE, constraint, table and column: a CHECK, NOT NULL, FK
+//! or named UNIQUE constraint reports them itself, while a trigger raising a
+//! custom or `restrict_violation` code carries a table only when it sets
+//! `USING TABLE` (a plain `RAISE ... USING ERRCODE` has none). The generated model's
 //! create path is the call site for those; the concurrency and timeout
 //! classes go through `cratestack_error_from_sqlx`, the conversion every
 //! generated and hand-written sqlx call site shares.
@@ -32,6 +33,8 @@ BEGIN
     IF NEW.name = 'trip-a2401' THEN
         RAISE EXCEPTION 'reservation refused' USING ERRCODE = 'A2401',
             TABLE = TG_TABLE_NAME, SCHEMA = TG_TABLE_SCHEMA;
+    ELSIF NEW.name = 'trip-plain' THEN
+        RAISE EXCEPTION 'plain refusal' USING ERRCODE = 'A2402';
     ELSIF NEW.name = 'trip-restrict' THEN
         RAISE EXCEPTION 'append only' USING ERRCODE = 'restrict_violation',
             TABLE = TG_TABLE_NAME, SCHEMA = TG_TABLE_SCHEMA;
@@ -163,6 +166,15 @@ async fn generated_model_errors_keep_sqlstate_constraint_table_and_column() {
         .unwrap_err();
     assert_db(&err, "A2401", None, Some("parcels"), None);
     assert_eq!(err.db_message(), Some("reservation refused"));
+    // A trigger that does not set `USING TABLE` raises an error with no
+    // table: the server only names what the raiser names.
+    let err = parcels()
+        .create(input(8, "trip-plain", "c8", 1))
+        .run(&ctx())
+        .await
+        .unwrap_err();
+    assert_db(&err, "A2402", None, None, None);
+    assert_eq!(err.db_message(), Some("plain refusal"));
     let err = parcels()
         .create(input(7, "trip-restrict", "c7", 1))
         .run(&ctx())

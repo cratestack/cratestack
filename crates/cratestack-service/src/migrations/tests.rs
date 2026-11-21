@@ -111,3 +111,36 @@ fn description_defaults_to_the_id() {
         assert_eq!(migration.description, migration.id);
     }
 }
+
+/// The migration connect is classified like the pool connect
+/// (`PgPoolConfig::connect`): an unreachable server is `Unavailable`, a URL
+/// that does not parse is `BadRequest`, and neither message echoes the
+/// password.
+#[tokio::test]
+async fn run_migrations_classifies_connect_failures_like_the_pool() {
+    use cratestack_core::CratestackError;
+    use cratestack_sqlx::PgPoolConfig;
+
+    let refused_config = PgPoolConfig::from_url("postgres://u:s3cret@127.0.0.1:1/x")
+        .expect("parses")
+        .acquire_timeout(std::time::Duration::from_secs(2));
+    let refused = super::run_migrations_with(refused_config, &[])
+        .await
+        .expect_err("port 1 refuses");
+    assert!(
+        matches!(refused, CratestackError::Unavailable(_)),
+        "{refused:?}"
+    );
+
+    let unparsable = super::run_migrations("postgres://u:s3cret@127.0.0.1:notaport/x", &[])
+        .await
+        .expect_err("bad port");
+    assert!(
+        matches!(unparsable, CratestackError::BadRequest(_)),
+        "{unparsable:?}"
+    );
+    for err in [&refused, &unparsable] {
+        assert!(!format!("{err:?}").contains("s3cret"), "{err:?}");
+        assert!(!err.to_string().contains("s3cret"), "{err}");
+    }
+}
