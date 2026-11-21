@@ -17,12 +17,12 @@
 //! `Array.from(bytes)` workaround) sends today, and it is the *only* shape
 //! JSON can express, so the `application/json` transport is unaffected.
 //!
-//! **Inbound only.** Nothing here changes what a generated `Serialize`
-//! emits: a `Bytes` field still goes out as an array of integers on both
-//! transports and in all three client languages. Flipping the outbound
-//! shape to a byte string is a genuine wire break for every existing
-//! decoder (the Dart client's `cratestackAsValueList`, the TypeScript
-//! client's `number[]`), so it is deliberately not bundled here.
+//! **Inbound.** The outbound half is [`crate::wire_bytes`]: since
+//! cratestack#1425 a generated `Bytes`/`Geography`/`Geometry` field is
+//! *written* as a byte string under CBOR (and still an integer array under
+//! JSON). Before that, every generated `Serialize` wrote the array form, which
+//! is why this module had to accept it; it still does, because stored
+//! replays, older clients and the Dart client's writer send arrays.
 //!
 //! The `deserialize_*` wrappers exist one per generated field *shape*
 //! rather than as a single generic function because `#[serde(deserialize_with

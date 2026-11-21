@@ -53,6 +53,7 @@ pub mod subscription_wire;
 pub mod transport;
 pub mod validators;
 pub mod value;
+pub mod wire_bytes;
 
 /// Body bytes carried through the transport layer.
 pub type CratestackBody = bytes::Bytes;
@@ -181,6 +182,7 @@ pub use validators::{
     FieldPath, ValidateFields, validate_email, validate_iso4217, validate_length,
     validate_length_bytes, validate_range_i64, validate_uri,
 };
+pub use wire_bytes::{BytesShape, WireBytes, serialize_bytes_shape};
 // `validate_range_decimal` is generic over `DecimalValue` (cratestack#505
 // Direction 2), so it's unconditional — no decimal feature required.
 pub use validators::validate_range_decimal;

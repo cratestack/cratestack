@@ -21,7 +21,7 @@ use cratestack_core::{EnumDecl, Field, Model};
 use quote::quote;
 use syn::LitStr;
 
-pub(crate) use bytes_serde::{bytes_deserialize_with, bytes_serde_attr};
+pub(crate) use bytes_serde::{bytes_serde_args, bytes_serde_attr, projected_leaf_tokens};
 
 pub(crate) use attrs::{
     auth_default_field, is_computed_field, is_generated_on_create, is_paged_model, is_pii_field,

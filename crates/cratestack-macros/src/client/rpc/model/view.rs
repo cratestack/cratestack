@@ -45,8 +45,13 @@ pub(super) fn build_get_view_method(get_op: &str, primary_key_type: &TokenStream
                 include_fields: selection.include_fields.clone(),
                 computed_params: ::core::option::Option::None,
             };
-            let value: ::cratestack::serde_json::Value =
-                self.rpc.call(#get_op, &input).await?;
+            // Through `RpcFrameValue`: a CBOR byte string (a `Bytes` field)
+            // has no `serde_json::Value` case (cratestack#1425).
+            let value: ::cratestack::serde_json::Value = self
+                .rpc
+                .call::<_, ::cratestack::rpc::RpcFrameValue>(#get_op, &input)
+                .await?
+                .into();
             ::cratestack::ProjectionDecoder::decode_one(projection, value)
                 .map_err(::cratestack::client_rust::RpcClientError::from)
         }

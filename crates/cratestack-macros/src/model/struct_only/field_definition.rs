@@ -58,10 +58,10 @@ pub(crate) fn struct_field_definition(
     // The one branch that already sets `deserialize_with` — the double
     // `Option` patch case — uses this as a *replacement*, which is why the
     // `Bytes` mapping in `bytes_serde` has its own double-option variant.
-    let bytes_deserialize_with = crate::shared::bytes_deserialize_with(&field.ty, wrap_for_patch);
+    let bytes_serde_args = crate::shared::bytes_serde_args(&field.ty, wrap_for_patch);
     // Pre-rendered with its leading comma so it can be appended to a
     // branch's argument list, or expand to nothing for every other type.
-    let bytes_arg = match &bytes_deserialize_with {
+    let bytes_arg = match &bytes_serde_args {
         Some(argument) => quote! { , #argument },
         None => quote! {},
     };
@@ -96,7 +96,7 @@ pub(crate) fn struct_field_definition(
         // Deserialize` bound resolves to `Vec<u8>`'s strict blanket impl,
         // which is exactly the byte-string-rejecting behaviour
         // cratestack#783 fixes.
-        let double_option = bytes_deserialize_with.unwrap_or_else(|| {
+        let double_option = bytes_serde_args.unwrap_or_else(|| {
             quote! { deserialize_with = "::cratestack::deserialize_double_option" }
         });
         quote! {
@@ -154,7 +154,7 @@ pub(crate) fn struct_field_definition(
         // lets the client struct accept "missing field" as `None`,
         // restoring the round-trip without changing the wire format.
         quote! { #[serde(default #bytes_arg)] }
-    } else if let Some(argument) = &bytes_deserialize_with {
+    } else if let Some(argument) = &bytes_serde_args {
         // Required- or list-arity `Bytes`, unwrapped: no `Option` layer,
         // so no `default` — just the leniency (cratestack#783).
         quote! { #[serde(#argument)] }
@@ -207,8 +207,8 @@ pub(crate) fn struct_field_definition_with_wire_scope(
     let field_type = struct_field_type_with_wire_scope(field, enum_names, bearing);
     // Wire model structs are always `wrap_for_patch = false`, so the
     // `Bytes` shapes here are the non-patch row of `bytes_serde`'s table.
-    let bytes_deserialize_with = crate::shared::bytes_deserialize_with(&field.ty, false);
-    let bytes_arg = match &bytes_deserialize_with {
+    let bytes_serde_args = crate::shared::bytes_serde_args(&field.ty, false);
+    let bytes_arg = match &bytes_serde_args {
         Some(argument) => quote! { , #argument },
         None => quote! {},
     };
@@ -217,7 +217,7 @@ pub(crate) fn struct_field_definition_with_wire_scope(
         quote! { #[serde(skip)] }
     } else if matches!(field.ty.arity, TypeArity::Optional) {
         quote! { #[serde(default #bytes_arg)] }
-    } else if let Some(argument) = &bytes_deserialize_with {
+    } else if let Some(argument) = &bytes_serde_args {
         quote! { #[serde(#argument)] }
     } else {
         quote! {}

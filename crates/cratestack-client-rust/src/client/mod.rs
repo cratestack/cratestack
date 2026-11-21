@@ -37,6 +37,8 @@ mod streaming;
 mod transport;
 mod transport_stream;
 mod views;
+#[cfg(test)]
+mod views_tests;
 
 pub use core::{CratestackClient, ensure_crypto_provider};
 pub use prepared::PreparedCall;

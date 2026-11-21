@@ -26,6 +26,8 @@ use super::prep::ModelHandlerPrep;
 /// model (owner is implicit — always that model).
 pub(super) struct ModelComputedField {
     pub(super) name: String,
+    /// The schema type the resolver returns; `Bytes` values need `WireBytes`.
+    pub(super) ty: cratestack_core::TypeRef,
     pub(super) resolver_method_ident: syn::Ident,
     pub(super) params_type_ident: Option<syn::Ident>,
     /// Kept alongside `params_type_ident` (rather than derived from it via
@@ -57,6 +59,7 @@ pub(super) fn model_computed_fields(
                 .is_some_and(|name| validating.contains(name));
             ModelComputedField {
                 name: field.name.clone(),
+                ty: field.ty.clone(),
                 resolver_method_ident,
                 params_type_ident,
                 params_type_name,
