@@ -109,12 +109,11 @@ fn decode_and_configuration_errors_stay_database() {
 /// the correct variant for the Database arm.
 #[test]
 fn database_typed_accessors() {
-    let info = DbErrorInfo {
-        detail: "ERROR: duplicate key value violates unique constraint \"accounts_email_key\""
-            .to_owned(),
-        sqlstate: Some("23505".to_owned()),
-        constraint: Some("accounts_email_key".to_owned()),
-    };
+    let info = DbErrorInfo::new(
+        "ERROR: duplicate key value violates unique constraint \"accounts_email_key\"".to_owned(),
+    )
+    .with_sqlstate("23505".to_owned())
+    .with_constraint("accounts_email_key".to_owned());
     let err = CratestackError::DatabaseTyped(info);
 
     assert_eq!(err.db_sqlstate(), Some("23505"));
@@ -132,13 +131,11 @@ fn database_typed_accessors() {
 /// so the retry logic continues to work for serialization failures.
 #[test]
 fn database_typed_detail_preserved_for_retry_logic() {
-    let info = DbErrorInfo {
-        detail:
-            "Database(PgDatabaseError { code: \"40001\", message: \"could not serialize access\" })"
-                .to_owned(),
-        sqlstate: Some("40001".to_owned()),
-        constraint: None,
-    };
+    let info = DbErrorInfo::new(
+        "Database(PgDatabaseError { code: \"40001\", message: \"could not serialize access\" })"
+            .to_owned(),
+    )
+    .with_sqlstate("40001".to_owned());
     let err = CratestackError::DatabaseTyped(info);
     let detail = err.detail().unwrap_or_default();
     assert!(
@@ -158,11 +155,8 @@ fn database_typed_empty_detail_returns_none() {
 /// `into_response` must never leak the operator detail for DatabaseTyped.
 #[test]
 fn database_typed_into_response_does_not_leak_detail() {
-    let info = DbErrorInfo {
-        detail: "SELECT * FROM secrets".to_owned(),
-        sqlstate: Some("23505".to_owned()),
-        constraint: None,
-    };
+    let info =
+        DbErrorInfo::new("SELECT * FROM secrets".to_owned()).with_sqlstate("23505".to_owned());
     let response = CratestackError::DatabaseTyped(info).into_response();
     assert_eq!(response.code, "DATABASE_ERROR");
     assert_eq!(response.message, "internal error");

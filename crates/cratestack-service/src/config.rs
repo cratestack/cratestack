@@ -14,7 +14,10 @@ use cratestack_core::CratestackError;
 /// string, and no built-in service-name-to-database-name table. A caller
 /// that wants a local-dev fallback sets it in their own environment (or
 /// their own wrapper around `from_env`) before calling this.
-#[derive(Clone, Debug)]
+///
+/// `Debug` never prints a credential: the password of `database_url` and
+/// `redis_url` and the whole of `object_storage_secret_key` are redacted.
+#[derive(Clone)]
 pub struct ServiceConfig {
     pub service_name: String,
     pub host: String,
@@ -153,6 +156,8 @@ pub fn is_production_env(prefix: &str) -> bool {
         .map(|value| matches!(value.as_str(), "production" | "prod"))
         .unwrap_or(false)
 }
+
+mod redact;
 
 #[cfg(test)]
 mod tests;

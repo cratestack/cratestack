@@ -20,7 +20,7 @@
 use cratestack_core::CratestackError;
 use cratestack_sql::ViewDescriptor;
 
-use crate::{FindMany, FindUnique, SqlxRuntime, sqlx};
+use crate::{FindMany, FindUnique, SqlxRuntime, cratestack_error_from_sqlx, sqlx};
 
 /// View delegate for views that declared an `@id` field. Exposes
 /// `find_many` + `find_unique` (and `refresh()` on materialized
@@ -104,7 +104,7 @@ impl<'a, V: 'static, PK: 'static> ViewDelegate<'a, V, PK> {
         sqlx::query(sqlx::AssertSqlSafe(sql))
             .execute(self.runtime.pool())
             .await
-            .map_err(|error| CratestackError::Database(error.to_string()))?;
+            .map_err(cratestack_error_from_sqlx)?;
         Ok(())
     }
 }

@@ -220,11 +220,10 @@ mod tests {
     #[test]
     fn retriable_typed_serialization_failure() {
         use cratestack_core::DbErrorInfo;
-        let err = CratestackError::DatabaseTyped(DbErrorInfo {
-            detail: "could not serialize access due to concurrent update".to_owned(),
-            sqlstate: Some("40001".to_owned()),
-            constraint: None,
-        });
+        let err = CratestackError::DatabaseTyped(
+            DbErrorInfo::new("could not serialize access due to concurrent update".to_owned())
+                .with_sqlstate("40001".to_owned()),
+        );
         assert!(
             is_retriable(&err),
             "DatabaseTyped with 40001 sqlstate must be retriable via the fast path",
@@ -234,11 +233,9 @@ mod tests {
     #[test]
     fn retriable_typed_deadlock() {
         use cratestack_core::DbErrorInfo;
-        let err = CratestackError::DatabaseTyped(DbErrorInfo {
-            detail: "deadlock detected".to_owned(),
-            sqlstate: Some("40P01".to_owned()),
-            constraint: None,
-        });
+        let err = CratestackError::DatabaseTyped(
+            DbErrorInfo::new("deadlock detected".to_owned()).with_sqlstate("40P01".to_owned()),
+        );
         assert!(
             is_retriable(&err),
             "DatabaseTyped with 40P01 sqlstate must be retriable via the fast path",
@@ -248,11 +245,13 @@ mod tests {
     #[test]
     fn not_retriable_typed_unique_violation() {
         use cratestack_core::DbErrorInfo;
-        let err = CratestackError::DatabaseTyped(DbErrorInfo {
-            detail: "duplicate key value violates unique constraint \"accounts_pkey\"".to_owned(),
-            sqlstate: Some("23505".to_owned()),
-            constraint: Some("accounts_pkey".to_owned()),
-        });
+        let err = CratestackError::DatabaseTyped(
+            DbErrorInfo::new(
+                "duplicate key value violates unique constraint \"accounts_pkey\"".to_owned(),
+            )
+            .with_sqlstate("23505".to_owned())
+            .with_constraint("accounts_pkey".to_owned()),
+        );
         assert!(
             !is_retriable(&err),
             "unique_violation (23505) must not be retried",
@@ -278,11 +277,9 @@ mod tests {
             ("22P02", "invalid input syntax for type bigint: \"40001x\""),
             ("55P03", "deadlock detected while waiting for 40P01"),
         ] {
-            let err = CratestackError::DatabaseTyped(DbErrorInfo {
-                detail: detail.to_owned(),
-                sqlstate: Some(sqlstate.to_owned()),
-                constraint: None,
-            });
+            let err = CratestackError::DatabaseTyped(
+                DbErrorInfo::new(detail.to_owned()).with_sqlstate(sqlstate.to_owned()),
+            );
             assert!(
                 !is_retriable(&err),
                 "typed {sqlstate} must not be retried because of its text",
@@ -293,12 +290,13 @@ mod tests {
     #[test]
     fn typed_variant_exposes_constraint_for_unique_violation() {
         use cratestack_core::DbErrorInfo;
-        let err = CratestackError::DatabaseTyped(DbErrorInfo {
-            detail: "duplicate key value violates unique constraint \"wallets_owner_key\""
-                .to_owned(),
-            sqlstate: Some("23505".to_owned()),
-            constraint: Some("wallets_owner_key".to_owned()),
-        });
+        let err = CratestackError::DatabaseTyped(
+            DbErrorInfo::new(
+                "duplicate key value violates unique constraint \"wallets_owner_key\"".to_owned(),
+            )
+            .with_sqlstate("23505".to_owned())
+            .with_constraint("wallets_owner_key".to_owned()),
+        );
         assert_eq!(err.db_sqlstate(), Some("23505"));
         assert_eq!(err.db_constraint(), Some("wallets_owner_key"));
         // Public message must remain canned — no detail leak.

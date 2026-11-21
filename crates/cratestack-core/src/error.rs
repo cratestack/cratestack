@@ -8,12 +8,12 @@
 use std::borrow::Cow;
 
 use http::StatusCode;
-use serde::{Deserialize, Serialize};
 
 mod aborted;
 mod auth_refusal;
 mod auth_refusal_claim;
 mod cuid_check;
+mod db_info;
 mod response;
 mod stream_end;
 // Doctest-only: `AbortOwnership::Claimed` cannot be forged from outside.
@@ -27,33 +27,16 @@ mod tests_aborted;
 mod tests_auth_refusal;
 #[cfg(test)]
 mod tests_auth_refusal_claim;
+#[cfg(test)]
+mod tests_db_info;
 
 pub use aborted::{AbortOwnership, TransactionAbort};
 pub use auth_refusal::{AuthRefusal, AuthRefusalKind, RESERVED_ENVELOPE_MEMBERS};
 pub use cuid_check::parse_cuid;
+pub use db_info::DbErrorInfo;
 pub use response::CratestackErrorResponse;
 pub(crate) use response::visible_extra_members;
 pub use stream_end::{StreamEndNotice, StreamEndReason};
-
-/// Structured information extracted from a driver-level database error.
-///
-/// Produced by `cratestack-sqlx`'s [`cratestack_error_from_sqlx`] when the
-/// underlying `sqlx::Error` carries a typed `DatabaseError` (e.g.
-/// `PgDatabaseError`). Consumers can inspect `constraint` and `code` without
-/// substring-matching the stringified error message.
-///
-/// [`cratestack_error_from_sqlx`]: cratestack_sqlx::cratestack_error_from_sqlx
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
-pub struct DbErrorInfo {
-    /// The operator-visible detail string (equivalent to `error.to_string()`).
-    pub detail: String,
-    /// The five-character SQLSTATE code (`"23505"` for unique_violation, etc.).
-    /// `None` when the driver did not surface a code.
-    pub sqlstate: Option<String>,
-    /// The constraint name reported by the database (`"accounts_email_key"`,
-    /// etc.). `None` when the error is not constraint-related.
-    pub constraint: Option<String>,
-}
 
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
@@ -111,8 +94,13 @@ pub enum CratestackError {
     Database(String),
     /// Database error with structured information preserved from the driver.
     ///
-    /// Use [`CratestackError::db_sqlstate`] and [`CratestackError::db_constraint`] to
-    /// access the typed fields without matching on this variant directly.
+    /// Use [`CratestackError::db_sqlstate`], [`CratestackError::db_constraint`],
+    /// [`CratestackError::db_table`], [`CratestackError::db_column`] and
+    /// [`CratestackError::db_schema`] to access the typed fields without
+    /// matching on this variant directly.
+    ///
+    /// `Display` prints the server's message, which can quote row values.
+    /// When logs must not carry them, log the accessors above, not `Display`.
     #[error("database: {}", .0.detail)]
     DatabaseTyped(DbErrorInfo),
     #[error("internal: {0}")]
@@ -309,15 +297,52 @@ impl CratestackError {
         }
     }
 
-    /// Returns the constraint name if this is a `DatabaseTyped` error that
-    /// carries constraint information (e.g. `"accounts_email_key"`).
+    /// Returns the constraint name if this is a `DatabaseTyped` or
+    /// `ConflictTyped` error that carries constraint information (e.g.
+    /// `"accounts_email_key"`).
     ///
     /// Always returns `None` for the legacy `Database(String)` variant; to
     /// get typed access, use `cratestack_sqlx::cratestack_error_from_sqlx` at the
     /// conversion site.
     pub fn db_constraint(&self) -> Option<&str> {
+        self.db_info().and_then(|info| info.constraint.as_deref())
+    }
+
+    /// Table the database reported the error against (`DatabaseTyped` /
+    /// `ConflictTyped`), e.g. the table of a failed CHECK or NOT NULL.
+    /// Log this, not `Display`, when logs must not carry row values.
+    pub fn db_table(&self) -> Option<&str> {
+        self.db_info().and_then(|info| info.table())
+    }
+
+    /// Column the database reported the error against (NOT NULL and
+    /// similar). Log this, not `Display`, when logs must not carry row values.
+    pub fn db_column(&self) -> Option<&str> {
+        self.db_info().and_then(|info| info.column())
+    }
+
+    /// Schema of the table the error was reported against. Log this, not
+    /// `Display`, when logs must not carry row values.
+    pub fn db_schema(&self) -> Option<&str> {
+        self.db_info().and_then(|info| info.schema())
+    }
+
+    /// The server's own message text for a typed database error, if any.
+    ///
+    /// Operator-only: for a `ConflictTyped` it is also the public conflict
+    /// message. `Display` still prints it for `DatabaseTyped`, so when logs
+    /// must not carry row values, log the SQLSTATE, constraint, table,
+    /// column and schema accessors instead of `Display`, and read this only
+    /// where the message is wanted on purpose.
+    pub fn db_message(&self) -> Option<&str> {
+        self.db_info()
+            .map(|info| info.detail.as_str())
+            .filter(|m| !m.is_empty())
+    }
+
+    fn db_info(&self) -> Option<&DbErrorInfo> {
         match self {
-            Self::DatabaseTyped(info) | Self::ConflictTyped(info) => info.constraint.as_deref(),
+            Self::DatabaseTyped(info) | Self::ConflictTyped(info) => Some(info),
             _ => None,
         }
     }

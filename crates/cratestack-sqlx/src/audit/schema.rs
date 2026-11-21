@@ -4,8 +4,8 @@ use std::sync::atomic::Ordering;
 
 use cratestack_core::CratestackError;
 
-use crate::SqlxRuntime;
 use crate::sqlx;
+use crate::{SqlxRuntime, cratestack_error_from_sqlx};
 
 /// DDL for the audit log table. Banks typically run migrations
 /// through their own tooling — this DDL is exposed so the
@@ -79,7 +79,7 @@ where
     let exists: bool = sqlx::query_scalar(AUDIT_OBJECTS_EXIST)
         .fetch_one(probe)
         .await
-        .map_err(|error| CratestackError::Database(error.to_string()))?;
+        .map_err(cratestack_error_from_sqlx)?;
     if exists {
         runtime.audit_table_ensured().store(true, Ordering::Release);
         return Ok(());
@@ -93,7 +93,7 @@ where
     sqlx::raw_sql(AUDIT_TABLE_DDL)
         .execute(runtime.pool())
         .await
-        .map_err(|error| CratestackError::Database(error.to_string()))?;
+        .map_err(cratestack_error_from_sqlx)?;
 
     runtime.audit_table_ensured().store(true, Ordering::Release);
     Ok(())

@@ -113,3 +113,47 @@ async fn state_rejects_a_bad_url_without_echoing_it() {
         assert!(!message.contains("hunter2secret"), "{message}");
     }
 }
+
+/// `{:?}` of a config carries no credential: not the password in the
+/// database or Redis URL, not the object-storage secret key. Everything else
+/// still prints.
+#[test]
+fn debug_output_redacts_every_secret() {
+    let lookup = lookup_from(&[
+        (
+            "AUTH_DATABASE_URL",
+            "postgres://svc:dbs3cret@db.internal:5432/auth",
+        ),
+        ("AUTH_REDIS_URL", "redis://:rds3cret@cache.internal:6379/0"),
+        ("AUTH_OBJECT_STORAGE_ACCESS_KEY", "AKIAPUBLICID"),
+        ("AUTH_OBJECT_STORAGE_SECRET_KEY", "ossecret"),
+        ("AUTH_OBJECT_STORAGE_BUCKET", "media"),
+    ]);
+    let config = ServiceConfig::from_env_with("AUTH", "auth-service", 8080, &lookup)
+        .expect("all required vars are present");
+
+    let shown = format!("{config:?}");
+    for secret in ["dbs3cret", "rds3cret", "ossecret"] {
+        assert!(!shown.contains(secret), "{secret} leaked: {shown}");
+    }
+    assert!(!format!("{config:#?}").contains("dbs3cret"));
+    for kept in [
+        "auth-service",
+        "db.internal",
+        "svc",
+        "media",
+        "AKIAPUBLICID",
+    ] {
+        assert!(shown.contains(kept), "{kept} missing: {shown}");
+    }
+}
+
+/// A database URL that does not parse is hidden whole: it could be a
+/// key=value DSN with a password in it.
+#[test]
+fn debug_output_hides_an_unparsable_database_url() {
+    let lookup = lookup_from(&[("AUTH_DATABASE_URL", "host=db password=dsns3cret")]);
+    let config = ServiceConfig::from_env_with("AUTH", "auth-service", 8080, &lookup)
+        .expect("all required vars are present");
+    assert!(!format!("{config:?}").contains("dsns3cret"));
+}

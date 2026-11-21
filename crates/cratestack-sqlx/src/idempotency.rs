@@ -17,7 +17,7 @@ use async_trait::async_trait;
 use cratestack_core::{CratestackError, IdempotencyStore, ReservationOutcome};
 use cratestack_sql::IDEMPOTENCY_TABLE_DDL;
 
-use crate::sqlx;
+use crate::{cratestack_error_from_sqlx, sqlx};
 
 #[derive(Clone)]
 pub struct SqlxIdempotencyStore {
@@ -38,7 +38,7 @@ impl SqlxIdempotencyStore {
         sqlx::raw_sql(IDEMPOTENCY_TABLE_DDL)
             .execute(&self.pool)
             .await
-            .map_err(|error| CratestackError::Database(error.to_string()))?;
+            .map_err(cratestack_error_from_sqlx)?;
         Ok(())
     }
 
@@ -49,7 +49,7 @@ impl SqlxIdempotencyStore {
         let result = sqlx::query("DELETE FROM cratestack_idempotency WHERE expires_at < NOW()")
             .execute(&self.pool)
             .await
-            .map_err(|error| CratestackError::Database(error.to_string()))?;
+            .map_err(cratestack_error_from_sqlx)?;
         Ok(result.rows_affected())
     }
 }

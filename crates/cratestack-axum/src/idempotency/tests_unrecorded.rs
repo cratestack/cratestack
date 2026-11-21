@@ -39,11 +39,7 @@ fn request() -> Request {
 /// Each state built the only way code outside `cratestack-core` can:
 /// `Claimed` is the generated dispatch's claim of an exhausted abort.
 fn aborted_with(ownership: AbortOwnership) -> CratestackError {
-    let info = DbErrorInfo {
-        detail: "retry the request".to_owned(),
-        sqlstate: Some("40001".to_owned()),
-        constraint: None,
-    };
+    let info = DbErrorInfo::new("retry the request".to_owned()).with_sqlstate("40001".to_owned());
     let error = match ownership {
         AbortOwnership::Propagated => {
             CratestackError::TransactionAborted(TransactionAbort::propagated(info))
