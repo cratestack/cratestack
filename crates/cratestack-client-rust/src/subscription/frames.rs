@@ -53,10 +53,20 @@ pub(super) fn item<T: DeserializeOwned>(value: serde_json::Value) -> Result<T, C
 /// A socket frame's item as `T`, the way a unary CBOR call decodes: a `Uuid`
 /// is a byte string and `Bytes` stay bytes (cratestack#1360).
 ///
-/// A server from before that fix sent a `Uuid` as text on these sockets, which
-/// the CBOR rules refuse, so on failure the item is read once more as the
-/// human-readable JSON value it was then. If both fail, the first error is
-/// the one reported. Every binding but SSE, which is JSON.
+/// Two fallbacks, each reached only when the one before it fails; if all
+/// fail, the first error is the one reported.
+///
+/// 1. A `T` holding a `serde_json::Value` (a `ModelEvent<serde_json::Value>`
+///    partial-record subscriber) cannot take a byte string, which the server
+///    now writes for `Bytes`/`Geography`/`Geometry` (cratestack#1425). The
+///    item is read as the JSON value a byte string would have been, an
+///    integer array, with the envelope's own `event_id` (a 16-byte `Uuid`)
+///    turned back into text, which is what `Uuid` reads from a JSON value.
+/// 2. A server from before cratestack#1360 sent a `Uuid` as text on these
+///    sockets, which the CBOR rules refuse, so the item is read as the
+///    human-readable JSON value it was then.
+///
+/// Every binding but SSE, which is JSON.
 pub(super) fn cbor_item<T: DeserializeOwned>(
     value: cratestack_core::rpc::RpcFrameValue,
 ) -> Result<T, ClientError> {
@@ -64,8 +74,30 @@ pub(super) fn cbor_item<T: DeserializeOwned>(
         Ok(item) => return Ok(item),
         Err(error) => error,
     };
-    serde_json::from_value(serde_json::Value::from(value))
+    serde_json::from_value(json_item(value))
         .map_err(|_| ClientError::InvalidResponse(format!("subscription item: {first}")))
+}
+
+/// A frame item as JSON: byte strings become integer arrays, except the
+/// envelope `event_id`, a `Uuid`, which becomes its text form.
+fn json_item(mut value: cratestack_core::rpc::RpcFrameValue) -> serde_json::Value {
+    use cratestack_core::rpc::RpcFrameValue;
+    if let RpcFrameValue::Object(fields) = &mut value
+        && let Some(RpcFrameValue::Bytes(bytes)) = fields.get("event_id")
+        && bytes.len() == 16
+    {
+        let hex: String = bytes.iter().map(|byte| format!("{byte:02x}")).collect();
+        let id = format!(
+            "{}-{}-{}-{}-{}",
+            &hex[..8],
+            &hex[8..12],
+            &hex[12..16],
+            &hex[16..20],
+            &hex[20..]
+        );
+        fields.insert("event_id".to_owned(), RpcFrameValue::String(id));
+    }
+    serde_json::Value::from(value)
 }
 
 /// An SSE `message` event's `next` frame as `T`.

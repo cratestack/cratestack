@@ -2,6 +2,7 @@ use cratestack_codec_cbor::CborCodec;
 #[cfg(feature = "codec-json")]
 use cratestack_codec_json::JsonCodec;
 use cratestack_core::CratestackCodec;
+use cratestack_core::rpc::RpcFrameValue;
 use reqwest::Method;
 use serde_json::Value as JsonValue;
 
@@ -138,7 +139,11 @@ impl RuntimeTransportClient {
         }
 
         let value = match self {
-            Self::Cbor(_) => CborCodec.decode::<JsonValue>(&response.body)?,
+            // Through `RpcFrameValue`: the server writes `Bytes`/`Geography`/
+            // `Geometry` as CBOR byte strings (cratestack#1425), which
+            // `serde_json::Value` refuses. The bridge carries JSON, so a byte
+            // string becomes the integer array a JSON body would have had.
+            Self::Cbor(_) => JsonValue::from(CborCodec.decode::<RpcFrameValue>(&response.body)?),
             #[cfg(feature = "codec-json")]
             Self::Json(_) => JsonCodec.decode::<JsonValue>(&response.body)?,
         };
@@ -158,3 +163,6 @@ impl RuntimeTransportClient {
         }
     }
 }
+
+#[cfg(test)]
+mod tests;

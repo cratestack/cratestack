@@ -96,3 +96,66 @@ mod socket_items {
         assert!(error.to_string().contains("subscription item"), "{error}");
     }
 }
+
+mod model_event_of_json_value {
+    use cratestack_core::rpc::RpcFrameValue;
+    use cratestack_core::{ModelEvent, ModelEventKind};
+
+    use super::super::cbor_item;
+
+    const ID: u128 = 0x0123_4567_89ab_cdef_0123_4567_89ab_cdef;
+
+    fn event(data: RpcFrameValue) -> RpcFrameValue {
+        let text = |value: &str| RpcFrameValue::String(value.to_owned());
+        RpcFrameValue::Object(
+            [
+                (
+                    "event_id".to_owned(),
+                    RpcFrameValue::Bytes(ID.to_be_bytes().to_vec()),
+                ),
+                ("model".to_owned(), text("Blob")),
+                ("operation".to_owned(), text("Created")),
+                ("occurred_at".to_owned(), text("2026-01-02T03:04:05Z")),
+                (
+                    "data".to_owned(),
+                    RpcFrameValue::Object([("data".to_owned(), data)].into()),
+                ),
+            ]
+            .into(),
+        )
+    }
+
+    fn read(data: RpcFrameValue) -> ModelEvent<serde_json::Value> {
+        cbor_item(event(data)).expect("a partial-record subscriber reads the event")
+    }
+
+    #[test]
+    fn a_byte_string_field_reads_as_the_integer_array_json_carries() {
+        let item = read(RpcFrameValue::Bytes(vec![1, 2, 255]));
+        assert_eq!(item.data, serde_json::json!({"data": [1, 2, 255]}));
+        assert_eq!(item.event_id, uuid::Uuid::from_u128(ID));
+        assert_eq!(item.operation, ModelEventKind::Created);
+    }
+
+    #[test]
+    fn the_pre_1425_array_form_still_reads() {
+        let array = RpcFrameValue::from(serde_json::json!([1, 2, 255]));
+        let item = read(array);
+        assert_eq!(item.data, serde_json::json!({"data": [1, 2, 255]}));
+        assert_eq!(item.event_id, uuid::Uuid::from_u128(ID));
+    }
+
+    #[test]
+    fn a_typed_model_event_keeps_reading_a_byte_string() {
+        #[derive(serde::Deserialize)]
+        struct Row {
+            data: cratestack_core::Value,
+        }
+        let item: ModelEvent<Row> =
+            cbor_item(event(RpcFrameValue::Bytes(vec![1, 2, 255]))).expect("typed");
+        assert_eq!(
+            item.data.data,
+            cratestack_core::Value::Bytes(vec![1, 2, 255])
+        );
+    }
+}
