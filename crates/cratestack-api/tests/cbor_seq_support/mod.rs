@@ -48,13 +48,14 @@ pub fn expected_id(n: i64) -> cratestack::uuid::Uuid {
 #[derive(serde::Deserialize)]
 struct Reading {
     id: cratestack::uuid::Uuid,
+    #[serde(deserialize_with = "cratestack::deserialize_bytes")]
     data: Vec<u8>,
     amount: cratestack_core::RustDecimal,
     n: i64,
 }
 
-/// `frame` must be the `next` of reading `n`: its `Uuid` a CBOR byte string
-/// (16 bytes, not text), and every field lossless once decoded.
+/// `frame` must be the `next` of reading `n`: its `Uuid` and `Bytes` CBOR
+/// byte strings (16 bytes, not text; not an integer array), and every field lossless once decoded.
 pub fn assert_reading(frame: &ServerFrame, id: u64, n: i64) {
     assert_eq!(frame.id, id);
     let Some(next @ RpcFrameValue::Object(fields)) = &frame.next else {
@@ -64,6 +65,12 @@ pub fn assert_reading(frame: &ServerFrame, id: u64, n: i64) {
         fields["id"],
         RpcFrameValue::Bytes(expected_id(n).as_bytes().to_vec()),
         "a Uuid is a 16-byte string"
+    );
+    // cratestack#1425: `Bytes` is a byte string in a CBOR socket item too.
+    assert_eq!(
+        fields["data"],
+        RpcFrameValue::Bytes(vec![0, 1, 255, n as u8]),
+        "Bytes is a byte string"
     );
     let reading: Reading = next.decode_with(&CborCodec).expect("a Reading");
     assert_eq!(reading.id, expected_id(n));

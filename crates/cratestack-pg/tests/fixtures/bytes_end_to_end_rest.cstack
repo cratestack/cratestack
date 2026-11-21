@@ -1,0 +1,34 @@
+// cratestack#1425: a model with `Bytes` columns (required and nullable), a
+// `Bytes` `@computed` value and a to-many relation whose rows carry `Bytes`,
+// served over Rest. Responses must carry every one of them as a CBOR byte
+// string and stay an integer array under JSON. Dedicated to
+// `tests/bytes_end_to_end.rs`. (`Geography`/`Geometry` need PostGIS and
+// are covered by the macro and core unit tests.)
+
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+auth Operator {
+  id Int
+}
+
+model BytesRestDoc {
+  id Int @id
+  digest Bytes
+  signature Bytes?
+  fingerprint Bytes @computed
+  parts BytesRestPart[] @relation(fields:[id],references:[docId])
+
+  @@allow("all", auth() != null)
+}
+
+model BytesRestPart {
+  id Int @id
+  docId Int
+  payload Bytes
+  doc BytesRestDoc @relation(fields:[docId],references:[id])
+
+  @@allow("all", auth() != null)
+}

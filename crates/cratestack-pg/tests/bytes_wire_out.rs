@@ -101,7 +101,6 @@ fn update_patch_shapes_keep_untouched_cleared_and_set_distinct() {
     let set = cratestack_schema::UpdateBlobInput {
         digest: Some(vec![1, 2, 255]),
         signature: Some(Some(vec![9])),
-        ..Default::default()
     };
     // {"digest": h'0102ff', "signature": h'09'}
     assert_eq!(
