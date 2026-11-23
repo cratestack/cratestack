@@ -63,38 +63,10 @@ ignore = false
 
 [advisories]
 ignore = [
-    # --- Unmaintained: gtk-rs GTK3 bindings ---
-    # All ten reachable only via glib/gtk -> tauri (Linux webview backend),
-    # consumed exclusively by the unpublished tauri-native-shell-example /
-    # tauri-web-shell-example crates. No maintained GTK3 binding exists;
-    # gtk-rs's own recommendation is to migrate to GTK4, which is a Tauri
-    # upstream decision, not something fixable from this repo.
-    { id = "RUSTSEC-2024-0413", reason = "gtk-rs GTK3 `atk` binding, unmaintained upstream; reachable only via tauri examples (tauri-native-shell-example, tauri-web-shell-example), not any published crate" },
-    { id = "RUSTSEC-2024-0416", reason = "gtk-rs GTK3 `atk-sys` binding, unmaintained upstream; reachable only via tauri examples" },
-    { id = "RUSTSEC-2024-0412", reason = "gtk-rs GTK3 `gdk` binding, unmaintained upstream; reachable only via tauri examples" },
-    { id = "RUSTSEC-2024-0418", reason = "gtk-rs GTK3 `gdk-sys` binding, unmaintained upstream; reachable only via tauri examples" },
-    { id = "RUSTSEC-2024-0411", reason = "gtk-rs GTK3 `gdkwayland-sys` binding, unmaintained upstream; reachable only via tauri examples" },
-    { id = "RUSTSEC-2024-0417", reason = "gtk-rs GTK3 `gdkx11` binding, unmaintained upstream; reachable only via tauri examples" },
-    { id = "RUSTSEC-2024-0414", reason = "gtk-rs GTK3 `gdkx11-sys` binding, unmaintained upstream; reachable only via tauri examples" },
-    { id = "RUSTSEC-2024-0415", reason = "gtk-rs GTK3 `gtk` binding, unmaintained upstream; reachable only via tauri examples" },
-    { id = "RUSTSEC-2024-0420", reason = "gtk-rs GTK3 `gtk-sys` binding, unmaintained upstream; reachable only via tauri examples" },
-    { id = "RUSTSEC-2024-0419", reason = "gtk-rs GTK3 `gtk3-macros` binding, unmaintained upstream; reachable only via tauri examples" },
-
     # --- Unmaintained: proc-macro-error ---
     # Pulled in by glib-macros/gtk3-macros (same Linux tauri webview chain
     # above); no safe replacement exists that gtk-rs 0.18 itself depends on.
     { id = "RUSTSEC-2024-0370", reason = "proc-macro-error, unmaintained upstream; pulled in via glib-macros/gtk3-macros in the tauri Linux webview chain, only reachable from tauri-native-shell-example / tauri-web-shell-example" },
-
-    # --- Unmaintained: rust-unic family ---
-    # Pulled in via urlpattern -> tauri-utils -> tauri; RUSTSEC advisories
-    # for this family explicitly state "no safe upgrade is available"
-    # (recommended replacement is icu_properties / unicode-ident, which is
-    # an upstream tauri-utils/urlpattern migration, not ours to make).
-    { id = "RUSTSEC-2025-0081", reason = "unic-char-property, unmaintained upstream (no safe upgrade); reachable only via urlpattern -> tauri-utils -> tauri examples" },
-    { id = "RUSTSEC-2025-0075", reason = "unic-char-range, unmaintained upstream (no safe upgrade); reachable only via urlpattern -> tauri-utils -> tauri examples" },
-    { id = "RUSTSEC-2025-0080", reason = "unic-common, unmaintained upstream (no safe upgrade); reachable only via urlpattern -> tauri-utils -> tauri examples" },
-    { id = "RUSTSEC-2025-0100", reason = "unic-ucd-ident, unmaintained upstream (no safe upgrade); reachable only via urlpattern -> tauri-utils -> tauri examples" },
-    { id = "RUSTSEC-2025-0098", reason = "unic-ucd-version, unmaintained upstream (no safe upgrade); reachable only via urlpattern -> tauri-utils -> tauri examples" },
 
     # --- Unmaintained: astral-tokio-tar (via testcontainers) ---
     # Astral ended maintenance on 2026-11-03; "no safe upgrade is available".
